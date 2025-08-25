@@ -33,8 +33,7 @@ services:
     hostname: kafka
     container_name: stream-sentinel-kafka
     depends_on:
-      zookeeper:
-        condition: service_healthy
+      - zookeeper
     ports:
       - "9092:9092"   # External client connections
       - "9101:9101"   # JMX metrics port for monitoring
@@ -94,8 +93,7 @@ services:
     hostname: schema-registry
     container_name: stream-sentinel-schema-registry
     depends_on:
-      kafka:
-        condition: service_healthy
+      - kafka
     ports:
       - "8081:8081"
     environment:
@@ -119,10 +117,8 @@ services:
     image: provectuslabs/kafka-ui:latest
     container_name: stream-sentinel-kafka-ui
     depends_on:
-      kafka:
-        condition: service_healthy
-      schema-registry:
-        condition: service_healthy
+      - kafka
+      - schema-registry
     ports:
       - "8080:8080"
     environment:
@@ -166,8 +162,7 @@ services:
     image: redislabs/redisinsight:latest
     container_name: stream-sentinel-redis-insight
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     ports:
       - "8001:8001"
     volumes:
