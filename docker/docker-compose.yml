@@ -17,12 +17,6 @@ services:
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-logs:/var/lib/zookeeper/log
-    healthcheck:
-      test: ["CMD", "bash", "-c", "echo 'ruok' | exec 3<>/dev/tcp/localhost/2181 && echo >&3 && read <&3 result && [[ $result == *'imok'* ]]"]
-      interval: 30s
-      timeout: 15s
-      retries: 5
-      start_period: 30s
     networks:
       - stream-sentinel-network
 
