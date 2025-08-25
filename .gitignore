@@ -1,0 +1,113 @@
+# /.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# C++ build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Docker volumes and logs
+docker/volumes/
+*.log
+logs/
+
+# Configuration files with secrets
+config/secrets.yaml
+config/prod.env
+.env.local
+.env.production
+*.key
+*.pem
+
+# Data files and datasets
+data/raw/
+data/processed/
+*.csv
+*.json
+*.parquet
+models/trained/
+checkpoints/
+
+# Temporary and cache files
+tmp/
+temp/
+.cache/
+*.tmp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation build
+docs/_build/
+site/
+
+# Redis dumps
+dump.rdb
+
+# Kafka logs (if running locally)
+kafka-logs/
+zookeeper-logs/
