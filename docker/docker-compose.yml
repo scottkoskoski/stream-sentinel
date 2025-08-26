@@ -1,27 +1,22 @@
 # /stream-sentinel/docker/docker-compose.yml
-version: '3.8'
 
 services:
   # Zookeeper - Manages Kafka cluster coordination and metadata
-  # In production, you'd run 3-5 Zookeeper nodes for fault tolerance
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
     hostname: zookeeper
     container_name: stream-sentinel-zookeeper
     ports:
-      - "2181:2181"  # Client connections
+      - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000  # Basic time unit in milliseconds
-      ZOOKEEPER_SYNC_LIMIT: 2    # Limits how far out of date followers can be
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 2
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-logs:/var/lib/zookeeper/log
-    networks:
-      - stream-sentinel-network
 
   # Kafka Broker - The main message processing engine
-  # Single broker for development; production would use 3+ brokers
   kafka:
     image: confluentinc/cp-kafka:7.4.0
     hostname: kafka
@@ -29,46 +24,32 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"   # External client connections
-      - "9101:9101"   # JMX metrics port for monitoring
+      - "9092:9092"
+      - "9101:9101"
     environment:
-      # Core Kafka Configuration
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      
-      # Network Configuration - Critical for client connections
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      
-      # Performance Tuning for Fraud Detection Workload
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1  # Would be 3 in production
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1     # Minimum in-sync replicas
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0  # Faster consumer group startup
-      
-      # Log Retention - Important for fraud detection replay capabilities
-      KAFKA_LOG_RETENTION_HOURS: 168           # 7 days of transaction history
-      KAFKA_LOG_RETENTION_BYTES: 1073741824    # 1GB per partition
-      KAFKA_LOG_SEGMENT_BYTES: 1073741824      # 1GB segments
-      
-      # Performance Optimization
-      KAFKA_NUM_PARTITIONS: 6                  # Default partitions for new topics
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 1      # Would be 3 in production
-      KAFKA_MIN_INSYNC_REPLICAS: 1            # Minimum replicas for write acknowledgment
-      
-      # Compression - Reduces network and storage overhead
-      KAFKA_COMPRESSION_TYPE: 'lz4'           # Fast compression for high throughput
-      
-      # Monitoring Configuration
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_NUM_PARTITIONS: 6
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_COMPRESSION_TYPE: 'lz4'
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
       KAFKA_CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
       KAFKA_CONFLUENT_METRICS_ENABLE: 'true'
       KAFKA_CONFLUENT_SUPPORT_CUSTOMER_ID: anonymous
-      
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -77,11 +58,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-    networks:
-      - stream-sentinel-network
 
   # Schema Registry - Manages data format evolution and compatibility
-  # Critical for production systems with evolving data schemas
   schema-registry:
     image: confluentinc/cp-schema-registry:7.4.0
     hostname: schema-registry
@@ -94,7 +72,6 @@ services:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'kafka:29092'
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
-      # Compatibility settings for schema evolution
       SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
       SCHEMA_REGISTRY_DEBUG: 'false'
     healthcheck:
@@ -102,11 +79,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - stream-sentinel-network
 
   # Kafka UI - Web interface for monitoring and debugging
-  # Essential for development and perfect for LazyDocker integration
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: stream-sentinel-kafka-ui
@@ -120,9 +94,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
       KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
-      # Enable JMX monitoring
       KAFKA_CLUSTERS_0_JMXPORT: 9101
-      # UI Configuration
       DYNAMIC_CONFIG_ENABLED: 'true'
       KAFKA_CLUSTERS_0_READONLY: 'false'
     healthcheck:
@@ -130,11 +102,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - stream-sentinel-network
 
   # Redis - High-performance state management and caching
-  # Will store user profiles, transaction windows, and computed features
   redis:
     image: redis:7.2-alpine
     container_name: stream-sentinel-redis
@@ -148,8 +117,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - stream-sentinel-network
 
   # Redis Insight - Redis monitoring and debugging interface
   redis-insight:
@@ -161,8 +128,6 @@ services:
       - "8001:8001"
     volumes:
       - redis-insight-data:/db
-    networks:
-      - stream-sentinel-network
 
 # Persistent storage volumes
 volumes:
@@ -176,9 +141,3 @@ volumes:
     driver: local
   redis-insight-data:
     driver: local
-
-# Dedicated network for service communication
-networks:
-  stream-sentinel-network:
-    driver: bridge
-    name: stream-sentinel-network
