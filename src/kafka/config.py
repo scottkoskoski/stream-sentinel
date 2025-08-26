@@ -180,42 +180,24 @@ class KafkaConfig:
         Returns:
             Dictionary with Kafka consumer configuration
         """
-        # Base configuration for all consumers
+        # Base configuration for all consumers (minimal working config)
         base_config = {
             "bootstrap.servers": self.bootstrap_servers,
             "group.id": consumer_group,
-            # Offset management
-            "auto.offset.reset": "latest",  # Start from newest messages by default
-            "enable.auto.commit": False,  # Manual commit for exactly-once processing
-            # Session management
-            "session.timeout.ms": 30000,  # 30 second session timeout
-            "heartbeat.interval.ms": 3000,  # Heartbeat every 3 seconds
-            "max.poll.interval.ms": 300000,  # 5 minutes max processing time
-            # Fetch settings for optimal throughput
-            "fetch.min.bytes": 1024,  # Wait for at least 1KB
-            "fetch.max.wait.ms": 500,  # Wait up to 500ms for data
-            "max.partition.fetch.bytes": 1048576,  # 1MB max per partition
+            "auto.offset.reset": "latest",
+            "enable.auto.commit": False,
         }
 
-        # Consumer-specific optimizations
+        # Consumer-specific optimizations (basic for confluent-kafka)
         consumer_configs = {
             "fraud_detector": {
-                # Real-time fraud detection consumer (low latency critical)
-                "fetch.min.bytes": 1,  # Process immediately
-                "fetch.max.wait.ms": 100,  # Minimal wait time
-                "auto.offset.reset": "latest",  # Only process new transactions
+                "auto.offset.reset": "latest",
             },
             "feature_extractor": {
-                # Feature extraction consumer (throughput optimized)
-                "fetch.min.bytes": 32768,  # Wait for larger batches
-                "fetch.max.wait.ms": 1000,  # Allow more batching time
-                "max.partition.fetch.bytes": 2097152,  # 2MB per partition
+                "auto.offset.reset": "latest",
             },
             "analytics": {
-                # Analytics consumer (batch processing optimized)
-                "fetch.min.bytes": 65536,  # Large batches for analytics
-                "fetch.max.wait.ms": 5000,  # Longer wait for larger batches
-                "auto.offset.reset": "earliest",  # Process all historical data
+                "auto.offset.reset": "earliest",
             },
         }
 
