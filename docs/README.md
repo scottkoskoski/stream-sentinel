@@ -24,8 +24,18 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 
 **Implementation Guides:**
 - **[Fraud Detection System](fraud-detection/README.md)** - ML models, feature engineering, and real-time scoring
+- **[Machine Learning Pipeline](machine-learning/README.md)** - Complete MLOps with online learning capabilities
 - **[Data Analysis Pipeline](data-analysis/README.md)** - IEEE-CIS analysis and synthetic data generation
 - **[Alert Response System](alert-response/README.md)** - Automated fraud response and action routing
+
+**Advanced MLOps System:**
+- **[Online Learning System](../src/ml/online_learning/README.md)** - Production-grade adaptive ML pipeline
+  - Feedback Processing & Validation
+  - Statistical Drift Detection  
+  - Incremental Model Updates
+  - Model Registry & Versioning
+  - A/B Testing Framework
+  - System Orchestration & Monitoring
 
 ### 🎓 Learning Resources
 
@@ -40,14 +50,22 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 2. Read Kafka Fundamentals → learn event streaming concepts  
 3. Explore Stream Processing → understand real-time patterns
 4. Study Redis guide → learn state management
-5. Review Fraud Detection → see everything working together
+5. Review Fraud Detection → see basic ML integration
+6. Explore Machine Learning Pipeline → understand MLOps concepts
+7. Study Online Learning System → see advanced adaptive ML
+8. Run the Demo → experience the complete system
 ```
 
 ### 🚀 Project Evolution
 
 **Development Journey:**
 - **[Project Development Logs](project-logs/README.md)** - Authentic implementation journey with decisions and challenges
+- **[Phase 4: Online Learning System](project-logs/005-online-learning-system.md)** - Advanced MLOps implementation deep-dive
 - **[Architecture Decision Records](project-logs/)** - Why specific technologies and patterns were chosen
+
+**Quick Start:**
+- **[Online Learning Demo](../scripts/online_learning_demo.py)** - Comprehensive system demonstration
+- **[Enhanced Fraud Detector](../src/consumers/enhanced_fraud_detector.py)** - Production integration example
 - **[Performance Benchmarks](project-logs/)** - Real measurement results and optimization insights
 
 ## 🛠️ How to Use This Documentation
