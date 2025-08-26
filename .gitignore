@@ -111,3 +111,6 @@ dump.rdb
 # Kafka logs (if running locally)
 kafka-logs/
 zookeeper-logs/
+
+# Claude context file (personal development notes)
+CLAUDE.md
