@@ -1,8 +1,16 @@
 # Stream-Sentinel
 
-> Real-Time Distributed Financial Fraud Detection System
+> **Real-Time Distributed Financial Fraud Detection System**
 
-A production-grade distributed fraud detection system built with Apache Kafka, Redis, and Python. Processes high-throughput transaction streams with real-time behavioral analysis, multi-factor fraud scoring, and automated response actions.
+A production-grade distributed fraud detection system demonstrating advanced stream processing, real-time analytics, and distributed systems engineering. Built with Apache Kafka, Redis, and Python to showcase high-performance data engineering capabilities and modern financial technology patterns.
+
+## 🎯 Project Purpose
+
+Stream-Sentinel serves dual purposes:
+- **Portfolio Showcase**: Demonstrates production-quality distributed systems engineering
+- **Learning Resource**: Educational platform for understanding stream processing technologies
+
+Built by a developer transitioning from analytics to software/ML engineering, this project showcases the evolution from data analysis to systems programming with enterprise-grade reliability.
 
 ## 🚀 Features
 
@@ -315,11 +323,24 @@ curl http://localhost:8001/health
 
 ## 📚 Documentation
 
-- [Infrastructure Setup](docs/logs/001-kafka-infrastructure.md)
-- [Fraud Detection Implementation](docs/logs/002-fraud-detection-consumer.md)
-- [Alert Response System](docs/logs/003-alert-response-system.md)
-- [API Documentation](docs/api/) (Coming Soon)
-- [Architecture Decision Records](docs/adr/) (Coming Soon)
+### 🏗️ Architecture & Components
+- [Infrastructure Guide](docs/infrastructure/README.md) - Docker, Kafka, Redis setup and concepts
+- [Stream Processing](docs/stream-processing/README.md) - Kafka consumers, producers, and patterns
+- [State Management](docs/state-management/README.md) - Redis patterns and user profiling
+- [Machine Learning](docs/machine-learning/README.md) - Fraud detection models and feature engineering
+
+### 🔧 Implementation Guides
+- [Data Analysis Pipeline](docs/data-analysis/README.md) - IEEE-CIS analysis and synthetic generation
+- [Fraud Detection System](docs/fraud-detection/README.md) - Real-time processing and scoring
+- [Alert Response System](docs/alert-response/README.md) - Automated actions and notifications
+
+### 📖 Learning Resources
+- [Apache Kafka Fundamentals](docs/learning/kafka.md) - Distributed streaming concepts
+- [Redis for Stream Processing](docs/learning/redis.md) - State management patterns
+- [Distributed Systems Patterns](docs/learning/distributed-systems.md) - Production architecture
+
+### 🚀 Project Evolution
+- [Development Journey](docs/project-logs/README.md) - Implementation phases and decisions
 
 ## 🤝 Contributing
 

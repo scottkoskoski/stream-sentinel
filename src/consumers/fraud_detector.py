@@ -20,6 +20,8 @@ import json
 import time
 import signal
 import sys
+import pickle
+import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
@@ -112,19 +114,30 @@ class FraudDetector:
     
     def __init__(self, 
                  consumer_group: str = "fraud-detection-group",
-                 fraud_threshold: float = 0.7):
+                 fraud_threshold: float = 0.7,
+                 use_ml_model: bool = True,
+                 model_path: str = "models/ieee_fraud_model_production.pkl"):
         """
         Initialize fraud detection consumer.
         
         Args:
             consumer_group: Kafka consumer group for parallel processing
             fraud_threshold: Fraud score threshold for alert generation
+            use_ml_model: Whether to use ML model or rule-based scoring
+            model_path: Path to the trained ML model
         """
         # Initialize Kafka configuration
         self.kafka_config = get_kafka_config()
         self.logger = self._setup_logging()
         self.fraud_threshold = fraud_threshold
         self.consumer_group = consumer_group
+        self.use_ml_model = use_ml_model
+        
+        # Load ML model if enabled
+        self.ml_model = None
+        self.model_features = None
+        if use_ml_model:
+            self._load_ml_model(model_path)
         
         # Topics
         self.input_topic = "synthetic-transactions"
@@ -208,6 +221,48 @@ class FraudDetector:
         except redis.ConnectionError as e:
             self.logger.error(f"Failed to connect to Redis: {e}")
             raise
+    
+    def _load_ml_model(self, model_path: str) -> None:
+        """Load the trained ML model for fraud detection."""
+        try:
+            # Load the pickled model
+            with open(model_path, 'rb') as f:
+                model_data = pickle.load(f)
+                
+            # Extract the actual model and preprocessing components
+            if isinstance(model_data, dict):
+                self.ml_model = model_data.get('model')
+                self.scaler = model_data.get('scaler')
+                self.model_features = model_data.get('feature_names', [])
+                self.logger.info(f"Loaded model components: {list(model_data.keys())}")
+            else:
+                # Fallback for simple model pickle
+                self.ml_model = model_data
+            
+            # Load model metadata
+            metadata_path = model_path.replace('.pkl', '_metadata.json')
+            if not Path(metadata_path).exists():
+                # Try alternative path (metadata might be in same directory)
+                metadata_path = 'models/ieee_fraud_model_metadata.json'
+            
+            if Path(metadata_path).exists():
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                    # Only use metadata features if not already loaded from pickle
+                    if not self.model_features:
+                        self.model_features = metadata.get('feature_names', [])
+                    model_metrics = metadata.get('model_metrics', {})
+                    self.logger.info(f"Loaded ML model: {metadata.get('model_type', 'unknown')}")
+                    self.logger.info(f"Model AUC: {model_metrics.get('val_auc', 'unknown'):.4f}")
+            else:
+                self.logger.warning("Model metadata not found, using pickle feature names")
+                
+            self.logger.info(f"Expected features: {len(self.model_features) if self.model_features else 0}")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load ML model from {model_path}: {e}")
+            self.logger.info("Falling back to rule-based fraud detection")
+            self.use_ml_model = False
     
     def _signal_handler(self, signum: int, frame) -> None:
         """Handle graceful shutdown signals."""
@@ -324,15 +379,18 @@ class FraudDetector:
             if user_profile.daily_transaction_count > 0 else 0.0
         )
         
-        # Simple fraud scoring algorithm
-        fraud_score = self._calculate_fraud_score(
-            amount_vs_avg_ratio,
-            is_high_amount,
-            is_unusual_hour,
-            is_rapid_transaction,
-            velocity_score,
-            user_profile.daily_transaction_count
-        )
+        # Calculate fraud score using ML model or rule-based approach
+        if self.use_ml_model and self.ml_model:
+            fraud_score = self._calculate_ml_fraud_score(transaction, user_profile)
+        else:
+            fraud_score = self._calculate_fraud_score(
+                amount_vs_avg_ratio,
+                is_high_amount,
+                is_unusual_hour,
+                is_rapid_transaction,
+                velocity_score,
+                user_profile.daily_transaction_count
+            )
         
         return FraudFeatures(
             user_id=user_id,
@@ -410,6 +468,124 @@ class FraudDetector:
         
         # Ensure score is between 0 and 1
         return min(score, 1.0)
+    
+    def _calculate_ml_fraud_score(self, transaction: Dict[str, Any], 
+                                 user_profile: UserProfile) -> float:
+        """
+        Calculate fraud score using trained ML model.
+        
+        Args:
+            transaction: Transaction data
+            user_profile: User profile for behavioral features
+            
+        Returns:
+            Fraud probability between 0.0 and 1.0
+        """
+        try:
+            # Extract features compatible with the trained model
+            features = self._extract_ml_features(transaction, user_profile)
+            
+            # Predict fraud probability
+            fraud_probability = self.ml_model.predict_proba([features])[0][1]
+            
+            return float(fraud_probability)
+            
+        except Exception as e:
+            self.logger.warning(f"ML fraud scoring failed: {e}, falling back to rule-based")
+            # Fallback to rule-based scoring
+            amount = float(transaction['transaction_amt'])
+            timestamp = transaction['generated_timestamp']
+            dt = datetime.fromisoformat(timestamp)
+            
+            amount_vs_avg_ratio = (
+                amount / user_profile.avg_transaction_amount 
+                if user_profile.avg_transaction_amount > 0 else 1.0
+            )
+            is_high_amount = amount > 1000.0
+            is_unusual_hour = dt.hour < 6 or dt.hour > 22
+            
+            time_since_last = 0.0
+            if user_profile.last_transaction_time:
+                last_dt = datetime.fromisoformat(user_profile.last_transaction_time)
+                time_since_last = (dt - last_dt).total_seconds()
+            is_rapid_transaction = time_since_last < 300
+            
+            velocity_score = user_profile.daily_transaction_count / 24.0
+            
+            return self._calculate_fraud_score(
+                amount_vs_avg_ratio, is_high_amount, is_unusual_hour,
+                is_rapid_transaction, velocity_score, user_profile.daily_transaction_count
+            )
+    
+    def _extract_ml_features(self, transaction: Dict[str, Any], 
+                            user_profile: UserProfile) -> List[float]:
+        """
+        Extract features compatible with the trained ML model.
+        
+        Args:
+            transaction: Transaction data
+            user_profile: User profile for behavioral features
+            
+        Returns:
+            List of feature values matching model expectations
+        """
+        features = []
+        
+        # Create a mapping of available transaction features with safe None handling
+        def safe_float(value, default=0.0):
+            """Safely convert value to float, handling None and empty values."""
+            if value is None or value == '':
+                return default
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return default
+                
+        available_features = {
+            'TransactionAmt': safe_float(transaction.get('transaction_amt')),
+            'ProductCD': transaction.get('product_cd', 'W') or 'W',
+            'card1': safe_float(transaction.get('card1')),
+            'card2': safe_float(transaction.get('card2')),
+            'card3': safe_float(transaction.get('card3')),
+            'card5': safe_float(transaction.get('card5')),
+            'card6': transaction.get('card6', 'debit') or 'debit',
+            'addr1': safe_float(transaction.get('addr1')),
+            'addr2': safe_float(transaction.get('addr2')),
+            'R_emaildomain': transaction.get('r_emaildomain', 'unknown') or 'unknown',
+        }
+        
+        # Add engineered features
+        amount = available_features['TransactionAmt']
+        available_features['TransactionAmt_log'] = np.log1p(amount) if amount > 0 else 0.0
+        available_features['TransactionAmt_decimal'] = amount - int(amount) if amount > 0 else 0.0
+        
+        # Add behavioral features from user profile
+        available_features['user_avg_amount'] = user_profile.avg_transaction_amount
+        available_features['user_total_transactions'] = float(user_profile.total_transactions)
+        available_features['user_daily_count'] = float(user_profile.daily_transaction_count)
+        
+        # For each expected feature, use available value or sensible default
+        for feature_name in self.model_features:
+            if feature_name in available_features:
+                value = available_features[feature_name]
+                # Handle categorical features
+                if isinstance(value, str):
+                    # Simple categorical encoding (more sophisticated than needed but safe)
+                    features.append(float(hash(value) % 1000))
+                else:
+                    features.append(float(value))
+            else:
+                # Default values for missing features
+                if feature_name.startswith('V') or feature_name.startswith('C') or feature_name.startswith('D'):
+                    features.append(0.0)  # Numerical features default to 0
+                elif feature_name.startswith('id_'):
+                    features.append(0.0)  # Identity features default to 0
+                elif 'email' in feature_name.lower():
+                    features.append(0.0)  # Email features default to 0
+                else:
+                    features.append(0.0)  # All other features default to 0
+        
+        return features
     
     def publish_fraud_alert(self, features: FraudFeatures, 
                            original_transaction: Dict[str, Any]) -> None:
