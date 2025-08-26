@@ -71,6 +71,7 @@ config/prod.env
 # Data files and datasets
 data/raw/
 data/processed/
+data/synthetic/
 *.csv
 *.json
 *.parquet
