@@ -59,7 +59,6 @@ Makefile
 # Docker volumes and logs
 docker/volumes/
 *.log
-logs/
 
 # Configuration files with secrets
 config/secrets.yaml
