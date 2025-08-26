@@ -114,3 +114,6 @@ zookeeper-logs/
 
 # Claude context file (personal development notes)
 CLAUDE.md
+
+# Architecture review
+ARCHITECTURE_REVIEW.md
