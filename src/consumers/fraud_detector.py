@@ -648,6 +648,148 @@ class FraudDetector:
                 f"Fraud alert delivered to {msg.topic()} [partition {msg.partition()}]"
             )
     
+    def publish_fraud_detection_result(self, features: FraudFeatures, 
+                                     original_transaction: Dict[str, Any],
+                                     processing_start_time: float) -> None:
+        """
+        Publish complete fraud detection result for persistence.
+        
+        Args:
+            features: Fraud features for the transaction
+            original_transaction: Original transaction data
+            processing_start_time: When processing started (for timing)
+        """
+        try:
+            processing_time_ms = int((time.time() - processing_start_time) * 1000)
+            
+            # Determine severity based on fraud score
+            severity = "MINIMAL"
+            if features.fraud_score >= 0.9:
+                severity = "CRITICAL"
+            elif features.fraud_score >= 0.8:
+                severity = "HIGH"
+            elif features.fraud_score >= 0.6:
+                severity = "MEDIUM"
+            elif features.fraud_score >= 0.4:
+                severity = "LOW"
+            
+            # Create comprehensive fraud detection result
+            detection_result = {
+                "transaction": {
+                    "transaction_id": features.transaction_id,
+                    "user_id": features.user_id,
+                    "timestamp": original_transaction.get('generated_timestamp'),
+                    "amount": features.amount,
+                    "merchant_category": original_transaction.get('ProductCD', 'unknown'),
+                    "payment_method": original_transaction.get('card4', 'unknown'),
+                    "device_info": original_transaction.get('DeviceType', 'unknown'),
+                    "location_country": original_transaction.get('card3', 'unknown'),
+                    "location_state": original_transaction.get('addr1', 'unknown')
+                },
+                "is_fraud": features.is_fraud_alert,
+                "fraud_score": features.fraud_score,
+                "severity": severity,
+                "ml_prediction": features.fraud_score if self.use_ml_model else None,
+                "business_rules_triggered": self._get_triggered_rules(features),
+                "explanation": {
+                    "amount_vs_avg_ratio": features.amount_vs_avg_ratio,
+                    "is_high_amount": features.is_high_amount,
+                    "is_unusual_hour": features.is_unusual_hour,
+                    "is_rapid_transaction": features.is_rapid_transaction,
+                    "velocity_score": features.velocity_score,
+                    "daily_transaction_count": features.daily_transaction_count
+                },
+                "features": features.to_dict(),
+                "processing_time_ms": processing_time_ms,
+                "detection_metadata": {
+                    "ml_model_version": "ieee_fraud_model_production_v1.0" if self.use_ml_model else None,
+                    "ml_prediction": features.fraud_score if self.use_ml_model else None,
+                    "ml_confidence": 0.85 if self.use_ml_model else None,  # Placeholder
+                    "business_rules_score": features.fraud_score if not self.use_ml_model else None,
+                    "features_used": list(features.to_dict().keys()),
+                    "model_features": features.to_dict()
+                }
+            }
+            
+            # Publish to fraud detection results topic for persistence
+            self.producer.produce(
+                "fraud-detection-results",
+                key=features.user_id,
+                value=json.dumps(detection_result),
+                callback=self._delivery_callback
+            )
+            
+            self.producer.poll(0)
+            
+        except Exception as e:
+            self.logger.error(f"Error publishing fraud detection result for persistence: {e}")
+    
+    def _get_triggered_rules(self, features: FraudFeatures) -> List[str]:
+        """Get list of business rules that were triggered."""
+        triggered_rules = []
+        
+        if features.is_high_amount:
+            triggered_rules.append("high_amount_transaction")
+        if features.is_unusual_hour:
+            triggered_rules.append("unusual_hour_transaction")
+        if features.is_rapid_transaction:
+            triggered_rules.append("rapid_transaction_velocity")
+        if features.amount_vs_avg_ratio > 3.0:
+            triggered_rules.append("amount_deviation_high")
+        if features.velocity_score > 10:
+            triggered_rules.append("high_velocity_user")
+        if features.daily_transaction_count > 25:
+            triggered_rules.append("excessive_daily_transactions")
+        
+        return triggered_rules
+    
+    def publish_performance_metrics(self, processing_time_ms: float) -> None:
+        """
+        Publish performance metrics for monitoring.
+        
+        Args:
+            processing_time_ms: Processing time in milliseconds
+        """
+        try:
+            current_time = datetime.now().isoformat()
+            
+            metrics = [
+                {
+                    "timestamp": current_time,
+                    "metric_name": "fraud_detection_processing_time",
+                    "metric_value": processing_time_ms,
+                    "component": "fraud_detector",
+                    "instance_id": f"fraud_detector_{self.consumer_group}",
+                    "labels": {
+                        "consumer_group": self.consumer_group,
+                        "use_ml_model": str(self.use_ml_model)
+                    }
+                },
+                {
+                    "timestamp": current_time,
+                    "metric_name": "fraud_detection_throughput",
+                    "metric_value": self.processed_count / max((time.time() - self.start_time), 1),
+                    "component": "fraud_detector",
+                    "instance_id": f"fraud_detector_{self.consumer_group}",
+                    "labels": {
+                        "consumer_group": self.consumer_group
+                    }
+                }
+            ]
+            
+            for metric in metrics:
+                self.producer.produce(
+                    "performance-metrics",
+                    key=metric["instance_id"],
+                    value=json.dumps(metric),
+                    callback=self._delivery_callback
+                )
+            
+            self.producer.poll(0)
+            
+        except Exception as e:
+            self.logger.error(f"Error publishing performance metrics: {e}")
+    
     def process_transaction(self, transaction: Dict[str, Any]) -> None:
         """
         Process a single transaction for fraud detection.
@@ -655,6 +797,8 @@ class FraudDetector:
         Args:
             transaction: Transaction data from Kafka message
         """
+        processing_start_time = time.time()
+        
         try:
             user_id = transaction['card1']  # Using card1 as user identifier
             
@@ -678,6 +822,14 @@ class FraudDetector:
             # Publish fraud alert if threshold exceeded
             if features.is_fraud_alert:
                 self.publish_fraud_alert(features, transaction)
+            
+            # Publish complete fraud detection result for persistence
+            self.publish_fraud_detection_result(features, transaction, processing_start_time)
+            
+            # Publish performance metrics periodically
+            if self.processed_count % 100 == 0:  # Every 100 transactions
+                processing_time_ms = (time.time() - processing_start_time) * 1000
+                self.publish_performance_metrics(processing_time_ms)
                 
             # Debug logging for high fraud scores (even if not alerting)
             if features.fraud_score > 0.2:

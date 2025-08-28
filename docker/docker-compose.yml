@@ -129,6 +129,79 @@ services:
     volumes:
       - redis-insight-data:/db
 
+  # PostgreSQL - ACID-compliant storage for critical transactional data
+  postgres:
+    image: postgres:16-alpine
+    container_name: stream-sentinel-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: stream_sentinel
+      POSTGRES_USER: stream_sentinel_user
+      POSTGRES_PASSWORD: stream_sentinel_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-scripts/postgresql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stream_sentinel_user -d stream_sentinel"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+
+  # ClickHouse - Columnar database optimized for analytics and time-series data
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8-alpine
+    container_name: stream-sentinel-clickhouse
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native TCP interface
+    environment:
+      CLICKHOUSE_DB: stream_sentinel
+      CLICKHOUSE_USER: stream_sentinel_user
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_PASSWORD: stream_sentinel_password
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+      - ./init-scripts/clickhouse:/docker-entrypoint-initdb.d
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ClickHouse client for database administration
+  clickhouse-client:
+    image: clickhouse/clickhouse-client:23.8-alpine
+    container_name: stream-sentinel-clickhouse-client
+    depends_on:
+      - clickhouse
+    command: >
+      sh -c "
+        echo 'ClickHouse client ready for connections' &&
+        tail -f /dev/null
+      "
+    profiles:
+      - tools
+
 # Persistent storage volumes
 volumes:
   zookeeper-data:
@@ -140,4 +213,10 @@ volumes:
   redis-data:
     driver: local
   redis-insight-data:
+    driver: local
+  postgres-data:
+    driver: local
+  clickhouse-data:
+    driver: local
+  clickhouse-logs:
     driver: local
