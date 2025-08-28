@@ -12,9 +12,10 @@ from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timezone
 from dataclasses import asdict
 
-import psycopg2
-from psycopg2 import pool, sql
-from psycopg2.extras import RealDictCursor, Json
+import psycopg
+from psycopg import sql
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 from clickhouse_driver import Client as ClickHouseClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -52,16 +53,18 @@ class PostgreSQLManager:
     def _initialize_connections(self):
         """Initialize database connections and pools."""
         try:
-            # Create psycopg2 connection pool
-            self._connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                minconn=self.config.min_connections,
-                maxconn=self.config.max_connections,
-                host=self.config.host,
-                port=self.config.port,
-                database=self.config.database,
-                user=self.config.username,
-                password=self.config.password,
-                cursor_factory=RealDictCursor
+            # Create psycopg3 connection pool
+            connection_string = (
+                f"host={self.config.host} port={self.config.port} "
+                f"dbname={self.config.database} user={self.config.username} "
+                f"password={self.config.password}"
+            )
+            
+            self._connection_pool = ConnectionPool(
+                connection_string,
+                min_size=self.config.min_connections,
+                max_size=self.config.max_connections,
+                timeout=self.config.connection_timeout
             )
             
             # Create SQLAlchemy engine
@@ -83,17 +86,13 @@ class PostgreSQLManager:
     @contextmanager
     def get_connection(self):
         """Get a connection from the pool with automatic cleanup."""
-        connection = None
-        try:
-            connection = self._connection_pool.getconn()
-            yield connection
-        except Exception as e:
-            if connection:
+        with self._connection_pool.connection() as connection:
+            connection.row_factory = dict_row
+            try:
+                yield connection
+            except Exception as e:
                 connection.rollback()
-            raise DatabaseError(f"PostgreSQL operation failed: {e}")
-        finally:
-            if connection:
-                self._connection_pool.putconn(connection)
+                raise DatabaseError(f"PostgreSQL operation failed: {e}")
     
     @contextmanager
     def get_session(self):
@@ -114,13 +113,13 @@ class PostgreSQLManager:
         
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
-                insert_query = sql.SQL("""
+                insert_query = """
                     INSERT INTO fraud_alerts (
                         transaction_id, user_id, severity, fraud_score, 
                         ml_prediction, business_rules_triggered, explanation
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING alert_id
-                """)
+                """
                 
                 cursor.execute(insert_query, (
                     alert.transaction_id,
@@ -129,7 +128,7 @@ class PostgreSQLManager:
                     alert.fraud_score,
                     alert.ml_prediction,
                     alert.business_rules_triggered,
-                    Json(alert.explanation)
+                    alert.explanation  # psycopg3 handles JSON automatically
                 ))
                 
                 alert_id = cursor.fetchone()['alert_id']
@@ -164,9 +163,7 @@ class PostgreSQLManager:
                 
                 values.append(alert_id)
                 
-                update_query = sql.SQL(
-                    f"UPDATE fraud_alerts SET {', '.join(update_fields)} WHERE alert_id = %s"
-                )
+                update_query = f"UPDATE fraud_alerts SET {', '.join(update_fields)} WHERE alert_id = %s"
                 
                 cursor.execute(update_query, values)
                 rows_affected = cursor.rowcount
@@ -183,7 +180,7 @@ class PostgreSQLManager:
         
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
-                upsert_query = sql.SQL("""
+                upsert_query = """
                     INSERT INTO user_accounts (user_id, status, total_alerts, high_severity_alerts, last_alert_at)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (user_id) DO UPDATE SET
@@ -192,7 +189,7 @@ class PostgreSQLManager:
                         high_severity_alerts = CASE WHEN %s THEN user_accounts.high_severity_alerts + 1 ELSE EXCLUDED.high_severity_alerts END,
                         last_alert_at = CASE WHEN %s OR %s THEN CURRENT_TIMESTAMP ELSE user_accounts.last_alert_at END,
                         updated_at = CURRENT_TIMESTAMP
-                """)
+                """
                 
                 current_time = datetime.now(timezone.utc)
                 
@@ -217,15 +214,15 @@ class PostgreSQLManager:
         
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
-                insert_query = sql.SQL("""
+                insert_query = """
                     INSERT INTO system_audit_log (
                         event_type, entity_type, entity_id, action, actor_id, details
                     ) VALUES (%s, %s, %s, %s, %s, %s)
-                """)
+                """
                 
                 cursor.execute(insert_query, (
                     event_type, entity_type, entity_id, action, actor_id, 
-                    Json(details) if details else None
+                    details  # psycopg3 handles JSON automatically
                 ))
                 
                 rows_affected = cursor.rowcount
@@ -240,7 +237,7 @@ class PostgreSQLManager:
         
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
-                query = sql.SQL("""
+                query = """
                     SELECT ua.*, 
                            COUNT(fa.alert_id) as pending_alerts,
                            MAX(fa.fraud_score) as max_fraud_score
@@ -250,7 +247,7 @@ class PostgreSQLManager:
                     GROUP BY ua.user_id, ua.status, ua.total_alerts, ua.high_severity_alerts,
                              ua.last_alert_at, ua.blocked_at, ua.blocked_reason, 
                              ua.created_at, ua.updated_at
-                """)
+                """
                 
                 cursor.execute(query, (user_id,))
                 result = cursor.fetchone()
@@ -272,10 +269,11 @@ class PostgreSQLManager:
     def get_connection_pool_stats(self) -> Dict[str, Any]:
         """Get connection pool statistics for monitoring."""
         if self._connection_pool:
+            stats = self._connection_pool.get_stats()
             return {
-                'total_connections': self._connection_pool.minconn + self._connection_pool.maxconn,
-                'available_connections': len(self._connection_pool._pool),
-                'used_connections': self._connection_pool.maxconn - len(self._connection_pool._pool)
+                'pool_size': stats.pool_size,
+                'pool_available': stats.pool_available,
+                'pool_waiting': stats.requests_waiting
             }
         return {}
     
@@ -296,7 +294,7 @@ class PostgreSQLManager:
     def close(self):
         """Close all database connections."""
         if self._connection_pool:
-            self._connection_pool.closeall()
+            self._connection_pool.close()
         if self._engine:
             self._engine.dispose()
 
