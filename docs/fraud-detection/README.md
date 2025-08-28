@@ -2,7 +2,7 @@
 
 Stream-Sentinel's fraud detection system demonstrates real-time transaction analysis using machine learning, statistical modeling, and behavioral analytics. This guide explains how modern fraud detection works and how it's implemented using stream processing technologies.
 
-## 🎯 Understanding Fraud Detection
+## Understanding Fraud Detection
 
 ### What is Financial Fraud Detection?
 
@@ -40,7 +40,7 @@ fraud_patterns = {
 - Geographic anomalies (user in different locations)
 - Velocity anomalies (too many transactions too quickly)
 
-## 🏗️ Stream-Sentinel Fraud Detection Architecture
+## Stream-Sentinel Fraud Detection Architecture
 
 ```
                     Real-Time Fraud Detection Pipeline
@@ -580,8 +580,8 @@ class RealTimeFraudDetector:
         self.running = True
         self.consumer.subscribe(['synthetic-transactions'])
         
-        print("🚀 Starting real-time fraud detection...")
-        print("📊 Processing transactions and detecting fraud patterns...")
+        print(" Starting real-time fraud detection...")
+        print(" Processing transactions and detecting fraud patterns...")
         
         try:
             while self.running:
@@ -633,7 +633,7 @@ class RealTimeFraudDetector:
             self.consumer.commit(msg)
             
         except Exception as e:
-            print(f"❌ Error processing transaction: {e}")
+            print(f" Error processing transaction: {e}")
             # In production, send to dead letter queue
             self.handle_processing_error(msg, str(e))
     
@@ -765,16 +765,16 @@ class RealTimeFraudDetector:
     def alert_delivery_callback(self, err, msg):
         """Callback for alert delivery confirmation"""
         if err:
-            print(f"❌ Alert delivery failed: {err}")
+            print(f" Alert delivery failed: {err}")
         else:
-            print(f"✅ Alert delivered to {msg.topic()} [{msg.partition()}] @ {msg.offset()}")
+            print(f" Alert delivered to {msg.topic()} [{msg.partition()}] @ {msg.offset()}")
     
     def print_status_update(self):
         """Print periodic status updates"""
         stats = self.metrics.get_performance_stats()
         redis_stats = self.redis_manager.get_performance_stats()
         
-        print(f"\\n📊 FRAUD DETECTION STATUS:")
+        print(f"\\n FRAUD DETECTION STATUS:")
         print(f"   Transactions processed: {stats['messages_processed']:,}")
         print(f"   Throughput: {stats['throughput_per_second']:.1f} TPS")
         print(f"   Avg processing time: {stats['avg_processing_time_ms']:.2f}ms")
@@ -789,11 +789,11 @@ class RealTimeFraudDetector:
     
     def shutdown(self):
         """Clean shutdown of all components"""
-        print("🔄 Shutting down fraud detection system...")
+        print(" Shutting down fraud detection system...")
         
         # Final stats
         final_stats = self.metrics.get_performance_stats()
-        print(f"\\n📈 FINAL STATISTICS:")
+        print(f"\\n FINAL STATISTICS:")
         print(f"   Total transactions processed: {final_stats['messages_processed']:,}")
         print(f"   Average throughput: {final_stats['throughput_per_second']:.1f} TPS")
         print(f"   Fraud alerts generated: {self.metrics.metrics['fraud_detected']}")
@@ -801,7 +801,7 @@ class RealTimeFraudDetector:
         # Close connections
         self.consumer.close()
         self.producer.flush(timeout=10)
-        print("✅ Fraud detection system shutdown complete")
+        print(" Fraud detection system shutdown complete")
 
 
 def main():
@@ -814,7 +814,7 @@ if __name__ == "__main__":
     main()
 ```
 
-## 📊 Model Performance and Evaluation
+## Model Performance and Evaluation
 
 ### Performance Metrics
 
@@ -871,7 +871,7 @@ class FraudDetectionMetrics:
         }
 ```
 
-## 🔍 Testing and Validation
+## Testing and Validation
 
 ### Synthetic Fraud Testing
 
@@ -940,7 +940,7 @@ class FraudDetectionTester:
         }
 ```
 
-## 📚 Advanced Concepts
+## Advanced Concepts
 
 ### Online Learning Integration
 
@@ -1010,7 +1010,7 @@ class EnsembleFraudDetector:
         }
 ```
 
-## 📚 Next Steps and Extensions
+## Next Steps and Extensions
 
 **Advanced Fraud Detection Topics:**
 1. **Graph-based Fraud Detection**: Network analysis for connected fraud

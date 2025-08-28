@@ -2,7 +2,7 @@
 
 *This guide explores the distributed systems concepts demonstrated in Stream-Sentinel, from basic principles to production-ready patterns used in financial technology.*
 
-## 🎯 Coming Soon
+## Coming Soon
 
 This comprehensive guide will cover:
 
@@ -11,14 +11,14 @@ This comprehensive guide will cover:
 - **Production Patterns**: Circuit breakers, bulkheads, and graceful degradation
 - **Scalability Patterns**: Horizontal scaling, load balancing, and partitioning strategies
 
-## 🔗 Current Examples in Stream-Sentinel
+## Current Examples in Stream-Sentinel
 
 See distributed systems patterns in action:
 - **[Infrastructure Guide](../infrastructure/README.md)** - Service orchestration and communication patterns
 - **[Stream Processing](../stream-processing/README.md)** - Event-driven processing and state management
 - **[Kafka Fundamentals](kafka.md)** - Distributed messaging and fault tolerance
 
-## 🏗️ Patterns Demonstrated
+## Patterns Demonstrated
 
 Stream-Sentinel showcases:
 - **Event Sourcing**: All state changes captured as events in Kafka

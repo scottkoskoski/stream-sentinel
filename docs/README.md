@@ -2,20 +2,20 @@
 
 Welcome to the comprehensive documentation for Stream-Sentinel, a production-grade distributed fraud detection system. This documentation serves both as a project showcase and a learning resource for distributed systems and stream processing technologies.
 
-## 🎯 Documentation Purpose
+## Documentation Purpose
 
 This documentation is designed for multiple audiences:
 
-- **🎓 Learners**: Understand distributed systems, stream processing, and fraud detection from the ground up
-- **👨‍💼 Recruiters/Managers**: Evaluate technical depth and system design capabilities  
-- **👨‍💻 Developers**: Implement similar systems or extend Stream-Sentinel
-- **🏗️ Architects**: Understand production-ready patterns and trade-offs
+- **Learners**: Understand distributed systems, stream processing, and fraud detection from the ground up
+- **Recruiters/Managers**: Evaluate technical depth and system design capabilities  
+- **Developers**: Implement similar systems or extend Stream-Sentinel
+- **Architects**: Understand production-ready patterns and trade-offs
 
 Each guide explains both the **theory** (why these technologies exist) and **practice** (how they're implemented in Stream-Sentinel).
 
-## 📚 Documentation Structure
+## Documentation Structure
 
-### 🏗️ Architecture & Components
+### Architecture & Components
 
 **Core Infrastructure:**
 - **[Infrastructure Guide](infrastructure/README.md)** - Docker, Kafka, Redis setup and architecture concepts
@@ -37,7 +37,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
   - A/B Testing Framework
   - System Orchestration & Monitoring
 
-### 🎓 Learning Resources
+### Learning Resources
 
 **Technology Deep Dives:**
 - **[Apache Kafka Fundamentals](learning/kafka.md)** - Event streaming, partitioning, producers/consumers
@@ -56,7 +56,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 8. Run the Demo → experience the complete system
 ```
 
-### 🚀 Project Evolution
+### Project Evolution
 
 **Development Journey:**
 - **[Project Development Logs](project-logs/README.md)** - Authentic implementation journey with decisions and challenges
@@ -68,7 +68,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 - **[Enhanced Fraud Detector](../src/consumers/enhanced_fraud_detector.py)** - Production integration example
 - **[Performance Benchmarks](project-logs/)** - Real measurement results and optimization insights
 
-## 🛠️ How to Use This Documentation
+## How to Use This Documentation
 
 ### For Learning Distributed Systems
 
@@ -102,7 +102,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 3. **[Redis Patterns](learning/redis.md#performance-optimization)** - State management implementation
 4. **[Stream Processing](stream-processing/README.md#performance-optimization)** - Optimization techniques
 
-## 🌟 Key Concepts Explained
+## Key Concepts Explained
 
 ### What Makes This Documentation Different?
 
@@ -132,7 +132,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 | **Python** | Application Logic | Embedded in all guides | [Fraud Detection](fraud-detection/README.md) |
 | **Machine Learning** | Fraud Detection | [Fraud Detection](fraud-detection/README.md) | [ML Pipeline](machine-learning/README.md) |
 
-## 📊 Documentation Metrics
+## Documentation Metrics
 
 **Content Coverage:**
 - **50+ Code Examples** with detailed explanations
@@ -145,7 +145,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 - **Multiple Learning Styles**: Visual diagrams, code examples, and conceptual explanations
 - **Real-World Context**: Every pattern shown with business justification
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Quick Start for Learners
 
@@ -168,7 +168,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 3. **[Redis Patterns](learning/redis.md#redis-in-stream-sentinel-implementation)** - State management code
 4. **[Complete Pipeline](stream-processing/README.md#real-time-fraud-detection-pipeline)** - End-to-end implementation
 
-## 🔗 Cross-References and Navigation
+## Cross-References and Navigation
 
 ### Documentation Flow
 
@@ -206,7 +206,7 @@ Main README
 **System Architecture:**
 - [Infrastructure](infrastructure/README.md) → [Distributed Systems](learning/distributed-systems.md) → [Project Logs](project-logs/README.md)
 
-## 💡 Contributing to Documentation
+## Contributing to Documentation
 
 This documentation is designed to evolve with the project. Areas for expansion:
 

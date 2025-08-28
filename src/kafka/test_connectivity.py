@@ -113,28 +113,28 @@ class KafkaConnectivityTester:
             for topic_name, future in creation_result.items():
                 try:
                     future.result(timeout=10)
-                    self.logger.info(f"✅ Topic '{topic_name}' created successfully")
+                    self.logger.info(f"Topic '{topic_name}' created successfully")
                 except Exception as e:
-                    self.logger.error(f"❌ Failed to create topic '{topic_name}': {e}")
+                    self.logger.error(f"Failed to create topic '{topic_name}': {e}")
                     return False
 
             # Validate topic was created with correct configuration
             topic_metadata = self.admin_client.list_topics(timeout=10)
             if self.test_topic not in topic_metadata.topics:
                 self.logger.error(
-                    f"❌ Topic '{self.test_topic}' not found after creation"
+                    f"Topic '{self.test_topic}' not found after creation"
                 )
                 return False
 
             topic_info = topic_metadata.topics[self.test_topic]
             self.logger.info(
-                f"✅ Topic validation: {len(topic_info.partitions)} partitions created"
+                f"Topic validation: {len(topic_info.partitions)} partitions created"
             )
 
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Admin operations failed: {e}")
+            self.logger.error(f"Admin operations failed: {e}")
             return False
 
     def test_producer_operations(self) -> bool:
@@ -165,10 +165,10 @@ class KafkaConnectivityTester:
                 # Produce message with callback
                 def delivery_callback(err, msg):
                     if err is not None:
-                        self.logger.error(f"❌ Message delivery failed: {err}")
+                        self.logger.error(f"Message delivery failed: {err}")
                     else:
                         self.logger.debug(
-                            f"✅ Message delivered to {msg.topic()} [{msg.partition()}] @ offset {msg.offset()}"
+                            f"Message delivered to {msg.topic()} [{msg.partition()}] @ offset {msg.offset()}"
                         )
 
                 # Send the message
@@ -182,15 +182,15 @@ class KafkaConnectivityTester:
                 # Wait for delivery confirmation
                 producer.flush(timeout=10)
 
-                self.logger.info(f"✅ {producer_type} producer test completed")
+                self.logger.info(f"{producer_type} producer test completed")
 
             self.logger.info(
-                f"✅ All {len(self.test_messages)} test messages produced successfully"
+                f"All {len(self.test_messages)} test messages produced successfully"
             )
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Producer operations failed: {e}")
+            self.logger.error(f"Producer operations failed: {e}")
             return False
 
     def test_consumer_operations(self) -> bool:
@@ -275,7 +275,7 @@ class KafkaConnectivityTester:
             # Validate results
             if len(consumed_messages) == max_messages:
                 self.logger.info(
-                    f"✅ Successfully consumed all {len(consumed_messages)} test messages"
+                    f"Successfully consumed all {len(consumed_messages)} test messages"
                 )
 
                 # Verify message content
@@ -287,23 +287,23 @@ class KafkaConnectivityTester:
 
                     if consumed["value"]["type"] == original_msg["type"]:
                         self.logger.debug(
-                            f"✅ Message {original_msg_id} content validated"
+                            f"Message {original_msg_id} content validated"
                         )
                     else:
                         self.logger.error(
-                            f"❌ Message {original_msg_id} content mismatch"
+                            f"Message {original_msg_id} content mismatch"
                         )
                         return False
 
                 return True
             else:
                 self.logger.error(
-                    f"❌ Only consumed {len(consumed_messages)} out of {max_messages} messages"
+                    f"Only consumed {len(consumed_messages)} out of {max_messages} messages"
                 )
                 return False
 
         except Exception as e:
-            self.logger.error(f"❌ Consumer operations failed: {e}")
+            self.logger.error(f"Consumer operations failed: {e}")
             return False
 
     def cleanup_test_topic(self) -> bool:
@@ -322,14 +322,14 @@ class KafkaConnectivityTester:
             for topic_name, future in deletion_result.items():
                 try:
                     future.result(timeout=10)
-                    self.logger.info(f"✅ Topic '{topic_name}' deleted successfully")
+                    self.logger.info(f"Topic '{topic_name}' deleted successfully")
                 except Exception as e:
-                    self.logger.warning(f"⚠️  Topic deletion result: {e}")
+                    self.logger.warning(f"Topic deletion result: {e}")
 
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Cleanup failed: {e}")
+            self.logger.error(f"Cleanup failed: {e}")
             return False
 
     def run_full_test(self) -> bool:
@@ -346,12 +346,12 @@ class KafkaConnectivityTester:
         test_results = []
 
         # Test 1: Administrative operations
-        self.logger.info("\n🔧 Test 1: Administrative Operations")
+        self.logger.info("\nTest 1: Administrative Operations")
         admin_result = self.test_admin_operations()
         test_results.append(("Admin Operations", admin_result))
 
         if not admin_result:
-            self.logger.error("❌ Admin operations failed, stopping tests")
+            self.logger.error("Admin operations failed, stopping tests")
             return False
 
         # Test 2: Producer operations
@@ -360,7 +360,7 @@ class KafkaConnectivityTester:
         test_results.append(("Producer Operations", producer_result))
 
         if not producer_result:
-            self.logger.error("❌ Producer operations failed, stopping tests")
+            self.logger.error("Producer operations failed, stopping tests")
             self.cleanup_test_topic()
             return False
 
@@ -384,7 +384,7 @@ class KafkaConnectivityTester:
 
         all_passed = True
         for test_name, result in test_results:
-            status = "✅ PASSED" if result else "❌ FAILED"
+            status = "PASSED" if result else "FAILED"
             self.logger.info(f"{test_name:<20}: {status}")
             if not result:
                 all_passed = False

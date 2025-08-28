@@ -77,7 +77,7 @@ class OnlineLearningDemo:
     
     async def run_demo(self):
         """Run the complete demo workflow."""
-        self.logger.info("🚀 Starting Online Learning System Demo")
+        self.logger.info("Starting Online Learning System Demo")
         
         try:
             # 1. Initialize components
@@ -101,16 +101,16 @@ class OnlineLearningDemo:
             # 7. Show system integration
             await self._demo_system_integration()
             
-            self.logger.info("✅ Online Learning System Demo completed successfully!")
+            self.logger.info("Online Learning System Demo completed successfully!")
             
         except Exception as e:
-            self.logger.error(f"❌ Demo failed: {e}")
+            self.logger.error(f" Demo failed: {e}")
             raise
     
     async def _demo_component_initialization(self):
         """Demo 1: Component initialization and health checks."""
         self.logger.info("\n" + "="*60)
-        self.logger.info("📚 DEMO 1: Component Initialization")
+        self.logger.info("DEMO 1: Component Initialization")
         self.logger.info("="*60)
         
         # Initialize components
@@ -134,21 +134,21 @@ class OnlineLearningDemo:
                 # Simple health check - try to call a basic method
                 if hasattr(component, 'get_statistics'):
                     stats = component.get_statistics()
-                    self.logger.info(f"✅ {name}: Healthy (stats available)")
+                    self.logger.info(f" {name}: Healthy (stats available)")
                 elif hasattr(component, 'get_drift_summary'):
                     summary = component.get_drift_summary()
-                    self.logger.info(f"✅ {name}: Healthy (summary available)")
+                    self.logger.info(f" {name}: Healthy (summary available)")
                 else:
-                    self.logger.info(f"✅ {name}: Initialized")
+                    self.logger.info(f" {name}: Initialized")
             except Exception as e:
-                self.logger.warning(f"⚠️  {name}: {e}")
+                self.logger.warning(f"  {name}: {e}")
         
         await asyncio.sleep(2)  # Pause for demo effect
     
     async def _demo_feedback_processing(self):
         """Demo 2: Feedback collection and processing."""
         self.logger.info("\n" + "="*60)
-        self.logger.info("🎯 DEMO 2: Feedback Processing")
+        self.logger.info("DEMO 2: Feedback Processing")
         self.logger.info("="*60)
         
         # Generate synthetic feedback records
@@ -164,24 +164,24 @@ class OnlineLearningDemo:
         
         # Process feedback
         processed_feedback = self.feedback_processor.process_pending_feedback()
-        self.logger.info(f"✅ Processed {len(processed_feedback)} feedback records")
+        self.logger.info(f" Processed {len(processed_feedback)} feedback records")
         
         # Show processing statistics
         stats = self.feedback_processor.get_statistics()
-        self.logger.info(f"📊 Feedback Statistics:")
+        self.logger.info(f" Feedback Statistics:")
         for key, value in stats.items():
             self.logger.info(f"   {key}: {value}")
         
         # Show quality distribution
         quality_dist = stats.get('quality_distribution', {})
-        self.logger.info(f"📈 Quality Distribution: {quality_dist}")
+        self.logger.info(f" Quality Distribution: {quality_dist}")
         
         await asyncio.sleep(2)
     
     async def _demo_drift_detection(self):
         """Demo 3: Drift detection and alerting."""
         self.logger.info("\n" + "="*60)
-        self.logger.info("📈 DEMO 3: Drift Detection")
+        self.logger.info("DEMO 3: Drift Detection")
         self.logger.info("="*60)
         
         # Set up reference data for drift detection
@@ -206,16 +206,16 @@ class OnlineLearningDemo:
         drift_alerts = self.drift_detector.detect_drift(force_check=True)
         
         if drift_alerts:
-            self.logger.info(f"🚨 Detected {len(drift_alerts)} drift alerts:")
+            self.logger.info(f"ALERT: Detected {len(drift_alerts)} drift alerts:")
             for alert in drift_alerts:
                 self.logger.info(f"   - {alert.drift_type.value}: {alert.severity.value} "
                                f"(score: {alert.drift_score:.3f}, p-value: {alert.p_value:.3f})")
         else:
-            self.logger.info("✅ No significant drift detected")
+            self.logger.info("No significant drift detected")
         
         # Show drift summary
         drift_summary = self.drift_detector.get_drift_summary()
-        self.logger.info(f"📊 Drift Summary: {drift_summary}")
+        self.logger.info(f" Drift Summary: {drift_summary}")
         
         await asyncio.sleep(2)
     
@@ -238,9 +238,9 @@ class OnlineLearningDemo:
         # Add training batch
         success = self.incremental_learner.add_training_batch(training_feedback)
         if success:
-            self.logger.info("✅ Training batch added successfully")
+            self.logger.info("Training batch added successfully")
         else:
-            self.logger.warning("⚠️  Failed to add training batch")
+            self.logger.warning("  Failed to add training batch")
             return
         
         # Perform incremental update
@@ -248,29 +248,29 @@ class OnlineLearningDemo:
         update_result = self.incremental_learner.perform_incremental_update(force_update=True)
         
         if update_result and update_result.success:
-            self.logger.info(f"✅ Model update completed: {update_result.update_id}")
+            self.logger.info(f" Model update completed: {update_result.update_id}")
             self.logger.info(f"   Training time: {update_result.training_time_seconds:.2f}s")
             self.logger.info(f"   Samples used: {update_result.samples_used}")
             
             # Show performance changes
             perf_change = update_result.performance_change
-            self.logger.info("📊 Performance Changes:")
+            self.logger.info("Performance Changes:")
             for metric, change in perf_change.items():
                 direction = "↑" if change > 0 else "↓" if change < 0 else "→"
                 self.logger.info(f"   {metric}: {direction} {change:+.3f}")
         else:
-            self.logger.warning("⚠️  Model update failed")
+            self.logger.warning("  Model update failed")
         
         # Show learner statistics
         learner_stats = self.incremental_learner.get_update_statistics()
-        self.logger.info(f"📈 Learner Statistics: {learner_stats}")
+        self.logger.info(f" Learner Statistics: {learner_stats}")
         
         await asyncio.sleep(2)
     
     async def _demo_model_registry(self):
         """Demo 5: Model registry and versioning."""
         self.logger.info("\n" + "="*60)
-        self.logger.info("📦 DEMO 5: Model Registry")
+        self.logger.info("DEMO 5: Model Registry")
         self.logger.info("="*60)
         
         # Create demo model metadata
@@ -311,7 +311,7 @@ class OnlineLearningDemo:
         success = self.model_registry.register_model(demo_model, model_metadata)
         
         if success:
-            self.logger.info("✅ Model registered successfully")
+            self.logger.info("Model registered successfully")
             
             # Deploy to staging
             self.logger.info("Deploying model to staging...")
@@ -322,22 +322,22 @@ class OnlineLearningDemo:
             )
             
             if deployed:
-                self.logger.info("✅ Model deployed to staging")
+                self.logger.info("Model deployed to staging")
             else:
-                self.logger.warning("⚠️  Staging deployment failed")
+                self.logger.warning("  Staging deployment failed")
         else:
-            self.logger.warning("⚠️  Model registration failed")
+            self.logger.warning("  Model registration failed")
         
         # List models
         models = self.model_registry.list_models()
-        self.logger.info(f"📋 Registry contains {len(models)} models")
+        self.logger.info(f" Registry contains {len(models)} models")
         
         for model in models[:3]:  # Show first 3
             self.logger.info(f"   - {model.model_id} v{model.version} ({model.status.value})")
         
         # Show registry statistics
         registry_stats = self.model_registry.get_registry_statistics()
-        self.logger.info(f"📊 Registry Statistics: {registry_stats}")
+        self.logger.info(f" Registry Statistics: {registry_stats}")
         
         await asyncio.sleep(2)
     
@@ -360,12 +360,12 @@ class OnlineLearningDemo:
         )
         
         if experiment_id:
-            self.logger.info(f"✅ Created A/B test experiment: {experiment_id}")
+            self.logger.info(f" Created A/B test experiment: {experiment_id}")
             
             # Start the experiment
             started = self.ab_test_manager.start_experiment(experiment_id)
             if started:
-                self.logger.info("🚀 A/B test experiment started")
+                self.logger.info("A/B test experiment started")
                 
                 # Simulate some test traffic
                 self.logger.info("Simulating test traffic...")
@@ -398,7 +398,7 @@ class OnlineLearningDemo:
                 # Get experiment results
                 results = self.ab_test_manager.get_experiment_results(experiment_id)
                 if results:
-                    self.logger.info("📊 A/B Test Results:")
+                    self.logger.info("A/B Test Results:")
                     self.logger.info(f"   Status: {results['experiment_info']['status']}")
                     self.logger.info(f"   Sample Size: {results['experiment_info']['current_sample_size']}")
                     self.logger.info(f"   P-value: {results['statistical_results']['p_value']:.4f}")
@@ -409,24 +409,24 @@ class OnlineLearningDemo:
                         f1_score = variant_info['performance_metrics']['f1_score']
                         self.logger.info(f"   {variant_type}: F1={f1_score:.3f}")
             else:
-                self.logger.warning("⚠️  Failed to start A/B test experiment")
+                self.logger.warning("  Failed to start A/B test experiment")
         else:
-            self.logger.warning("⚠️  Failed to create A/B test experiment")
+            self.logger.warning("  Failed to create A/B test experiment")
         
         # Show A/B testing statistics
         ab_stats = self.ab_test_manager.get_ab_test_statistics()
-        self.logger.info(f"📈 A/B Testing Statistics: {ab_stats}")
+        self.logger.info(f" A/B Testing Statistics: {ab_stats}")
         
         await asyncio.sleep(2)
     
     async def _demo_system_integration(self):
         """Demo 7: Complete system integration."""
         self.logger.info("\n" + "="*60)
-        self.logger.info("🔗 DEMO 7: System Integration")
+        self.logger.info("DEMO 7: System Integration")
         self.logger.info("="*60)
         
         # Show system-wide statistics
-        self.logger.info("📊 System-wide Statistics:")
+        self.logger.info("System-wide Statistics:")
         
         # Feedback processing stats
         feedback_stats = self.feedback_processor.get_statistics()
@@ -449,7 +449,7 @@ class OnlineLearningDemo:
         self.logger.info(f"   A/B tests: {ab_stats.get('total_experiments', 0)}")
         
         # Demonstrate workflow integration
-        self.logger.info("\n🔄 Demonstrating workflow integration:")
+        self.logger.info("\n Demonstrating workflow integration:")
         self.logger.info("1. Feedback → Processing → Training Data")
         self.logger.info("2. Training Data → Model Update → Registry")
         self.logger.info("3. Registry → Deployment → A/B Testing")
@@ -528,7 +528,7 @@ async def main():
 
 if __name__ == "__main__":
     print("""
-    🚀 Stream-Sentinel Online Learning System Demo
+     Stream-Sentinel Online Learning System Demo
     ==============================================
     
     This demo showcases the complete online learning pipeline:

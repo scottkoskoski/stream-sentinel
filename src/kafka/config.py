@@ -367,13 +367,13 @@ if __name__ == "__main__":
         producer_config = config.get_producer_config("transaction")
         producer = Producer(producer_config)
 
-        print("✅ Confluent Kafka producer created successfully!")
+        print(" Confluent Kafka producer created successfully!")
         producer.flush()  # Clean shutdown
 
     except ImportError:
         print(
-            "⚠️  Confluent Kafka not installed - install with: pip install confluent-kafka"
+            "  Confluent Kafka not installed - install with: pip install confluent-kafka"
         )
     except Exception as e:
-        print(f"❌ Kafka connection failed: {e}")
+        print(f" Kafka connection failed: {e}")
         print("Make sure your Kafka cluster is running (docker-compose up -d)")

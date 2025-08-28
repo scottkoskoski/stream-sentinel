@@ -2,7 +2,7 @@
 
 Stream-Sentinel's infrastructure demonstrates production-grade distributed systems patterns using containerized services orchestrated through Docker Compose. This guide explains both the core technologies and the advanced online learning infrastructure that work together to create a resilient, adaptive fraud detection platform.
 
-## 🏗️ Enhanced Architecture Overview
+## Enhanced Architecture Overview
 
 ```
                          Enhanced Stream-Sentinel Infrastructure
@@ -178,7 +178,7 @@ Confluent Schema Registry provides a centralized repository for managing and val
 }
 ```
 
-## 🐳 Docker Compose Orchestration
+## Docker Compose Orchestration
 
 **Why Docker Compose?**
 Docker Compose allows us to define and run multi-container applications with a single configuration file. Perfect for development and testing of distributed systems.
@@ -210,7 +210,7 @@ services:
       - schema-registry  # UI shows both Kafka and Schema Registry data
 ```
 
-## 📊 Monitoring & Observability
+## Monitoring & Observability
 
 ### Kafka UI - Stream Processing Dashboard
 
@@ -259,7 +259,7 @@ Memory Usage:
 └── Persistence: AOF for crash recovery
 ```
 
-## 🔧 Configuration Management
+## Configuration Management
 
 ### Environment-Aware Configuration
 
@@ -313,7 +313,7 @@ appendonly yes                        # Enable AOF for durability
 auto-aof-rewrite-percentage 100       # Rewrite AOF when it doubles
 ```
 
-## 🔍 Health Monitoring & Diagnostics
+## Health Monitoring & Diagnostics
 
 ### Service Health Checks
 
@@ -362,7 +362,7 @@ redis-cli -h localhost -p 6379 info memory
 redis-cli -h localhost -p 6379 monitor
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites Verification
 
@@ -397,11 +397,11 @@ docker-compose logs redis
 python src/kafka/test_connectivity.py
 
 # Expected output:
-# ✅ All Kafka connectivity tests PASSED!
+# All Kafka connectivity tests PASSED!
 # Stream-Sentinel is ready for fraud detection pipeline development.
 ```
 
-## 📈 Performance Characteristics
+## Performance Characteristics
 
 ### Throughput Benchmarks
 

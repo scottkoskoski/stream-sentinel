@@ -4,7 +4,7 @@
 
 A production-grade distributed fraud detection system with **online learning capabilities** that demonstrates advanced stream processing, adaptive ML systems, and enterprise-grade software architecture. Built with Apache Kafka, Redis, and Python to showcase high-performance MLOps and modern financial technology patterns.
 
-## 🎯 Project Purpose
+## Project Purpose
 
 Stream-Sentinel serves as a comprehensive demonstration of:
 - **Advanced MLOps**: Production-grade online learning with drift detection and automated model updates
@@ -14,7 +14,7 @@ Stream-Sentinel serves as a comprehensive demonstration of:
 
 Built by a developer transitioning from analytics to software/ML engineering, this project showcases the evolution from static data analysis to adaptive, self-improving production systems.
 
-## 🚀 Key Features
+## Key Features
 
 ### Core Fraud Detection
 - **High-Throughput Processing**: 10k+ TPS sustained transaction processing
@@ -31,7 +31,7 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 - **Model Registry**: Semantic versioning with automated deployment and rollback
 - **Performance Monitoring**: Comprehensive metrics with degradation detection
 
-## 📊 Performance Metrics
+## Performance Metrics
 
 ### Core System Performance
 - **Processing Speed**: 10k+ transactions per second (validated)
@@ -46,7 +46,7 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 - **A/B Testing**: Handle 10k+ concurrent user assignments
 - **Feedback Processing**: 10k+ investigation records per hour
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
                     Enhanced Stream-Sentinel Architecture
@@ -90,7 +90,7 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 - **A/B Testing Framework**: Statistical model comparison with automated decisions
 - **Enhanced Fraud Detector**: Integrated ML predictions with online learning capabilities
 
-## 🚦 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -163,7 +163,7 @@ print('Fraud Detection Stats:', r.get('fraud_detector_stats'))
 "
 ```
 
-## 📋 System Requirements
+## System Requirements
 
 ### Minimum
 - 4 CPU cores
@@ -177,7 +177,7 @@ print('Fraud Detection Stats:', r.get('fraud_detector_stats'))
 - SSD storage
 - Load balancer
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -208,7 +208,7 @@ BATCH_SIZE = 1000
 MAX_POLL_RECORDS = 500
 ```
 
-## 📈 Monitoring
+## Monitoring
 
 ### Kafka UI (Port 8080)
 - Topic monitoring and message inspection
@@ -254,7 +254,7 @@ python scripts/benchmark_fraud_detection.py
 python -m memory_profiler src/consumers/fraud_detector.py
 ```
 
-## 📊 Data Analysis
+## Data Analysis
 
 The system includes comprehensive IEEE-CIS fraud dataset analysis:
 
@@ -272,7 +272,7 @@ cat data/processed/ieee_cis_analysis.json
 - Peak fraud at 8:00 AM (6.16% vs baseline)
 - Small transactions (<$10) show highest fraud rates (5.08%)
 
-## 🔍 Fraud Detection & Response Features
+## Fraud Detection & Response Features
 
 ### Multi-Factor Scoring
 - **Amount Analysis**: Transaction size vs user averages and thresholds
@@ -309,7 +309,7 @@ cat data/processed/ieee_cis_analysis.json
 }
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 stream-sentinel/
@@ -357,7 +357,7 @@ stream-sentinel/
 └── README.md                      # This file
 ```
 
-## 🛠️ Development
+## Development
 
 ### Code Style
 ```bash
@@ -389,7 +389,7 @@ export KAFKA_DEBUG=all
 redis-cli monitor
 ```
 
-## 🚀 Deployment
+## Deployment
 
 ### Docker Production
 ```bash
@@ -406,23 +406,23 @@ curl http://localhost:8001/health
 - Auto-scaling based on throughput
 - Multi-region deployment support
 
-## 🔒 Security
+## Security
 
 - **Data Encryption**: TLS for Kafka and Redis connections
 - **Authentication**: SASL/SCRAM for Kafka, AUTH for Redis
 - **Network Isolation**: Docker networks and firewall rules
 - **Secret Management**: Environment-based configuration
 
-## 📚 Documentation
+## Documentation
 
-### 🏗️ Architecture & Components
+### Architecture & Components
 - [Infrastructure Guide](docs/infrastructure/README.md) - Docker, Kafka, Redis setup and concepts
 - [Stream Processing](docs/stream-processing/README.md) - Kafka consumers, producers, and patterns
 - [State Management](docs/state-management/README.md) - Redis patterns and user profiling
 - [Machine Learning](docs/machine-learning/README.md) - Fraud detection models and feature engineering
 - **[Online Learning System](src/ml/online_learning/README.md) - Complete MLOps pipeline documentation**
 
-### 🔧 Implementation Guides
+### Implementation Guides
 - [Data Analysis Pipeline](docs/data-analysis/README.md) - IEEE-CIS analysis and synthetic generation
 - [Fraud Detection System](docs/fraud-detection/README.md) - Real-time processing and scoring
 - [Alert Response System](docs/alert-response/README.md) - Automated actions and notifications
@@ -434,12 +434,12 @@ curl http://localhost:8001/health
 - **Model Registry**: Semantic versioning with deployment lifecycle management
 - **A/B Testing**: Statistical model comparison with automated traffic routing
 
-### 📖 Learning Resources
+### Learning Resources
 - [Apache Kafka Fundamentals](docs/learning/kafka.md) - Distributed streaming concepts
 - [Redis for Stream Processing](docs/learning/redis.md) - State management patterns
 - [Distributed Systems Patterns](docs/learning/distributed-systems.md) - Production architecture
 
-### 🚀 Project Evolution
+### Project Evolution
 - [Development Journey](docs/project-logs/README.md) - Implementation phases and decisions
 - **[Online Learning Demo](scripts/online_learning_demo.py) - Comprehensive system demonstration**
 
@@ -451,11 +451,11 @@ curl http://localhost:8001/health
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open Pull Request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🏆 Performance Benchmarks
+## Performance Benchmarks
 
 | Metric | Current Achievement | Production Target |
 |--------|-------------------|-------------------|
@@ -468,16 +468,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 | Consumer Lag | <1s | <500ms |
 | Online Learning Accuracy | 85%+ AUC | 90%+ AUC |
 
-## 🎯 Current Status & Achievements
+## Current Status & Achievements
 
-### ✅ Completed (Phase 1-3: August 2025)
+### Completed (Phase 1-3: August 2025)
 - **Infrastructure**: Complete Kafka + Redis cluster with 6-service Docker setup
 - **Data Pipeline**: IEEE-CIS analysis, synthetic data generation, real-time processing
 - **ML Foundation**: LightGBM model with 83.6% test AUC, feature engineering pipeline
 - **Alert System**: Multi-tier classification with automated business actions
 - **Comprehensive Documentation**: 4,000+ lines covering theory and implementation
 
-### ✅ Phase 4: Online Learning System (August 2025)
+### Phase 4: Online Learning System (August 2025)
 - **Feedback Processing**: Multi-source validation with consensus algorithms
 - **Drift Detection**: Statistical monitoring (KS, PSI, Chi-square) with automated alerts
 - **Incremental Learning**: Real-time model updates with validation and rollback
@@ -485,7 +485,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **A/B Testing Framework**: Statistical model comparison with automated decisions
 - **System Orchestration**: Event-driven workflow coordination with health monitoring
 
-## 🔮 Future Roadmap
+## Future Roadmap
 
 ### Phase 5: Production Hardening (September-December 2025)
 - [ ] Prometheus metrics and Grafana dashboards for observability

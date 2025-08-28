@@ -2,7 +2,7 @@
 
 *This guide covers Stream-Sentinel's automated fraud response system, including alert processing, action classification, and business rule automation.*
 
-## 🎯 Coming Soon
+## Coming Soon
 
 This section will cover:
 
@@ -11,7 +11,7 @@ This section will cover:
 - **Business Rule Engine**: Automated decision making for fraud response
 - **Notification Systems**: Integration with external systems and APIs
 
-## 🔗 Current Implementation  
+## Current Implementation  
 
 The alert response system is implemented in:
 - **`src/consumers/alert_processor.py`** - Alert processing and action routing

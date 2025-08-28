@@ -2,7 +2,7 @@
 
 *This guide explains Stream-Sentinel's data analysis pipeline, from IEEE-CIS dataset exploration to synthetic transaction generation.*
 
-## 🎯 Coming Soon
+## Coming Soon
 
 This section will cover:
 
@@ -11,14 +11,14 @@ This section will cover:
 - **Data Quality**: Validation and consistency checking
 - **Performance Testing**: Load generation and system validation
 
-## 🔗 Current Implementation
+## Current Implementation
 
 The data analysis pipeline is currently implemented in:
 - **`src/data/analysis/ieee_cis_analyzer.py`** - Dataset analysis and statistics
 - **`src/producers/synthetic_transaction_producer.py`** - High-throughput data generation
 - **`data/processed/ieee_cis_analysis.json`** - Analysis results and patterns
 
-## 📊 Key Insights
+## Key Insights
 
 Current analysis reveals:
 - **590,540+ transactions** with 394 features analyzed

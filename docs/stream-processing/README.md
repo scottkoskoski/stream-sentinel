@@ -2,7 +2,7 @@
 
 Stream processing is the heart of Stream-Sentinel's real-time fraud detection capabilities. This guide explores how continuous data streams are processed, transformed, and analyzed to detect fraudulent transactions with sub-100ms latency.
 
-## 🌊 What is Stream Processing?
+## What is Stream Processing?
 
 Stream processing is a data processing paradigm that handles continuous, unbounded data streams in real-time. Unlike batch processing that works on fixed datasets, stream processing analyzes data as it flows through the system.
 
@@ -24,7 +24,7 @@ Data → Process → Results (continuous)
 - **Continuous Learning**: Update user behavior models in real-time
 - **Cost Efficiency**: Process only relevant data, not entire datasets
 
-## 🏗️ Stream Processing Architecture
+## Stream Processing Architecture
 
 ```
                     Stream Processing Pipeline
@@ -93,7 +93,7 @@ user_profile = {
 redis_client.hset(f"user:{user_id}", mapping=user_profile)
 ```
 
-## 🔄 Stream Processing Patterns
+## Stream Processing Patterns
 
 ### 1. Stateless Processing
 
@@ -372,7 +372,7 @@ class FeatureStore:
         pipe.execute()
 ```
 
-## 📊 Fraud Detection Scoring
+## Fraud Detection Scoring
 
 ### Real-time Scoring Pipeline
 
@@ -489,7 +489,7 @@ class EnsembleFraudScorer:
         }
 ```
 
-## ⚡ Performance Optimization
+## Performance Optimization
 
 ### Stream Processing Optimization
 
@@ -584,7 +584,7 @@ class MemoryEfficientProcessor:
             del self.user_profiles[user_id]
 ```
 
-## 🔍 Monitoring and Debugging
+## Monitoring and Debugging
 
 ### Stream Processing Metrics
 
@@ -690,7 +690,7 @@ class RobustStreamProcessor:
         )
 ```
 
-## 📚 Next Steps
+## Next Steps
 
 **Advanced Topics to Explore:**
 1. **Kafka Streams**: Higher-level stream processing library

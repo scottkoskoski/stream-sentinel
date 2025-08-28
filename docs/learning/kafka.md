@@ -2,7 +2,7 @@
 
 This guide provides a comprehensive introduction to Apache Kafka concepts through the lens of the Stream-Sentinel fraud detection system. Learn both the theory and practical application of distributed event streaming.
 
-## 🌟 What is Apache Kafka?
+## What is Apache Kafka?
 
 Apache Kafka is a distributed event streaming platform that can handle trillions of events per day. Think of it as a high-performance messaging system that acts as the "nervous system" of real-time applications.
 
@@ -207,7 +207,7 @@ Consumer 3: Processes partitions 6, 7, 8, 9, 10, 11
 - **Horizontal Scaling**: Add more consumers to handle higher throughput
 - **At-Least-Once Processing**: Messages are redelivered if processing fails
 
-## 🔧 Kafka in Stream-Sentinel
+## Kafka in Stream-Sentinel
 
 ### Topic Design for Fraud Detection
 
@@ -372,7 +372,7 @@ class BatchAnalyticsConsumer:
         self.consumer.commit()
 ```
 
-## 📊 Performance and Tuning
+## Performance and Tuning
 
 ### Understanding Kafka Performance
 
@@ -455,7 +455,7 @@ high_throughput_config = {
 }
 ```
 
-## 🔍 Troubleshooting Common Issues
+## Troubleshooting Common Issues
 
 ### Consumer Lag
 
@@ -510,7 +510,7 @@ kafka-consumer-groups --bootstrap-server localhost:9092 \
 # Ensure keys are evenly distributed across partitions
 ```
 
-## 🎯 Best Practices for Fraud Detection
+## Best Practices for Fraud Detection
 
 ### 1. Topic Design
 - Use user_id as partition key to maintain order per user
@@ -556,7 +556,7 @@ alerts = {
 }
 ```
 
-## 📚 Additional Resources
+## Additional Resources
 
 **Official Documentation:**
 - [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
