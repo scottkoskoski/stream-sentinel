@@ -740,7 +740,7 @@ class IEEEModelTrainer:
         
         return metrics
     
-    def train_gradient_boosting_models(self, n_trials: int = 50) -> Dict[str, Dict[str, Any]]:
+    def train_gradient_boosting_models(self, n_trials: int = 200) -> Dict[str, Dict[str, Any]]:
         """
         Train multiple gradient boosting models with hyperparameter tuning.
         
@@ -781,15 +781,15 @@ class IEEEModelTrainer:
         for model_name, objective_func in models_to_train:
             logger.info(f"Starting hyperparameter optimization for {model_name}...")
             
-            # Create Optuna study
+            # Create Optuna study with enhanced settings for comprehensive search
             study = optuna.create_study(
                 direction='maximize',
-                sampler=TPESampler(seed=42),
-                pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+                sampler=TPESampler(seed=42, n_startup_trials=20, n_ei_candidates=48),  # Enhanced TPE
+                pruner=MedianPruner(n_startup_trials=15, n_warmup_steps=25, interval_steps=5)  # More aggressive pruning
             )
             
-            # Optimize hyperparameters
-            study.optimize(objective_func, n_trials=n_trials, timeout=1800)  # 30 minutes max per model
+            # Optimize hyperparameters - extended time for comprehensive search
+            study.optimize(objective_func, n_trials=n_trials, timeout=7200)  # 2 hours max per model for thorough exploration
             
             # Save detailed hyperparameter results and analyze correlations
             convergence_stats = self._save_hyperparameter_results(study, model_name)
@@ -819,24 +819,58 @@ class IEEEModelTrainer:
         return results
     
     def _get_xgboost_objective_gpu(self, trial) -> float:
-        """Objective function for XGBoost GPU hyperparameter optimization."""
+        """Comprehensive XGBoost GPU hyperparameter optimization for maximum performance."""
         params = {
-            'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
+            # Core tree parameters
+            'n_estimators': trial.suggest_int('n_estimators', 500, 3000),  # Increased range for powerful GPU
+            'max_depth': trial.suggest_int('max_depth', 3, 15),  # Deeper trees for complex patterns
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),  # Lower minimum for stability
+            
+            # Advanced tree structure control
+            'min_child_weight': trial.suggest_float('min_child_weight', 0.1, 20),  # Critical for imbalanced data
+            'gamma': trial.suggest_float('gamma', 0, 10),  # Minimum loss reduction for splits
+            'max_delta_step': trial.suggest_float('max_delta_step', 0, 10),  # Important for extreme imbalance
+            
+            # Sampling parameters (comprehensive)
+            'subsample': trial.suggest_float('subsample', 0.4, 1.0),  # Row sampling
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.4, 1.0),  # Feature sampling per tree
+            'colsample_bylevel': trial.suggest_float('colsample_bylevel', 0.4, 1.0),  # Feature sampling per level
+            'colsample_bynode': trial.suggest_float('colsample_bynode', 0.4, 1.0),  # Feature sampling per node
+            
+            # Regularization (comprehensive)
+            'reg_alpha': trial.suggest_float('reg_alpha', 0, 50, log=True),  # L1 regularization
+            'reg_lambda': trial.suggest_float('reg_lambda', 0, 50, log=True),  # L2 regularization
+            
+            # Advanced parameters for fraud detection
+            'grow_policy': trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide']),
+            'max_leaves': trial.suggest_int('max_leaves', 0, 1000) if trial.params.get('grow_policy') == 'lossguide' else 0,
+            'max_bin': trial.suggest_int('max_bin', 128, 512),  # Histogram bins for GPU optimization
+            
+            # GPU-specific optimizations
             'tree_method': 'gpu_hist',
             'gpu_id': 0,
+            'single_precision_histogram': trial.suggest_categorical('single_precision_histogram', [True, False]),
+            
+            # Model behavior
             'random_state': 42,
             'eval_metric': 'auc',
-            'scale_pos_weight': (self.y_train == 0).sum() / (self.y_train == 1).sum()
+            'scale_pos_weight': (self.y_train == 0).sum() / (self.y_train == 1).sum(),
+            
+            # Advanced sampling for imbalanced data
+            'sampling_method': trial.suggest_categorical('sampling_method', ['uniform', 'gradient_based']),
+            'normalize_type': trial.suggest_categorical('normalize_type', ['tree', 'forest']),
+            'rate_drop': trial.suggest_float('rate_drop', 0.0, 0.5) if trial.suggest_categorical('booster_type', ['gbtree', 'dart']) == 'dart' else 0.0,
+            'skip_drop': trial.suggest_float('skip_drop', 0.0, 1.0) if trial.params.get('rate_drop', 0) > 0 else 0.0
         }
         
-        # Add early stopping to params in XGBoost 2.0+
-        params['early_stopping_rounds'] = 50
+        # Clean up conditional parameters
+        if params['grow_policy'] == 'depthwise':
+            params.pop('max_leaves')
+        if params.get('rate_drop', 0) == 0:
+            params.pop('skip_drop', None)
+        
+        # Advanced early stopping configuration
+        params['early_stopping_rounds'] = 100  # More patience for complex models
         model = xgb.XGBClassifier(**params)
         model.fit(
             self.X_train, self.y_train,
@@ -848,23 +882,57 @@ class IEEEModelTrainer:
         return roc_auc_score(self.y_val, y_val_pred_proba)
     
     def _get_xgboost_objective_cpu(self, trial) -> float:
-        """Objective function for XGBoost CPU hyperparameter optimization."""
+        """Comprehensive XGBoost CPU hyperparameter optimization for maximum performance."""
         params = {
-            'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
+            # Core tree parameters
+            'n_estimators': trial.suggest_int('n_estimators', 500, 3000),  # Increased range
+            'max_depth': trial.suggest_int('max_depth', 3, 15),  # Deeper trees for complex patterns
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),  # Lower minimum
+            
+            # Advanced tree structure control
+            'min_child_weight': trial.suggest_float('min_child_weight', 0.1, 20),  # Critical for imbalanced data
+            'gamma': trial.suggest_float('gamma', 0, 10),  # Minimum loss reduction
+            'max_delta_step': trial.suggest_float('max_delta_step', 0, 10),  # Important for extreme imbalance
+            
+            # Comprehensive sampling parameters
+            'subsample': trial.suggest_float('subsample', 0.4, 1.0),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.4, 1.0),
+            'colsample_bylevel': trial.suggest_float('colsample_bylevel', 0.4, 1.0),
+            'colsample_bynode': trial.suggest_float('colsample_bynode', 0.4, 1.0),
+            
+            # Advanced regularization
+            'reg_alpha': trial.suggest_float('reg_alpha', 0, 50, log=True),  # L1 regularization
+            'reg_lambda': trial.suggest_float('reg_lambda', 0, 50, log=True),  # L2 regularization
+            
+            # Advanced tree growing strategies
+            'grow_policy': trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide']),
+            'max_leaves': trial.suggest_int('max_leaves', 0, 1000) if trial.params.get('grow_policy') == 'lossguide' else 0,
+            'max_bin': trial.suggest_int('max_bin', 128, 512),
+            
+            # CPU optimization
             'n_jobs': -1,
+            'tree_method': trial.suggest_categorical('tree_method', ['hist', 'auto']),
+            
+            # Model behavior
             'random_state': 42,
             'eval_metric': 'auc',
-            'scale_pos_weight': (self.y_train == 0).sum() / (self.y_train == 1).sum()
+            'scale_pos_weight': (self.y_train == 0).sum() / (self.y_train == 1).sum(),
+            
+            # Advanced sampling for imbalanced data
+            'sampling_method': trial.suggest_categorical('sampling_method', ['uniform', 'gradient_based']),
+            'normalize_type': trial.suggest_categorical('normalize_type', ['tree', 'forest']),
+            'rate_drop': trial.suggest_float('rate_drop', 0.0, 0.5) if trial.suggest_categorical('booster_type', ['gbtree', 'dart']) == 'dart' else 0.0,
+            'skip_drop': trial.suggest_float('skip_drop', 0.0, 1.0) if trial.params.get('rate_drop', 0) > 0 else 0.0
         }
         
-        # Add early stopping to params in XGBoost 2.0+
-        params['early_stopping_rounds'] = 50
+        # Clean up conditional parameters
+        if params['grow_policy'] == 'depthwise':
+            params.pop('max_leaves')
+        if params.get('rate_drop', 0) == 0:
+            params.pop('skip_drop', None)
+        
+        # Advanced early stopping
+        params['early_stopping_rounds'] = 100
         model = xgb.XGBClassifier(**params)
         model.fit(
             self.X_train, self.y_train,
@@ -876,79 +944,227 @@ class IEEEModelTrainer:
         return roc_auc_score(self.y_val, y_val_pred_proba)
     
     def _get_lightgbm_objective_gpu(self, trial) -> float:
-        """Objective function for LightGBM GPU hyperparameter optimization."""
+        """Comprehensive LightGBM GPU hyperparameter optimization for maximum performance."""
         params = {
-            'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
-            'num_leaves': trial.suggest_int('num_leaves', 10, 300),
+            # Core tree parameters  
+            'n_estimators': trial.suggest_int('n_estimators', 500, 5000),  # Higher range for GPU power
+            'max_depth': trial.suggest_int('max_depth', 3, 20),  # Deeper trees
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
+            
+            # LightGBM-specific leaf control (critical parameter)
+            'num_leaves': trial.suggest_int('num_leaves', 10, 2048),  # Much wider range
+            'min_child_samples': trial.suggest_int('min_child_samples', 5, 200),  # Overfitting control
+            'min_child_weight': trial.suggest_float('min_child_weight', 0.001, 20),
+            'min_split_gain': trial.suggest_float('min_split_gain', 0.0, 10.0),  # Minimum gain for splits
+            
+            # Advanced sampling parameters
+            'subsample': trial.suggest_float('subsample', 0.3, 1.0),  # Bagging fraction 
+            'bagging_freq': trial.suggest_int('bagging_freq', 0, 10),  # Bagging frequency
+            'feature_fraction': trial.suggest_float('feature_fraction', 0.3, 1.0),  # Feature sampling
+            'feature_fraction_bynode': trial.suggest_float('feature_fraction_bynode', 0.3, 1.0),  # Per-node sampling
+            
+            # Comprehensive regularization
+            'reg_alpha': trial.suggest_float('reg_alpha', 0, 100, log=True),  # L1
+            'reg_lambda': trial.suggest_float('reg_lambda', 0, 100, log=True),  # L2
+            'lambda_l1': trial.suggest_float('lambda_l1', 0, 100, log=True),  # Alternative L1
+            'lambda_l2': trial.suggest_float('lambda_l2', 0, 100, log=True),  # Alternative L2
+            
+            # Advanced tree growing
+            'max_bin': trial.suggest_int('max_bin', 63, 512),  # Histogram bins
+            'min_data_in_bin': trial.suggest_int('min_data_in_bin', 1, 50),
+            
+            # LightGBM advanced features
+            'path_smooth': trial.suggest_float('path_smooth', 0.0, 1.0),  # Path smoothing
+            'extra_trees': trial.suggest_categorical('extra_trees', [True, False]),  # Extremely randomized trees
+            'extra_seed': trial.suggest_int('extra_seed', 0, 10000) if trial.params.get('extra_trees') else 0,
+            
+            # Categorical feature handling (important for fraud detection)
+            'cat_smooth': trial.suggest_float('cat_smooth', 1.0, 100.0),
+            'cat_l2': trial.suggest_float('cat_l2', 1.0, 100.0),
+            'max_cat_threshold': trial.suggest_int('max_cat_threshold', 16, 128),
+            
+            # GPU-specific optimizations
             'device': 'gpu',
+            'gpu_use_dp': trial.suggest_categorical('gpu_use_dp', [True, False]),  # Double precision
+            'max_gpu_memory': -1,  # Use all GPU memory
+            
+            # Model behavior
             'random_state': 42,
             'metric': 'auc',
-            'is_unbalance': True
+            'is_unbalance': True,  # Handle class imbalance
+            'boost_from_average': trial.suggest_categorical('boost_from_average', [True, False]),
+            
+            # Advanced optimization
+            'force_col_wise': trial.suggest_categorical('force_col_wise', [True, False]),
+            'force_row_wise': trial.suggest_categorical('force_row_wise', [True, False]),
+            'histogram_pool_size': trial.suggest_int('histogram_pool_size', -1, 512)
         }
+        
+        # Clean up conflicting parameters
+        if params['extra_trees'] is False:
+            params.pop('extra_seed', None)
+        if params['force_col_wise'] and params['force_row_wise']:
+            params['force_row_wise'] = False  # Prioritize column-wise for GPU
         
         model = lgb.LGBMClassifier(**params)
         model.fit(
             self.X_train, self.y_train,
             eval_set=[(self.X_val, self.y_val)],
-            callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
+            callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)]  # More patience
         )
         
         y_val_pred_proba = model.predict_proba(self.X_val)[:, 1]
         return roc_auc_score(self.y_val, y_val_pred_proba)
     
     def _get_lightgbm_objective_cpu(self, trial) -> float:
-        """Objective function for LightGBM CPU hyperparameter optimization."""
+        """Comprehensive LightGBM CPU hyperparameter optimization for maximum performance."""
         params = {
-            'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-            'max_depth': trial.suggest_int('max_depth', 3, 10),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-            'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
-            'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
-            'num_leaves': trial.suggest_int('num_leaves', 10, 300),
+            # Core tree parameters
+            'n_estimators': trial.suggest_int('n_estimators', 500, 5000),  # Higher range
+            'max_depth': trial.suggest_int('max_depth', 3, 20),  # Deeper trees
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
+            
+            # LightGBM-specific leaf control
+            'num_leaves': trial.suggest_int('num_leaves', 10, 2048),
+            'min_child_samples': trial.suggest_int('min_child_samples', 5, 200),
+            'min_child_weight': trial.suggest_float('min_child_weight', 0.001, 20),
+            'min_split_gain': trial.suggest_float('min_split_gain', 0.0, 10.0),
+            
+            # Advanced sampling parameters
+            'subsample': trial.suggest_float('subsample', 0.3, 1.0),
+            'bagging_freq': trial.suggest_int('bagging_freq', 0, 10),
+            'feature_fraction': trial.suggest_float('feature_fraction', 0.3, 1.0),
+            'feature_fraction_bynode': trial.suggest_float('feature_fraction_bynode', 0.3, 1.0),
+            
+            # Comprehensive regularization
+            'reg_alpha': trial.suggest_float('reg_alpha', 0, 100, log=True),
+            'reg_lambda': trial.suggest_float('reg_lambda', 0, 100, log=True),
+            'lambda_l1': trial.suggest_float('lambda_l1', 0, 100, log=True),
+            'lambda_l2': trial.suggest_float('lambda_l2', 0, 100, log=True),
+            
+            # Advanced tree growing
+            'max_bin': trial.suggest_int('max_bin', 63, 512),
+            'min_data_in_bin': trial.suggest_int('min_data_in_bin', 1, 50),
+            
+            # LightGBM advanced features
+            'path_smooth': trial.suggest_float('path_smooth', 0.0, 1.0),
+            'extra_trees': trial.suggest_categorical('extra_trees', [True, False]),
+            'extra_seed': trial.suggest_int('extra_seed', 0, 10000) if trial.params.get('extra_trees') else 0,
+            
+            # Categorical feature handling
+            'cat_smooth': trial.suggest_float('cat_smooth', 1.0, 100.0),
+            'cat_l2': trial.suggest_float('cat_l2', 1.0, 100.0),
+            'max_cat_threshold': trial.suggest_int('max_cat_threshold', 16, 128),
+            
+            # CPU optimization
             'n_jobs': -1,
+            'device': 'cpu',
+            
+            # Model behavior
             'random_state': 42,
             'metric': 'auc',
-            'is_unbalance': True
+            'is_unbalance': True,
+            'boost_from_average': trial.suggest_categorical('boost_from_average', [True, False]),
+            
+            # Advanced optimization
+            'force_col_wise': trial.suggest_categorical('force_col_wise', [True, False]),
+            'force_row_wise': trial.suggest_categorical('force_row_wise', [True, False]),
+            'histogram_pool_size': trial.suggest_int('histogram_pool_size', -1, 512)
         }
+        
+        # Clean up conflicting parameters
+        if params['extra_trees'] is False:
+            params.pop('extra_seed', None)
+        if params['force_col_wise'] and params['force_row_wise']:
+            params['force_row_wise'] = False
         
         model = lgb.LGBMClassifier(**params)
         model.fit(
             self.X_train, self.y_train,
             eval_set=[(self.X_val, self.y_val)],
-            callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
+            callbacks=[lgb.early_stopping(100), lgb.log_evaluation(0)]
         )
         
         y_val_pred_proba = model.predict_proba(self.X_val)[:, 1]
         return roc_auc_score(self.y_val, y_val_pred_proba)
     
     def _get_catboost_objective_gpu(self, trial) -> float:
-        """Objective function for CatBoost GPU hyperparameter optimization."""
+        """Comprehensive CatBoost GPU hyperparameter optimization for maximum performance."""
         params = {
-            'iterations': trial.suggest_int('iterations', 100, 1000),
-            'depth': trial.suggest_int('depth', 4, 10),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 1, 10),
-            'border_count': trial.suggest_int('border_count', 32, 255),
+            # Core parameters
+            'iterations': trial.suggest_int('iterations', 1000, 8000),  # Higher range for GPU power
+            'depth': trial.suggest_int('depth', 4, 16),  # Deeper trees
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
+            
+            # Advanced regularization
+            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 0.1, 100, log=True),  # L2 regularization
+            'reg_lambda': trial.suggest_float('reg_lambda', 0.1, 100, log=True),  # Alternative L2
+            'model_shrink_rate': trial.suggest_float('model_shrink_rate', 0.0, 1.0),  # Model shrinkage
+            
+            # Tree structure control
+            'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 1, 100),  # Minimum samples per leaf
+            'max_leaves': trial.suggest_int('max_leaves', 16, 2048),  # Maximum leaves
+            'grow_policy': trial.suggest_categorical('grow_policy', ['SymmetricTree', 'Depthwise', 'Lossguide']),
+            
+            # Feature handling
+            'border_count': trial.suggest_int('border_count', 32, 1024),  # Feature discretization
+            'feature_border_type': trial.suggest_categorical('feature_border_type', ['Median', 'Uniform', 'UniformAndQuantiles', 'MaxLogSum', 'MinEntropy', 'GreedyLogSum']),
+            
+            # Advanced sampling
+            'subsample': trial.suggest_float('subsample', 0.4, 1.0),  # Row sampling
+            'rsm': trial.suggest_float('rsm', 0.4, 1.0),  # Feature sampling (Random Subspace Method)
+            'sampling_frequency': trial.suggest_categorical('sampling_frequency', ['PerTree', 'PerTreeLevel']),
+            'sampling_unit': trial.suggest_categorical('sampling_unit', ['Object', 'Group']),
+            
+            # Categorical features (crucial for fraud detection)
+            'one_hot_max_size': trial.suggest_int('one_hot_max_size', 2, 255),  # One-hot encoding threshold
+            'max_ctr_complexity': trial.suggest_int('max_ctr_complexity', 1, 6),  # CTR complexity
+            'simple_ctr': trial.suggest_categorical('simple_ctr', [['Borders'], ['BinarizedTargetMeanValue'], ['Counter']]),
+            
+            # Advanced tree features
+            'random_strength': trial.suggest_float('random_strength', 0.0, 10.0),  # Tree randomness
+            'bagging_temperature': trial.suggest_float('bagging_temperature', 0.0, 10.0),  # Bootstrap intensity
+            'leaf_estimation_method': trial.suggest_categorical('leaf_estimation_method', ['Newton', 'Gradient']),
+            'leaf_estimation_iterations': trial.suggest_int('leaf_estimation_iterations', 1, 20),
+            'leaf_estimation_backtracking': trial.suggest_categorical('leaf_estimation_backtracking', ['No', 'AnyImprovement', 'Armijo']),
+            
+            # Model scoring and loss
+            'score_function': trial.suggest_categorical('score_function', ['Cosine', 'L2', 'NewtonCosine', 'NewtonL2']),
+            'bootstrap_type': trial.suggest_categorical('bootstrap_type', ['Bayesian', 'Bernoulli', 'MVS', 'Poisson', 'No']),
+            
+            # GPU-specific optimizations
             'task_type': 'GPU',
+            'devices': '0',  # Use first GPU
+            'gpu_cat_features_storage': trial.suggest_categorical('gpu_cat_features_storage', ['CpuPinnedMemory', 'GpuRam']),
+            'gpu_ram_part': trial.suggest_float('gpu_ram_part', 0.5, 0.99),  # GPU memory usage
+            
+            # Model behavior
             'random_state': 42,
             'eval_metric': 'AUC',
-            'auto_class_weights': 'Balanced',
-            'verbose': False
+            'auto_class_weights': 'Balanced',  # Handle imbalanced classes
+            'verbose': False,
+            'allow_const_label': True,
+            
+            # Advanced features for imbalanced data
+            'class_weights': [1, (self.y_train == 0).sum() / (self.y_train == 1).sum()],  # Custom class weights
+            'posterior_sampling': trial.suggest_categorical('posterior_sampling', [True, False]),
+            'boost_from_average': trial.suggest_categorical('boost_from_average', [True, False])
         }
+        
+        # Handle bootstrap-specific parameters
+        if params['bootstrap_type'] == 'Bayesian':
+            params['bagging_temperature'] = trial.suggest_float('bagging_temperature_bayesian', 0.0, 10.0)
+        elif params['bootstrap_type'] == 'Bernoulli':
+            params['subsample'] = trial.suggest_float('subsample_bernoulli', 0.1, 1.0)
+        elif params['bootstrap_type'] == 'Poisson':
+            # Poisson bootstrap doesn't need additional parameters
+            pass
         
         model = cb.CatBoostClassifier(**params)
         model.fit(
             self.X_train, self.y_train,
             eval_set=(self.X_val, self.y_val),
-            early_stopping_rounds=50,
+            early_stopping_rounds=100,  # More patience for complex models
             verbose=False
         )
         
@@ -956,25 +1172,79 @@ class IEEEModelTrainer:
         return roc_auc_score(self.y_val, y_val_pred_proba)
     
     def _get_catboost_objective_cpu(self, trial) -> float:
-        """Objective function for CatBoost CPU hyperparameter optimization."""
+        """Comprehensive CatBoost CPU hyperparameter optimization for maximum performance."""
         params = {
-            'iterations': trial.suggest_int('iterations', 100, 1000),
-            'depth': trial.suggest_int('depth', 4, 10),
-            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 1, 10),
-            'border_count': trial.suggest_int('border_count', 32, 255),
+            # Core parameters
+            'iterations': trial.suggest_int('iterations', 1000, 8000),  # Higher range
+            'depth': trial.suggest_int('depth', 4, 16),  # Deeper trees
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
+            
+            # Advanced regularization
+            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 0.1, 100, log=True),
+            'reg_lambda': trial.suggest_float('reg_lambda', 0.1, 100, log=True),
+            'model_shrink_rate': trial.suggest_float('model_shrink_rate', 0.0, 1.0),
+            
+            # Tree structure control
+            'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 1, 100),
+            'max_leaves': trial.suggest_int('max_leaves', 16, 2048),
+            'grow_policy': trial.suggest_categorical('grow_policy', ['SymmetricTree', 'Depthwise', 'Lossguide']),
+            
+            # Feature handling
+            'border_count': trial.suggest_int('border_count', 32, 1024),
+            'feature_border_type': trial.suggest_categorical('feature_border_type', ['Median', 'Uniform', 'UniformAndQuantiles', 'MaxLogSum', 'MinEntropy', 'GreedyLogSum']),
+            
+            # Advanced sampling
+            'subsample': trial.suggest_float('subsample', 0.4, 1.0),
+            'rsm': trial.suggest_float('rsm', 0.4, 1.0),
+            'sampling_frequency': trial.suggest_categorical('sampling_frequency', ['PerTree', 'PerTreeLevel']),
+            'sampling_unit': trial.suggest_categorical('sampling_unit', ['Object', 'Group']),
+            
+            # Categorical features
+            'one_hot_max_size': trial.suggest_int('one_hot_max_size', 2, 255),
+            'max_ctr_complexity': trial.suggest_int('max_ctr_complexity', 1, 6),
+            'simple_ctr': trial.suggest_categorical('simple_ctr', [['Borders'], ['BinarizedTargetMeanValue'], ['Counter']]),
+            
+            # Advanced tree features
+            'random_strength': trial.suggest_float('random_strength', 0.0, 10.0),
+            'bagging_temperature': trial.suggest_float('bagging_temperature', 0.0, 10.0),
+            'leaf_estimation_method': trial.suggest_categorical('leaf_estimation_method', ['Newton', 'Gradient']),
+            'leaf_estimation_iterations': trial.suggest_int('leaf_estimation_iterations', 1, 20),
+            'leaf_estimation_backtracking': trial.suggest_categorical('leaf_estimation_backtracking', ['No', 'AnyImprovement', 'Armijo']),
+            
+            # Model scoring and loss
+            'score_function': trial.suggest_categorical('score_function', ['Cosine', 'L2', 'NewtonCosine', 'NewtonL2']),
+            'bootstrap_type': trial.suggest_categorical('bootstrap_type', ['Bayesian', 'Bernoulli', 'MVS', 'Poisson', 'No']),
+            
+            # CPU optimization
             'thread_count': -1,
+            'task_type': 'CPU',
+            
+            # Model behavior
             'random_state': 42,
             'eval_metric': 'AUC',
             'auto_class_weights': 'Balanced',
-            'verbose': False
+            'verbose': False,
+            'allow_const_label': True,
+            
+            # Advanced features for imbalanced data
+            'class_weights': [1, (self.y_train == 0).sum() / (self.y_train == 1).sum()],
+            'posterior_sampling': trial.suggest_categorical('posterior_sampling', [True, False]),
+            'boost_from_average': trial.suggest_categorical('boost_from_average', [True, False])
         }
+        
+        # Handle bootstrap-specific parameters
+        if params['bootstrap_type'] == 'Bayesian':
+            params['bagging_temperature'] = trial.suggest_float('bagging_temperature_bayesian', 0.0, 10.0)
+        elif params['bootstrap_type'] == 'Bernoulli':
+            params['subsample'] = trial.suggest_float('subsample_bernoulli', 0.1, 1.0)
+        elif params['bootstrap_type'] == 'Poisson':
+            pass
         
         model = cb.CatBoostClassifier(**params)
         model.fit(
             self.X_train, self.y_train,
             eval_set=(self.X_val, self.y_val),
-            early_stopping_rounds=50,
+            early_stopping_rounds=100,
             verbose=False
         )
         
