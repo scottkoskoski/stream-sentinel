@@ -52,6 +52,7 @@ except ImportError:
 import optuna
 from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner
+from optuna.visualization import plot_optimization_history, plot_param_importances, plot_slice
 
 # GPU acceleration
 try:
@@ -159,6 +160,322 @@ class IEEEModelTrainer:
             pass
             
         return gpu_info
+    
+    def _save_hyperparameter_results(self, study: optuna.Study, model_name: str):
+        """
+        Save detailed hyperparameter optimization results and visualizations.
+        
+        Args:
+            study: Completed Optuna study
+            model_name: Name of the model being optimized
+        """
+        logger.info(f"Saving detailed hyperparameter results for {model_name}...")
+        
+        # Create hyperparameter results directory
+        hp_results_dir = self.models_path / "hyperparameter_results"
+        hp_results_dir.mkdir(exist_ok=True)
+        
+        model_results_dir = hp_results_dir / model_name
+        model_results_dir.mkdir(exist_ok=True)
+        
+        # 1. Save all trial history
+        trials_data = []
+        pruned_trials = 0
+        for trial in study.trials:
+            trial_data = {
+                'number': trial.number,
+                'value': trial.value,
+                'params': trial.params,
+                'state': trial.state.name,
+                'datetime_start': trial.datetime_start.isoformat() if trial.datetime_start else None,
+                'datetime_complete': trial.datetime_complete.isoformat() if trial.datetime_complete else None,
+                'duration': trial.duration.total_seconds() if trial.duration else None
+            }
+            trials_data.append(trial_data)
+            
+            if trial.state == optuna.trial.TrialState.PRUNED:
+                pruned_trials += 1
+        
+        # Save trials to JSON
+        trials_file = model_results_dir / f"{model_name}_trials_history.json"
+        with open(trials_file, 'w') as f:
+            json.dump(trials_data, f, indent=2)
+        
+        # 2. Calculate and save parameter importance
+        try:
+            param_importance = optuna.importance.get_param_importances(study)
+            importance_file = model_results_dir / f"{model_name}_param_importance.json"
+            with open(importance_file, 'w') as f:
+                json.dump(param_importance, f, indent=2)
+            
+            logger.info(f"Parameter importance for {model_name}:")
+            for param, importance in sorted(param_importance.items(), key=lambda x: x[1], reverse=True):
+                logger.info(f"  {param}: {importance:.4f}")
+        except Exception as e:
+            logger.warning(f"Could not calculate parameter importance: {e}")
+        
+        # 3. Save convergence and pruning statistics
+        convergence_stats = {
+            'best_value': study.best_value,
+            'best_params': study.best_params,
+            'best_trial_number': study.best_trial.number,
+            'n_trials': len(study.trials),
+            'n_complete_trials': len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]),
+            'n_pruned_trials': pruned_trials,
+            'n_failed_trials': len([t for t in study.trials if t.state == optuna.trial.TrialState.FAIL]),
+            'pruning_rate': pruned_trials / len(study.trials) if study.trials else 0,
+            'study_direction': study.direction.name
+        }
+        
+        convergence_file = model_results_dir / f"{model_name}_convergence_stats.json"
+        with open(convergence_file, 'w') as f:
+            json.dump(convergence_stats, f, indent=2)
+        
+        # 4. Generate and save visualizations
+        try:
+            # Optimization history plot
+            fig1 = plot_optimization_history(study)
+            fig1.write_html(str(model_results_dir / f"{model_name}_optimization_history.html"))
+            
+            # Parameter importance plot
+            if len(study.trials) > 10:  # Need sufficient trials for importance
+                fig2 = plot_param_importances(study)
+                fig2.write_html(str(model_results_dir / f"{model_name}_param_importance.html"))
+            
+            # Parameter slice plots (for top 3 most important parameters)
+            if param_importance:
+                top_params = sorted(param_importance.items(), key=lambda x: x[1], reverse=True)[:3]
+                for param_name, _ in top_params:
+                    try:
+                        fig3 = plot_slice(study, params=[param_name])
+                        fig3.write_html(str(model_results_dir / f"{model_name}_slice_{param_name}.html"))
+                    except Exception as e:
+                        logger.warning(f"Could not create slice plot for {param_name}: {e}")
+                        
+        except Exception as e:
+            logger.warning(f"Could not generate visualizations: {e}")
+        
+        # 5. Log detailed statistics
+        logger.info(f"Hyperparameter optimization summary for {model_name}:")
+        logger.info(f"  Best AUC: {study.best_value:.4f}")
+        logger.info(f"  Total trials: {len(study.trials)}")
+        logger.info(f"  Completed trials: {convergence_stats['n_complete_trials']}")
+        logger.info(f"  Pruned trials: {pruned_trials} ({convergence_stats['pruning_rate']:.1%})")
+        logger.info(f"  Failed trials: {convergence_stats['n_failed_trials']}")
+        logger.info(f"  Results saved to: {model_results_dir}")
+        
+        return convergence_stats
+    
+    def _analyze_hyperparameter_correlations(self, study: optuna.Study, model_name: str):
+        """
+        Analyze correlations between hyperparameters and performance.
+        
+        Args:
+            study: Completed Optuna study
+            model_name: Name of the model being analyzed
+        """
+        if len(study.trials) < 10:  # Need sufficient trials for correlation analysis
+            logger.warning(f"Insufficient trials ({len(study.trials)}) for correlation analysis")
+            return
+        
+        logger.info(f"Analyzing hyperparameter correlations for {model_name}...")
+        
+        # Extract completed trials data
+        completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        if len(completed_trials) < 5:
+            logger.warning("Insufficient completed trials for correlation analysis")
+            return
+        
+        # Create correlation matrix data
+        correlation_data = []
+        param_names = list(completed_trials[0].params.keys())
+        
+        for trial in completed_trials:
+            row_data = {}
+            for param in param_names:
+                row_data[param] = trial.params[param]
+            row_data['objective_value'] = trial.value
+            correlation_data.append(row_data)
+        
+        # Convert to DataFrame for correlation analysis
+        correlation_df = pd.DataFrame(correlation_data)
+        
+        # Calculate correlation matrix
+        correlation_matrix = correlation_df.corr()
+        
+        # Extract correlations with objective value
+        objective_correlations = correlation_matrix['objective_value'].drop('objective_value')
+        objective_correlations = objective_correlations.sort_values(key=abs, ascending=False)
+        
+        # Log correlation results
+        logger.info(f"Hyperparameter correlations with AUC for {model_name}:")
+        for param, corr in objective_correlations.items():
+            correlation_strength = "strong" if abs(corr) > 0.5 else "moderate" if abs(corr) > 0.3 else "weak"
+            logger.info(f"  {param}: {corr:.4f} ({correlation_strength})")
+        
+        # Save correlation results
+        hp_results_dir = self.models_path / "hyperparameter_results" / model_name
+        correlation_file = hp_results_dir / f"{model_name}_correlations.json"
+        
+        correlation_results = {
+            'objective_correlations': objective_correlations.to_dict(),
+            'full_correlation_matrix': correlation_matrix.to_dict(),
+            'analysis_summary': {
+                'n_trials_analyzed': len(completed_trials),
+                'strongest_positive_correlation': objective_correlations.idxmax(),
+                'strongest_negative_correlation': objective_correlations.idxmin(),
+                'max_positive_correlation': float(objective_correlations.max()),
+                'max_negative_correlation': float(objective_correlations.min())
+            }
+        }
+        
+        with open(correlation_file, 'w') as f:
+            json.dump(correlation_results, f, indent=2)
+        
+        # Create correlation heatmap if matplotlib/seaborn available
+        try:
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0, 
+                       square=True, fmt='.3f')
+            plt.title(f'Hyperparameter Correlation Matrix - {model_name}')
+            plt.tight_layout()
+            
+            heatmap_file = hp_results_dir / f"{model_name}_correlation_heatmap.png"
+            plt.savefig(heatmap_file, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            logger.info(f"Correlation heatmap saved to: {heatmap_file}")
+        except Exception as e:
+            logger.warning(f"Could not create correlation heatmap: {e}")
+        
+        return correlation_results
+    
+    def _save_training_summary_report(self):
+        """
+        Generate and save a comprehensive training summary report.
+        """
+        logger.info("Generating comprehensive training summary report...")
+        
+        # Create summary report directory
+        summary_dir = self.models_path / "training_summary"
+        summary_dir.mkdir(exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_file = summary_dir / f"training_report_{timestamp}.json"
+        
+        # Compile comprehensive training report
+        training_report = {
+            'report_metadata': {
+                'generated_at': datetime.now().isoformat(),
+                'training_data_size': len(self.X_train) + len(self.X_val) + len(self.X_test) if self.X_train is not None else 'Unknown',
+                'feature_count': len(self.feature_names) if self.feature_names else 'Unknown',
+                'gpu_capabilities': self.gpu_available
+            },
+            'data_splits': {
+                'train_size': len(self.X_train) if self.X_train is not None else 0,
+                'validation_size': len(self.X_val) if self.X_val is not None else 0,
+                'test_size': len(self.X_test) if self.X_test is not None else 0,
+                'train_fraud_rate': float(self.y_train.mean()) if self.y_train is not None else 0,
+                'val_fraud_rate': float(self.y_val.mean()) if self.y_val is not None else 0,
+                'test_fraud_rate': float(self.y_test.mean()) if self.y_test is not None else 0
+            },
+            'model_results': {},
+            'best_model': {
+                'name': None,
+                'auc_score': 0.0,
+                'parameters': {},
+                'training_time': 0.0
+            },
+            'training_efficiency': {
+                'total_training_time': 0.0,
+                'total_trials': 0,
+                'total_pruned_trials': 0,
+                'average_pruning_rate': 0.0
+            }
+        }
+        
+        # Populate model results
+        total_training_time = 0.0
+        total_trials = 0
+        total_pruned_trials = 0
+        best_auc = 0.0
+        best_model_name = None
+        
+        for model_name, metrics in self.model_scores.items():
+            if '_final' in model_name:  # Skip final training results
+                continue
+                
+            training_report['model_results'][model_name] = {
+                'performance': {
+                    'validation_auc': metrics.get('val_auc', 0),
+                    'validation_precision': metrics.get('val_precision', 0),
+                    'validation_recall': metrics.get('val_recall', 0),
+                    'validation_f1': metrics.get('val_f1', 0),
+                    'validation_average_precision': metrics.get('val_average_precision', 0)
+                },
+                'training_details': {
+                    'training_time_seconds': metrics.get('training_time', 0),
+                    'gpu_accelerated': metrics.get('gpu_accelerated', False),
+                    'n_trials': metrics.get('n_trials', 0),
+                    'best_parameters': metrics.get('best_params', {})
+                },
+                'optimization_stats': metrics.get('convergence_stats', {})
+            }
+            
+            # Update totals
+            total_training_time += metrics.get('training_time', 0)
+            total_trials += metrics.get('n_trials', 0)
+            convergence_stats = metrics.get('convergence_stats', {})
+            total_pruned_trials += convergence_stats.get('n_pruned_trials', 0)
+            
+            # Track best model
+            current_auc = metrics.get('val_auc', 0)
+            if current_auc > best_auc:
+                best_auc = current_auc
+                best_model_name = model_name
+        
+        # Update best model info
+        if best_model_name:
+            best_metrics = self.model_scores[best_model_name]
+            training_report['best_model'] = {
+                'name': best_model_name,
+                'auc_score': best_auc,
+                'parameters': best_metrics.get('best_params', {}),
+                'training_time': best_metrics.get('training_time', 0),
+                'optimization_efficiency': {
+                    'trials_used': best_metrics.get('n_trials', 0),
+                    'pruning_rate': best_metrics.get('convergence_stats', {}).get('pruning_rate', 0)
+                }
+            }
+        
+        # Update training efficiency
+        training_report['training_efficiency'] = {
+            'total_training_time': total_training_time,
+            'total_trials': total_trials,
+            'total_pruned_trials': total_pruned_trials,
+            'average_pruning_rate': total_pruned_trials / max(total_trials, 1),
+            'models_trained': len([k for k in self.model_scores.keys() if '_final' not in k])
+        }
+        
+        # Save comprehensive report
+        with open(report_file, 'w') as f:
+            json.dump(training_report, f, indent=2)
+        
+        logger.info(f"Training summary report saved to: {report_file}")
+        
+        # Log key summary statistics
+        logger.info("\n" + "="*60)
+        logger.info("TRAINING SESSION SUMMARY")
+        logger.info("="*60)
+        logger.info(f"Models Trained: {training_report['training_efficiency']['models_trained']}")
+        logger.info(f"Total Training Time: {total_training_time:.1f}s ({total_training_time/60:.1f} minutes)")
+        logger.info(f"Total Optimization Trials: {total_trials}")
+        logger.info(f"Average Pruning Rate: {training_report['training_efficiency']['average_pruning_rate']*100:.1f}%")
+        logger.info(f"Best Model: {best_model_name} (AUC: {best_auc:.4f})")
+        logger.info(f"GPU Acceleration Used: {any(self.gpu_available.values())}")
+        logger.info("="*60)
+        
+        return training_report
     
     def load_and_preprocess_data(self, sample_size: Optional[int] = None) -> Tuple[pd.DataFrame, pd.Series]:
         """
@@ -474,6 +791,10 @@ class IEEEModelTrainer:
             # Optimize hyperparameters
             study.optimize(objective_func, n_trials=n_trials, timeout=1800)  # 30 minutes max per model
             
+            # Save detailed hyperparameter results and analyze correlations
+            convergence_stats = self._save_hyperparameter_results(study, model_name)
+            correlation_results = self._analyze_hyperparameter_correlations(study, model_name)
+            
             # Train final model with best parameters
             best_params = study.best_params
             logger.info(f"Best parameters for {model_name}: {best_params}")
@@ -486,6 +807,7 @@ class IEEEModelTrainer:
             metrics['training_time'] = training_time
             metrics['best_params'] = best_params
             metrics['n_trials'] = len(study.trials)
+            metrics['convergence_stats'] = convergence_stats
             
             # Store results
             self.models[model_name] = model
@@ -758,20 +1080,69 @@ class IEEEModelTrainer:
             reverse=True
         )
         
-        logger.info("\nModel Performance Comparison:")
-        logger.info("=" * 80)
-        logger.info(f"{'Model':<20} {'AUC':<8} {'Precision':<10} {'Recall':<8} {'F1':<8} {'Train Time':<12}")
-        logger.info("-" * 80)
+        logger.info("\n" + "="*120)
+        logger.info("COMPREHENSIVE MODEL PERFORMANCE COMPARISON")
+        logger.info("="*120)
+        logger.info(f"{'Model':<20} {'AUC':<8} {'Precision':<10} {'Recall':<8} {'F1':<8} {'AP':<8} {'Time':<8} {'Trials':<8} {'Pruned %':<10}")
+        logger.info("-"*120)
         
         for model_name, metrics in sorted_models:
+            # Extract convergence stats if available
+            convergence_stats = metrics.get('convergence_stats', {})
+            pruned_rate = convergence_stats.get('pruning_rate', 0) * 100
+            n_trials = metrics.get('n_trials', 'N/A')
+            
             logger.info(
                 f"{model_name:<20} "
                 f"{metrics['val_auc']:<8.4f} "
                 f"{metrics['val_precision']:<10.4f} "
                 f"{metrics['val_recall']:<8.4f} "
                 f"{metrics['val_f1']:<8.4f} "
-                f"{metrics['training_time']:<12.1f}"
+                f"{metrics.get('val_average_precision', 0):<8.4f} "
+                f"{metrics['training_time']:<8.1f} "
+                f"{n_trials!s:<8} "
+                f"{pruned_rate:<10.1f}"
             )
+        
+        logger.info("-"*120)
+        
+        # Additional detailed analysis for best models
+        logger.info("\nTOP 3 MODELS DETAILED ANALYSIS:")
+        logger.info("="*60)
+        
+        for i, (model_name, metrics) in enumerate(sorted_models[:3], 1):
+            logger.info(f"\n#{i} - {model_name.upper()}:")
+            logger.info(f"  Performance Metrics:")
+            logger.info(f"    AUC: {metrics['val_auc']:.4f}")
+            logger.info(f"    Precision: {metrics['val_precision']:.4f}")
+            logger.info(f"    Recall: {metrics['val_recall']:.4f}")
+            logger.info(f"    F1-Score: {metrics['val_f1']:.4f}")
+            logger.info(f"    Average Precision: {metrics.get('val_average_precision', 0):.4f}")
+            
+            logger.info(f"  Training Details:")
+            logger.info(f"    Training Time: {metrics['training_time']:.1f}s")
+            logger.info(f"    GPU Accelerated: {metrics.get('gpu_accelerated', False)}")
+            
+            # Hyperparameter optimization details
+            convergence_stats = metrics.get('convergence_stats', {})
+            if convergence_stats:
+                logger.info(f"  Hyperparameter Optimization:")
+                logger.info(f"    Total Trials: {convergence_stats.get('n_trials', 'N/A')}")
+                logger.info(f"    Completed Trials: {convergence_stats.get('n_complete_trials', 'N/A')}")
+                logger.info(f"    Pruned Trials: {convergence_stats.get('n_pruned_trials', 'N/A')} ({convergence_stats.get('pruning_rate', 0)*100:.1f}%)")
+                logger.info(f"    Failed Trials: {convergence_stats.get('n_failed_trials', 'N/A')}")
+            
+            # Best hyperparameters
+            best_params = metrics.get('best_params', {})
+            if best_params:
+                logger.info(f"  Best Hyperparameters:")
+                for param, value in best_params.items():
+                    if isinstance(value, float):
+                        logger.info(f"    {param}: {value:.4f}")
+                    else:
+                        logger.info(f"    {param}: {value}")
+        
+        logger.info("="*120)
         
         # Select best model
         best_model_name = sorted_models[0][0]
@@ -944,6 +1315,9 @@ class IEEEModelTrainer:
         # Compare and select best model
         best_model_name = self.compare_models()
         
+        # Generate comprehensive training summary report
+        training_report = self._save_training_summary_report()
+        
         # Retrain on full dataset
         final_model = self.retrain_on_full_dataset(best_model_name)
         
@@ -951,6 +1325,7 @@ class IEEEModelTrainer:
         self.save_production_model(final_model, best_model_name)
         
         logger.info("Complete training pipeline finished!")
+        logger.info("All training results, visualizations, and analysis saved to models/ directory")
         return str(self.models_path / 'ieee_fraud_model_production.pkl')
 
 
