@@ -784,7 +784,7 @@ class IEEEModelTrainer:
     
     def retrain_on_full_dataset(self, best_model_name: str) -> Any:
         """
-        Retrain the best model on the complete dataset (train + validation).
+        Retrain the best model on the complete dataset (train + validation + test).
         
         Args:
             best_model_name: Name of the best performing model
@@ -792,13 +792,13 @@ class IEEEModelTrainer:
         Returns:
             Retrained model
         """
-        logger.info(f"Retraining {best_model_name} on full dataset...")
+        logger.info(f"Retraining {best_model_name} on 100% of available data...")
         
-        # Combine train and validation sets
-        X_full = pd.concat([self.X_train, self.X_val])
-        y_full = pd.concat([self.y_train, self.y_val])
+        # Combine all three sets for final production model
+        X_full = pd.concat([self.X_train, self.X_val, self.X_test])
+        y_full = pd.concat([self.y_train, self.y_val, self.y_test])
         
-        logger.info(f"Full training set: {len(X_full)} samples")
+        logger.info(f"Full training set: {len(X_full)} samples (100% of data)")
         
         # Get best parameters
         best_params = self.model_scores[best_model_name]['best_params']
@@ -858,28 +858,15 @@ class IEEEModelTrainer:
         
         training_time = time.time() - start_time
         logger.info(f"Final model training completed in {training_time:.1f}s")
+        logger.info("Production model trained on 100% of available data")
+        logger.info("(Test set performance from hyperparameter optimization phase available in model comparison)")
         
-        # Evaluate on test set
-        y_test_pred_proba = final_model.predict_proba(self.X_test)[:, 1]
-        y_test_pred = (y_test_pred_proba > 0.5).astype(int)
-        
-        test_metrics = {
-            'test_auc': roc_auc_score(self.y_test, y_test_pred_proba),
-            'test_precision': precision_score(self.y_test, y_test_pred),
-            'test_recall': recall_score(self.y_test, y_test_pred),
-            'test_f1': f1_score(self.y_test, y_test_pred),
-            'test_average_precision': average_precision_score(self.y_test, y_test_pred_proba)
-        }
-        
-        logger.info(f"Final test performance: AUC={test_metrics['test_auc']:.4f}, "
-                   f"Precision={test_metrics['test_precision']:.4f}, "
-                   f"Recall={test_metrics['test_recall']:.4f}")
-        
-        # Update model scores with test metrics
+        # Update model scores with final training info
         self.model_scores[f'{best_model_name}_final'] = {
             **self.model_scores[best_model_name],
-            **test_metrics,
-            'final_training_time': training_time
+            'final_training_time': training_time,
+            'training_data_percentage': 100,
+            'note': 'Trained on full dataset including test set - use validation metrics for performance estimates'
         }
         
         return final_model
@@ -904,8 +891,9 @@ class IEEEModelTrainer:
                 'model_type': model_name,
                 'training_date': datetime.now().isoformat(),
                 'feature_count': len(self.feature_names),
-                'training_samples': len(self.X_train) + len(self.X_val),
-                'test_samples': len(self.X_test)
+                'training_samples': len(self.X_train) + len(self.X_val) + len(self.X_test),
+                'training_data_percentage': 100,
+                'note': 'Final model trained on 100% of available data for maximum performance'
             }
         }
         
