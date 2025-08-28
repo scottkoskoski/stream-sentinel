@@ -21,6 +21,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 - **[Infrastructure Guide](infrastructure/README.md)** - Docker, Kafka, Redis setup and architecture concepts
 - **[Stream Processing](stream-processing/README.md)** - Real-time data processing patterns and implementation
 - **[State Management](state-management/README.md)** - Redis patterns for high-performance user profiling
+- **[Data Persistence](data-persistence/README.md)** - Hybrid PostgreSQL/ClickHouse architecture for OLTP and OLAP workloads
 
 **Implementation Guides:**
 - **[Fraud Detection System](fraud-detection/README.md)** - ML models, feature engineering, and real-time scoring

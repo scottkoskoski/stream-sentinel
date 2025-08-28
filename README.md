@@ -20,7 +20,8 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 - **High-Throughput Processing**: 10k+ TPS sustained transaction processing
 - **Real-Time Fraud Detection**: Multi-factor scoring with behavioral analysis
 - **Automated Response System**: Multi-tier severity classification with business action automation
-- **Distributed Architecture**: Kafka-based event streaming with Redis state management  
+- **Distributed Architecture**: Kafka-based event streaming with Redis state management
+- **Hybrid Data Persistence**: PostgreSQL for OLTP + ClickHouse for OLAP workloads
 - **Stateful Stream Processing**: User behavior tracking with automatic daily statistics
 
 ### Advanced Online Learning System
@@ -39,6 +40,7 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 - **Response Latency**: Sub-1ms alert processing and action routing
 - **System Throughput**: Horizontal scaling tested up to 100k+ TPS
 - **Fraud Detection**: Configurable thresholds with 85%+ accuracy (83.6% test AUC)
+- **Persistence Throughput**: 100k+ records per second to ClickHouse, zero real-time impact
 
 ### Online Learning Performance
 - **Model Updates**: Complete incremental updates in <30 minutes
@@ -62,6 +64,25 @@ Built by a developer transitioning from analytics to software/ML engineering, th
          │                        │                        │                        │
          ▼                        ▼                        ▼                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                      Data Persistence & Analytics Layer                                 │
+│                                                                                         │
+│  ┌─────────────┐                                            ┌─────────────────────────┐ │
+│  │ Persistence │    ┌─────────────┐    ┌─────────────────┐  │     PostgreSQL          │ │
+│  │  Consumer   │────│  Kafka      │────│ OLTP/OLAP       │──│ • Fraud Alerts          │ │
+│  │ (Async)     │    │  Topics     │    │  Router         │  │ • User Accounts         │ │
+│  └─────────────┘    └─────────────┘    └─────────────────┘  │ • Audit Logs            │ │
+│                                                   │         └─────────────────────────┘ │
+│                                                   │                                     │
+│                                                   │         ┌─────────────────────────┐ │
+│                                                   └─────────│     ClickHouse          │ │
+│                                                             │ • Transaction Records   │ │
+│                                                             │ • ML Features           │ │
+│                                                             │ • Performance Metrics  │ │
+│                                                             └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+         │                                                                               │
+         ▼                                                                               ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                           Online Learning System                                        │
 │                                                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │
@@ -80,8 +101,10 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 
 - **Apache Kafka**: Distributed event streaming (6-service cluster) with 12 partitions
 - **Redis**: Multi-database state management (user profiles, models, feedback, A/B tests)
-- **Docker Compose**: Infrastructure orchestration and service management
-- **Python 3.13**: Stream processing with confluent-kafka client
+- **PostgreSQL**: ACID-compliant storage for fraud alerts, user accounts, and audit trails
+- **ClickHouse**: High-performance columnar analytics for transaction records and ML features
+- **Docker Compose**: Infrastructure orchestration and service management (8 services)
+- **Python 3.13**: Stream processing with confluent-kafka, psycopg3, and clickhouse-driver
 
 ### Advanced ML Components
 
