@@ -1,0 +1,182 @@
+version: '3.8'
+
+services:
+  # Test Kafka Infrastructure - identical to production but with test configurations
+  zookeeper-test:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: stream-sentinel-zookeeper-test
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2182
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2182:2182"
+    volumes:
+      - zookeeper-test-data:/var/lib/zookeeper/data
+      - zookeeper-test-logs:/var/lib/zookeeper/log
+    networks:
+      - stream-sentinel-test-network
+
+  kafka-test:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: stream-sentinel-kafka-test
+    depends_on:
+      - zookeeper-test
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-test:2182
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG_CLEANUP_POLICY: delete
+      KAFKA_LOG_RETENTION_MS: 300000  # 5 minutes for tests
+      KAFKA_LOG_SEGMENT_MS: 60000     # 1 minute segments
+      KAFKA_COMPRESSION_TYPE: lz4
+      KAFKA_NUM_PARTITIONS: 12
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+    ports:
+      - "9093:9093"
+    volumes:
+      - kafka-test-data:/var/lib/kafka/data
+    networks:
+      - stream-sentinel-test-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9093"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Test Redis - separate instance for testing
+  redis-test:
+    image: redis:7.2-alpine
+    container_name: stream-sentinel-redis-test
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-test-data:/data
+    networks:
+      - stream-sentinel-test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Test PostgreSQL - separate instance for testing  
+  postgresql-test:
+    image: postgres:15-alpine
+    container_name: stream-sentinel-postgresql-test
+    environment:
+      POSTGRES_DB: stream_sentinel_test
+      POSTGRES_USER: stream_sentinel_test
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgresql-test-data:/var/lib/postgresql/data
+      - ../docker/init-scripts/postgresql:/docker-entrypoint-initdb.d
+    networks:
+      - stream-sentinel-test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stream_sentinel_test -d stream_sentinel_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Test ClickHouse - separate instance for testing
+  clickhouse-test:
+    image: clickhouse/clickhouse-server:23.8-alpine
+    container_name: stream-sentinel-clickhouse-test
+    environment:
+      CLICKHOUSE_DB: stream_sentinel_test
+      CLICKHOUSE_USER: stream_sentinel_test
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_PASSWORD: test_password
+    ports:
+      - "8124:8123"
+      - "9001:9000"
+    volumes:
+      - clickhouse-test-data:/var/lib/clickhouse
+      - ../docker/init-scripts/clickhouse:/docker-entrypoint-initdb.d
+    networks:
+      - stream-sentinel-test-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Test monitoring services
+  kafka-ui-test:
+    image: provectuslabs/kafka-ui:latest
+    container_name: stream-sentinel-kafka-ui-test
+    depends_on:
+      - kafka-test
+    environment:
+      KAFKA_CLUSTERS_0_NAME: test-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-test:9093
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper-test:2182
+    ports:
+      - "8081:8080"
+    networks:
+      - stream-sentinel-test-network
+
+  redis-insight-test:
+    image: redislabs/redisinsight:latest
+    container_name: stream-sentinel-redis-insight-test
+    ports:
+      - "8002:8001"
+    volumes:
+      - redis-insight-test-data:/db
+    networks:
+      - stream-sentinel-test-network
+
+  # Test data seeding service for performance tests
+  test-data-seeder:
+    build:
+      context: ../
+      dockerfile: tests/Dockerfile.test-seeder
+    container_name: stream-sentinel-test-seeder
+    depends_on:
+      kafka-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      postgresql-test:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-test:9093
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      POSTGRES_HOST: postgresql-test
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: stream_sentinel_test
+      POSTGRES_USER: stream_sentinel_test
+      POSTGRES_PASSWORD: test_password
+      CLICKHOUSE_HOST: clickhouse-test
+      CLICKHOUSE_PORT: 8123
+      TEST_DATA_VOLUME: 100000  # 100k transactions for performance tests
+      TEST_TPS_TARGET: 10000    # Target 10k TPS for validation
+    volumes:
+      - ../src:/app/src
+      - ../tests:/app/tests
+    networks:
+      - stream-sentinel-test-network
+    profiles:
+      - performance-tests  # Only run for performance testing
+
+networks:
+  stream-sentinel-test-network:
+    driver: bridge
+
+volumes:
+  kafka-test-data:
+  zookeeper-test-data:
+  zookeeper-test-logs:
+  redis-test-data:
+  postgresql-test-data:
+  clickhouse-test-data:
+  redis-insight-test-data:
