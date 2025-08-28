@@ -19,7 +19,7 @@ from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from consumers.alert_processor import AlertProcessor, FraudAlert, AlertSeverity, AlertAction
+from consumers.alert_processor import AlertProcessor, AlertSeverity, AlertContext, AlertResponse, ResponseAction
 
 
 class TestAlertProcessing:
