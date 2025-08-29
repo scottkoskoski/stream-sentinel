@@ -213,15 +213,33 @@ class DataCache:
                 'label_encoders': dataset.label_encoders
             }
             
+            # Convert numpy types to JSON-serializable types
+            def convert_numpy_types(obj):
+                """Convert numpy types to native Python types for JSON serialization."""
+                import numpy as np
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, tuple):
+                    return tuple(convert_numpy_types(item) for item in obj)
+                elif isinstance(obj, list):
+                    return [convert_numpy_types(item) for item in obj]
+                elif isinstance(obj, dict):
+                    return {key: convert_numpy_types(value) for key, value in obj.items()}
+                return obj
+
             metadata = {
                 'feature_names': dataset.feature_names,
-                'preprocessing_metadata': dataset.preprocessing_metadata,
+                'preprocessing_metadata': convert_numpy_types(dataset.preprocessing_metadata),
                 'data_hash': dataset.data_hash,
                 'processing_timestamp': dataset.processing_timestamp.isoformat(),
-                'validation_result': dataset.validation_result.to_dict(),
-                'memory_usage_mb': dataset.memory_usage_mb,
-                'shape': dataset.shape,
-                'fraud_rate': dataset.fraud_rate
+                'validation_result': convert_numpy_types(dataset.validation_result.to_dict()),
+                'memory_usage_mb': convert_numpy_types(dataset.memory_usage_mb),
+                'shape': convert_numpy_types(dataset.shape),
+                'fraud_rate': convert_numpy_types(dataset.fraud_rate)
             }
             
             # Atomic save operations
@@ -462,7 +480,7 @@ class DataProcessor:
         data = pd.read_csv(self.transaction_data_path)
         
         # Load identity data if available
-        if self.identity_data_path.exists():
+        if self.identity_data_path and str(self.identity_data_path).strip() and self.identity_data_path.exists() and self.identity_data_path.is_file():
             self.logger.info("loading_identity_data", extra={
                 "path": str(self.identity_data_path)
             })
@@ -644,7 +662,10 @@ class DataProcessor:
         """Generate cache key based on config and data timestamps."""
         # Get file modification times
         trans_mtime = self.transaction_data_path.stat().st_mtime if self.transaction_data_path.exists() else 0
-        identity_mtime = self.identity_data_path.stat().st_mtime if self.identity_data_path.exists() else 0
+        identity_mtime = (self.identity_data_path.stat().st_mtime 
+                         if (self.identity_data_path and str(self.identity_data_path).strip() 
+                             and self.identity_data_path.exists() and self.identity_data_path.is_file()) 
+                         else 0)
         
         # Include relevant config parameters
         config_hash = hashlib.sha256(json.dumps({

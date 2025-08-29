@@ -36,6 +36,19 @@ from ml.training.utils.metrics import TrainingMetrics, create_metrics_collector
 from ml.training.utils.resource_manager import GPUResourceManager, SystemResourceManager
 
 
+class SimpleTestModel:
+    """Simple test model that can be pickled."""
+    def __init__(self):
+        self.model_type = "test_model"
+        
+    def predict_proba(self, X):
+        return np.array([[0.7, 0.3], [0.9, 0.1]])
+        
+    def fit(self, X, y, **kwargs):
+        """Mock fit method that does nothing but is serializable."""
+        return self
+
+
 class TestModularPipelineIntegration:
     """
     Comprehensive integration tests for the modular training pipeline.
@@ -136,16 +149,15 @@ class TestModularPipelineIntegration:
         """Test checkpoint manager functionality."""
         checkpoint_manager = CheckpointManager(test_config.checkpointing)
         
-        # Create mock model
-        mock_model = Mock()
-        mock_model.predict_proba = Mock(return_value=np.array([[0.7, 0.3], [0.9, 0.1]]))
+        # Create simple test model (serializable)
+        test_model = SimpleTestModel()
         
         # Create test checkpoint
         checkpoint = ModelCheckpoint(
             trial_number=1,
             parameters={"n_estimators": 100, "max_depth": 5},
             score=0.85,
-            model=mock_model,
+            model=test_model,
             timestamp=datetime.now(),
             model_type="xgboost"
         )
@@ -154,7 +166,7 @@ class TestModularPipelineIntegration:
         checkpoint_id = checkpoint_manager.save_checkpoint(checkpoint)
         assert checkpoint_id is not None
         
-        loaded_checkpoint = checkpoint_manager.checkpoint_store.load_checkpoint(checkpoint_id)
+        loaded_checkpoint = checkpoint_manager.store.load_checkpoint(checkpoint_id)
         assert loaded_checkpoint is not None
         assert loaded_checkpoint.score == 0.85
         assert loaded_checkpoint.model_type == "xgboost"
@@ -266,10 +278,9 @@ class TestModularPipelineIntegration:
         # Mock cross-validation scores
         mock_cv_score.return_value = np.array([0.82, 0.85, 0.83, 0.86, 0.84])
         
-        # Mock XGBoost classifier
-        mock_model = Mock()
-        mock_model.fit = Mock()
-        mock_xgb.return_value = mock_model
+        # Mock XGBoost classifier with serializable test model
+        test_model = SimpleTestModel()
+        mock_xgb.return_value = test_model
         
         # Setup components
         checkpoint_manager = CheckpointManager(test_config.checkpointing)
@@ -299,14 +310,12 @@ class TestModularPipelineIntegration:
     
     @patch('ml.training.core.hyperparameter_optimizer.cross_val_score')
     @patch('xgboost.XGBClassifier')
-    @patch('pickle.dump')
-    def test_pipeline_orchestrator(self, mock_pickle, mock_xgb, mock_cv_score, test_config):
+    def test_pipeline_orchestrator(self, mock_xgb, mock_cv_score, test_config):
         """Test complete pipeline orchestration."""
         # Setup mocks
         mock_cv_score.return_value = np.array([0.82, 0.85, 0.83, 0.86, 0.84])
-        mock_model = Mock()
-        mock_model.fit = Mock()
-        mock_xgb.return_value = mock_model
+        test_model = SimpleTestModel()
+        mock_xgb.return_value = test_model
         
         # Create components
         checkpoint_manager = CheckpointManager(test_config.checkpointing)
@@ -316,12 +325,28 @@ class TestModularPipelineIntegration:
             checkpoint_manager
         )
         
+        # Convert config to fully serializable dictionary 
+        def convert_dataclass_to_dict(obj):
+            """Recursively convert dataclass objects to dictionaries."""
+            from dataclasses import is_dataclass, asdict
+            
+            if is_dataclass(obj):
+                return asdict(obj)
+            elif isinstance(obj, dict):
+                return {key: convert_dataclass_to_dict(value) for key, value in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return type(obj)(convert_dataclass_to_dict(item) for item in obj)
+            else:
+                return obj
+        
+        config_dict = convert_dataclass_to_dict(test_config)
+        
         # Create orchestrator
         orchestrator = PipelineOrchestrator(
             data_processor=data_processor,
             hyperopt_optimizer=hyperopt_optimizer,
             checkpoint_manager=checkpoint_manager,
-            config=test_config.__dict__
+            config=config_dict
         )
         
         # Test pipeline execution
@@ -349,11 +374,27 @@ class TestModularPipelineIntegration:
             checkpoint_manager
         )
         
+        # Convert config to fully serializable dictionary 
+        def convert_dataclass_to_dict(obj):
+            """Recursively convert dataclass objects to dictionaries."""
+            from dataclasses import is_dataclass, asdict
+            
+            if is_dataclass(obj):
+                return asdict(obj)
+            elif isinstance(obj, dict):
+                return {key: convert_dataclass_to_dict(value) for key, value in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return type(obj)(convert_dataclass_to_dict(item) for item in obj)
+            else:
+                return obj
+        
+        config_dict = convert_dataclass_to_dict(test_config)
+        
         orchestrator = PipelineOrchestrator(
             data_processor=data_processor,
             hyperopt_optimizer=hyperopt_optimizer,
             checkpoint_manager=checkpoint_manager,
-            config=test_config.__dict__
+            config=config_dict
         )
         
         # Create a mock failed pipeline state

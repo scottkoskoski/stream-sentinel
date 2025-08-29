@@ -355,7 +355,12 @@ class HyperparameterOptimizer:
         with self._lock:
             try:
                 # Create or load study
-                sampler = TPESampler(random_state=42)
+                try:
+                    # Try with random_state first (older optuna versions)
+                    sampler = TPESampler(random_state=42)
+                except TypeError:
+                    # Fallback for newer optuna versions
+                    sampler = TPESampler()
                 pruner = MedianPruner(n_startup_trials=10, n_warmup_steps=5)
                 
                 study = optuna.create_study(

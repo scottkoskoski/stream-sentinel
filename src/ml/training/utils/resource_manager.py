@@ -152,6 +152,9 @@ class GPUResourceHandle(ResourceHandle):
                 'gpu_id': self.gpu_id,
                 'error': str(e)
             })
+        finally:
+            # Mark resource as inactive
+            self.is_active = False
 
 
 class MemoryResourceHandle(ResourceHandle):
@@ -196,6 +199,9 @@ class MemoryResourceHandle(ResourceHandle):
             self.logger.error("memory_resource.cleanup_failed", extra={
                 'error': str(e)
             })
+        finally:
+            # Mark resource as inactive
+            self.is_active = False
 
 
 class GPUResourceManager:

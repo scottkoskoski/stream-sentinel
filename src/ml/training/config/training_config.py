@@ -27,7 +27,7 @@ import yaml
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 

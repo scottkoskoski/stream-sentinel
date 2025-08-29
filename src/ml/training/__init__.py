@@ -79,6 +79,20 @@ __all__ = [
 ]
 
 
+def _convert_dataclass_to_dict(obj):
+    """Recursively convert dataclass objects to dictionaries."""
+    from dataclasses import is_dataclass, asdict
+    
+    if is_dataclass(obj):
+        return asdict(obj)
+    elif isinstance(obj, dict):
+        return {key: _convert_dataclass_to_dict(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return type(obj)(_convert_dataclass_to_dict(item) for item in obj)
+    else:
+        return obj
+
+
 def create_training_pipeline(config_path: str = None, environment: str = "development") -> TrainingPipeline:
     """
     Factory function to create a fully configured training pipeline.
@@ -104,15 +118,18 @@ def create_training_pipeline(config_path: str = None, environment: str = "develo
     data_processor = DataProcessor(config.data.__dict__)
     hyperopt_optimizer = HyperparameterOptimizer(config.optimization.__dict__, checkpoint_manager)
     
+    # Convert config to fully serializable dictionary
+    config_dict = _convert_dataclass_to_dict(config)
+    
     # Create orchestrator
     orchestrator = PipelineOrchestrator(
         data_processor=data_processor,
         hyperopt_optimizer=hyperopt_optimizer,
         checkpoint_manager=checkpoint_manager,
-        config=config.__dict__
+        config=config_dict
     )
     
-    return TrainingPipeline(orchestrator, config.__dict__)
+    return TrainingPipeline(orchestrator, config_dict)
 
 
 # Package-level logging setup
