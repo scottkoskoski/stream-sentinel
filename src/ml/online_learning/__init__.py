@@ -38,7 +38,7 @@ from .config import (
 )
 
 from .feedback_processor import FeedbackProcessor
-from .drift_detector import DriftDetector
+from .drift_detector import DriftDetector, PerformanceMetrics
 from .incremental_learner import IncrementalLearner
 from .model_registry import ModelRegistry
 from .ab_test_manager import ABTestManager
@@ -59,7 +59,8 @@ __all__ = [
     
     # Core components
     "FeedbackProcessor",
-    "DriftDetector", 
+    "DriftDetector",
+    "PerformanceMetrics",
     "IncrementalLearner",
     "ModelRegistry",
     "ABTestManager"
