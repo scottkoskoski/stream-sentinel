@@ -966,8 +966,8 @@ class IEEEModelTrainer:
             'colsample_bynode': trial.suggest_float('colsample_bynode', 0.4, 1.0),  # Feature sampling per node
             
             # Regularization (comprehensive)
-            'reg_alpha': trial.suggest_float('reg_alpha', 0, 50, log=True),  # L1 regularization
-            'reg_lambda': trial.suggest_float('reg_lambda', 0, 50, log=True),  # L2 regularization
+            'reg_alpha': trial.suggest_float('reg_alpha', 0.01, 50, log=True),  # L1 regularization
+            'reg_lambda': trial.suggest_float('reg_lambda', 0.01, 50, log=True),  # L2 regularization
             
             # Advanced parameters for fraud detection
             'grow_policy': trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide']),
@@ -1029,8 +1029,8 @@ class IEEEModelTrainer:
             'colsample_bynode': trial.suggest_float('colsample_bynode', 0.4, 1.0),
             
             # Advanced regularization
-            'reg_alpha': trial.suggest_float('reg_alpha', 0, 50, log=True),  # L1 regularization
-            'reg_lambda': trial.suggest_float('reg_lambda', 0, 50, log=True),  # L2 regularization
+            'reg_alpha': trial.suggest_float('reg_alpha', 0.01, 50, log=True),  # L1 regularization
+            'reg_lambda': trial.suggest_float('reg_lambda', 0.01, 50, log=True),  # L2 regularization
             
             # Advanced tree growing strategies
             'grow_policy': trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide']),
