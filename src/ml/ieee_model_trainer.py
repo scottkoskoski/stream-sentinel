@@ -674,6 +674,8 @@ class IEEEModelTrainer:
             X['M_features_false_count'] = sum(X[f'M{i}_is_false'] for i in range(1, 10) if f'M{i}' in X.columns)
             X['M_features_found_count'] = sum(X[f'M{i}_is_found'] for i in range(1, 10) if f'M{i}' in X.columns)
             X['M_features_match_rate'] = X['M_features_true_count'] / (X['M_features_found_count'] + 1e-6)  # Avoid division by zero
+            # Cap the match rate to prevent extreme values
+            X['M_features_match_rate'] = X['M_features_match_rate'].clip(0, 1)
         
         # V features aggregation (first 100 only for speed)
         v_cols = [col for col in X.columns if col.startswith('V')][:100]
@@ -681,6 +683,32 @@ class IEEEModelTrainer:
             X['V_features_sum'] = X[v_cols].sum(axis=1)
             X['V_features_mean'] = X[v_cols].mean(axis=1)
             X['V_features_std'] = X[v_cols].std(axis=1).fillna(0)
+        
+        # Handle infinity and extreme values
+        X = self._handle_extreme_values(X)
+        
+        return X
+    
+    def _handle_extreme_values(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Handle infinity and extreme values that can cause scaling issues."""
+        logger.info("Handling extreme values and infinities...")
+        
+        # Replace infinities with NaN, then fill with reasonable values
+        X = X.replace([np.inf, -np.inf], np.nan)
+        
+        # For each column, cap extreme values at 99.9th percentile
+        for col in X.columns:
+            if X[col].dtype in ['float64', 'float32', 'int64', 'int32']:
+                # Calculate reasonable bounds (99.9th percentile)
+                upper_bound = X[col].quantile(0.999)
+                lower_bound = X[col].quantile(0.001)
+                
+                # Cap extreme values
+                X[col] = X[col].clip(lower=lower_bound, upper=upper_bound)
+                
+                # Fill any remaining NaN with median
+                if X[col].isnull().any():
+                    X[col] = X[col].fillna(X[col].median())
         
         return X
     
