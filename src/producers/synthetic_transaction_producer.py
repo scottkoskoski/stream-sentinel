@@ -71,9 +71,53 @@ class Transaction:
     dist2: Optional[float]
     p_emaildomain: Optional[str]
     r_emaildomain: Optional[str]
+    
+    # Counting features C1-C14 (entity relationship counts)
+    c1: Optional[float] = None  # Cards associated with this address
+    c2: Optional[float] = None  # Addresses associated with this card
+    c3: Optional[float] = None  # Transactions with this email domain today
+    c4: Optional[float] = None  # Unique merchants for this user this month
+    c5: Optional[float] = None  # Cards associated with this email domain
+    c6: Optional[float] = None  # Addresses associated with this email domain
+    c7: Optional[float] = None  # Transactions from this device today
+    c8: Optional[float] = None  # Unique email domains for this card
+    c9: Optional[float] = None  # Transactions with this card today
+    c10: Optional[float] = None # Unique addresses for this card
+    c11: Optional[float] = None # Transactions from this IP today
+    c12: Optional[float] = None # Unique cards for this user
+    c13: Optional[float] = None # Transactions with this product code today
+    c14: Optional[float] = None # Days since first transaction with this card
+    
+    # Time delta features D1-D15 (temporal relationships)
+    d1: Optional[float] = None  # Days since account creation
+    d2: Optional[float] = None  # Days since last transaction
+    d3: Optional[float] = None  # Days since first transaction with this card
+    d4: Optional[float] = None  # Hours since last transaction from this device
+    d5: Optional[float] = None  # Days since last fraud report on this account
+    d6: Optional[float] = None  # Days since card was first seen in system
+    d7: Optional[float] = None  # Hours since last transaction with this email
+    d8: Optional[float] = None  # Days since first transaction with this merchant
+    d9: Optional[float] = None  # Days since last transaction with this amount range
+    d10: Optional[float] = None # Hours since last login from this device
+    d11: Optional[float] = None # Days since address was first seen
+    d12: Optional[float] = None # Hours since last failed transaction
+    d13: Optional[float] = None # Days since profile was last updated
+    d14: Optional[float] = None # Hours since last successful transaction
+    d15: Optional[float] = None # Days since last password change
+    
+    # Match features M1-M9 (identity verification flags)
+    m1: Optional[str] = None    # Name on card matches billing address name
+    m2: Optional[str] = None    # Email domain matches card issuer domain
+    m3: Optional[str] = None    # Phone area code matches billing address area code
+    m4: Optional[str] = None    # Device timezone matches billing address timezone
+    m5: Optional[str] = None    # Previous transaction patterns match current behavior
+    m6: Optional[str] = None    # IP geolocation matches billing address
+    m7: Optional[str] = None    # Card usage pattern matches historical behavior
+    m8: Optional[str] = None    # Email domain matches merchant domain
+    m9: Optional[str] = None    # Transaction time matches user's typical pattern
 
-    # Additional metadata for stream processing
-    generated_timestamp: str
+    # Additional metadata for stream processing (required fields must not have defaults after optional fields)
+    generated_timestamp: Optional[str] = None
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     fraud_reason: Optional[str] = None
@@ -202,6 +246,30 @@ class SyntheticTransactionProducer:
         self.start_time = time.time()
         self.user_profiles: Dict[str, UserProfile] = {}
         self.running = False
+        
+        # Enhanced feature tracking for C/D/M features
+        self.entity_tracking = {
+            # For counting features (C1-C14)
+            "card_addresses": {},      # card -> set of addresses
+            "address_cards": {},       # address -> set of cards  
+            "email_transactions": {},  # email -> list of transaction times
+            "user_merchants": {},      # user -> set of merchants used
+            "card_emails": {},         # card -> set of email domains
+            "email_addresses": {},     # email -> set of addresses
+            "device_transactions": {}, # device -> list of transaction times
+            "card_firstseen": {},      # card -> first seen timestamp
+            "user_cards": {},          # user -> set of cards used
+            
+            # For time delta features (D1-D15)  
+            "user_created": {},        # user -> creation timestamp
+            "user_lasttxn": {},        # user -> last transaction timestamp
+            "card_firstuse": {},       # card -> first use timestamp
+            "device_lasttxn": {},      # device -> last transaction timestamp
+            "user_lastfraud": {},      # user -> last fraud report timestamp
+            "email_lasttxn": {},       # email -> last transaction timestamp
+            "merchant_firstuse": {},   # merchant -> first use timestamp
+            "address_firstseen": {},   # address -> first seen timestamp
+        }
 
         # Topic configuration
         self.topic_name = "synthetic-transactions"
@@ -436,6 +504,224 @@ class SyntheticTransactionProducer:
 
         return p_email, r_email
 
+    def _generate_counting_features(self, user: UserProfile, card1: int, addr1: float, 
+                                  p_email: str, product_cd: str, current_time: float) -> Dict[str, Optional[float]]:
+        """Generate C1-C14 counting features based on entity relationships."""
+        
+        # Simulate device ID for this transaction
+        device_id = f"device_{user.user_id}_{random.randint(1, 3)}"  # Users have 1-3 devices
+        
+        # Current time for filtering (today's transactions)
+        current_day = int(current_time // 86400)  # Days since epoch
+        
+        features = {}
+        
+        # C1: Cards associated with this address
+        if addr1 not in self.entity_tracking["address_cards"]:
+            self.entity_tracking["address_cards"][addr1] = set()
+        self.entity_tracking["address_cards"][addr1].add(card1)
+        features["c1"] = float(len(self.entity_tracking["address_cards"][addr1])) if random.random() > 0.3 else None
+        
+        # C2: Addresses associated with this card
+        if card1 not in self.entity_tracking["card_addresses"]:
+            self.entity_tracking["card_addresses"][card1] = set()
+        self.entity_tracking["card_addresses"][card1].add(addr1)
+        features["c2"] = float(len(self.entity_tracking["card_addresses"][card1])) if random.random() > 0.3 else None
+        
+        # C3: Transactions with this email domain today (if email exists)
+        if p_email:
+            if p_email not in self.entity_tracking["email_transactions"]:
+                self.entity_tracking["email_transactions"][p_email] = []
+            self.entity_tracking["email_transactions"][p_email].append(current_time)
+            # Count transactions today
+            today_txns = sum(1 for t in self.entity_tracking["email_transactions"][p_email] 
+                           if int(t // 86400) == current_day)
+            features["c3"] = float(today_txns) if random.random() > 0.4 else None
+        else:
+            features["c3"] = None
+            
+        # C4: Unique merchants for this user this month
+        if user.user_id not in self.entity_tracking["user_merchants"]:
+            self.entity_tracking["user_merchants"][user.user_id] = set()
+        self.entity_tracking["user_merchants"][user.user_id].add(product_cd)
+        features["c4"] = float(len(self.entity_tracking["user_merchants"][user.user_id])) if random.random() > 0.2 else None
+        
+        # C5: Cards associated with this email domain
+        if p_email:
+            if p_email not in self.entity_tracking["email_addresses"]:
+                self.entity_tracking["email_addresses"][p_email] = set()
+            if card1 not in self.entity_tracking["card_emails"]:
+                self.entity_tracking["card_emails"][card1] = set()
+            self.entity_tracking["card_emails"][card1].add(p_email)
+            features["c5"] = float(len(self.entity_tracking["card_emails"].get(card1, set()))) if random.random() > 0.5 else None
+        else:
+            features["c5"] = None
+            
+        # C6: Addresses associated with this email domain
+        if p_email:
+            self.entity_tracking["email_addresses"][p_email].add(addr1)
+            features["c6"] = float(len(self.entity_tracking["email_addresses"][p_email])) if random.random() > 0.5 else None
+        else:
+            features["c6"] = None
+            
+        # C7: Transactions from this device today
+        if device_id not in self.entity_tracking["device_transactions"]:
+            self.entity_tracking["device_transactions"][device_id] = []
+        self.entity_tracking["device_transactions"][device_id].append(current_time)
+        today_device_txns = sum(1 for t in self.entity_tracking["device_transactions"][device_id] 
+                               if int(t // 86400) == current_day)
+        features["c7"] = float(today_device_txns) if random.random() > 0.6 else None
+        
+        # C8: Unique email domains for this card
+        features["c8"] = float(len(self.entity_tracking["card_emails"].get(card1, set()))) if random.random() > 0.7 else None
+        
+        # C9: Transactions with this card today
+        # Simplified: use user transaction count as proxy
+        features["c9"] = float(user.total_transactions + 1) if random.random() > 0.4 else None
+        
+        # C10: Unique addresses for this card
+        features["c10"] = float(len(self.entity_tracking["card_addresses"].get(card1, set()))) if random.random() > 0.6 else None
+        
+        # C11: Transactions from this IP today (simulated)
+        features["c11"] = float(random.randint(1, 20)) if random.random() > 0.7 else None
+        
+        # C12: Unique cards for this user
+        if user.user_id not in self.entity_tracking["user_cards"]:
+            self.entity_tracking["user_cards"][user.user_id] = set()
+        self.entity_tracking["user_cards"][user.user_id].add(card1)
+        features["c12"] = float(len(self.entity_tracking["user_cards"][user.user_id])) if random.random() > 0.3 else None
+        
+        # C13: Transactions with this product code today (simulated)
+        features["c13"] = float(random.randint(1, 100)) if random.random() > 0.5 else None
+        
+        # C14: Days since first transaction with this card (this is actually a time delta, but included in C features)
+        if card1 not in self.entity_tracking["card_firstseen"]:
+            self.entity_tracking["card_firstseen"][card1] = current_time
+        days_since_first = (current_time - self.entity_tracking["card_firstseen"][card1]) / 86400
+        features["c14"] = float(max(0, days_since_first)) if random.random() > 0.4 else None
+        
+        return features
+
+    def _generate_time_delta_features(self, user: UserProfile, card1: int, p_email: str,
+                                    product_cd: str, current_time: float) -> Dict[str, Optional[float]]:
+        """Generate D1-D15 time delta features based on temporal relationships."""
+        
+        features = {}
+        
+        # D1: Days since account creation
+        if user.user_id not in self.entity_tracking["user_created"]:
+            self.entity_tracking["user_created"][user.user_id] = user.created_at
+        days_since_creation = (current_time - self.entity_tracking["user_created"][user.user_id]) / 86400
+        features["d1"] = float(max(0, days_since_creation)) if random.random() > 0.2 else None
+        
+        # D2: Days since last transaction
+        last_txn_time = self.entity_tracking["user_lasttxn"].get(user.user_id, current_time)
+        days_since_last = (current_time - last_txn_time) / 86400
+        features["d2"] = float(max(0, days_since_last)) if random.random() > 0.3 else None
+        self.entity_tracking["user_lasttxn"][user.user_id] = current_time
+        
+        # D3: Days since first transaction with this card
+        if card1 not in self.entity_tracking["card_firstuse"]:
+            self.entity_tracking["card_firstuse"][card1] = current_time
+        days_since_card_first = (current_time - self.entity_tracking["card_firstuse"][card1]) / 86400
+        features["d3"] = float(max(0, days_since_card_first)) if random.random() > 0.4 else None
+        
+        # D4: Hours since last transaction from this device
+        device_id = f"device_{user.user_id}_{random.randint(1, 3)}"
+        last_device_time = self.entity_tracking["device_lasttxn"].get(device_id, current_time - 3600)
+        hours_since_device = (current_time - last_device_time) / 3600
+        features["d4"] = float(max(0, hours_since_device)) if random.random() > 0.5 else None
+        self.entity_tracking["device_lasttxn"][device_id] = current_time
+        
+        # D5: Days since last fraud report on this account
+        last_fraud_time = self.entity_tracking["user_lastfraud"].get(user.user_id, current_time - 30*86400)
+        days_since_fraud = (current_time - last_fraud_time) / 86400
+        features["d5"] = float(days_since_fraud) if random.random() > 0.8 else None
+        
+        # D6: Days since card was first seen in system
+        features["d6"] = features["d3"]  # Same as D3 in this simulation
+        
+        # D7: Hours since last transaction with this email
+        if p_email:
+            last_email_time = self.entity_tracking["email_lasttxn"].get(p_email, current_time - 3600)
+            hours_since_email = (current_time - last_email_time) / 3600
+            features["d7"] = float(max(0, hours_since_email)) if random.random() > 0.6 else None
+            self.entity_tracking["email_lasttxn"][p_email] = current_time
+        else:
+            features["d7"] = None
+            
+        # D8: Days since first transaction with this merchant
+        if product_cd not in self.entity_tracking["merchant_firstuse"]:
+            self.entity_tracking["merchant_firstuse"][product_cd] = current_time - random.uniform(0, 30*86400)
+        days_since_merchant = (current_time - self.entity_tracking["merchant_firstuse"][product_cd]) / 86400
+        features["d8"] = float(max(0, days_since_merchant)) if random.random() > 0.5 else None
+        
+        # D9-D15: Additional time deltas with realistic patterns
+        features["d9"] = float(random.uniform(0, 7)) if random.random() > 0.7 else None  # Days since last transaction with this amount range
+        features["d10"] = float(random.uniform(0, 48)) if random.random() > 0.6 else None  # Hours since last login from this device
+        features["d11"] = float(random.uniform(0, 365)) if random.random() > 0.5 else None  # Days since address was first seen
+        features["d12"] = float(random.uniform(0, 24)) if random.random() > 0.8 else None  # Hours since last failed transaction
+        features["d13"] = float(random.uniform(0, 90)) if random.random() > 0.7 else None  # Days since profile was last updated
+        features["d14"] = float(random.uniform(0, 6)) if random.random() > 0.4 else None  # Hours since last successful transaction
+        features["d15"] = float(random.uniform(0, 180)) if random.random() > 0.8 else None  # Days since last password change
+        
+        return features
+
+    def _generate_match_features(self, card4: str, p_email: str, addr1: float, 
+                               user: UserProfile, current_time: float) -> Dict[str, Optional[str]]:
+        """Generate M1-M9 match features for identity verification."""
+        
+        features = {}
+        match_options = ["T", "F", "NotFound"]
+        
+        # M1: Name on card matches billing address name
+        # Higher match probability for legitimate users
+        if user.risk_profile == "low":
+            features["m1"] = random.choices(match_options, weights=[0.8, 0.15, 0.05])[0] if random.random() > 0.3 else None
+        else:
+            features["m1"] = random.choices(match_options, weights=[0.4, 0.4, 0.2])[0] if random.random() > 0.3 else None
+            
+        # M2: Email domain matches card issuer domain
+        if p_email and card4:
+            # Some card companies have email partnerships
+            if card4 == "visa" and p_email in ["gmail.com", "yahoo.com"]:
+                features["m2"] = "T" if random.random() > 0.3 else "F"
+            else:
+                features["m2"] = random.choice(match_options) if random.random() > 0.5 else None
+        else:
+            features["m2"] = None
+            
+        # M3: Phone area code matches billing address area code
+        features["m3"] = random.choices(match_options, weights=[0.7, 0.2, 0.1])[0] if random.random() > 0.4 else None
+        
+        # M4: Device timezone matches billing address timezone
+        features["m4"] = random.choices(match_options, weights=[0.85, 0.1, 0.05])[0] if random.random() > 0.3 else None
+        
+        # M5: Previous transaction patterns match current behavior
+        # More likely to match for established users
+        if user.total_transactions > 5:
+            features["m5"] = random.choices(match_options, weights=[0.9, 0.08, 0.02])[0] if random.random() > 0.4 else None
+        else:
+            features["m5"] = random.choice(match_options) if random.random() > 0.6 else None
+            
+        # M6: IP geolocation matches billing address
+        features["m6"] = random.choices(match_options, weights=[0.75, 0.2, 0.05])[0] if random.random() > 0.4 else None
+        
+        # M7: Card usage pattern matches historical behavior
+        features["m7"] = random.choices(match_options, weights=[0.8, 0.15, 0.05])[0] if random.random() > 0.5 else None
+        
+        # M8: Email domain matches merchant domain
+        features["m8"] = random.choices(match_options, weights=[0.3, 0.5, 0.2])[0] if random.random() > 0.7 else None
+        
+        # M9: Transaction time matches user's typical pattern
+        hour = int((current_time % 86400) // 3600)
+        if user.risk_profile == "low" and 9 <= hour <= 21:  # Business hours
+            features["m9"] = "T" if random.random() > 0.2 else "F"
+        else:
+            features["m9"] = random.choice(match_options) if random.random() > 0.5 else None
+        
+        return features
+
     def _determine_if_fraud(
         self, user: UserProfile, amount: float, current_time: int
     ) -> Tuple[bool, Optional[str]]:
@@ -514,6 +800,12 @@ class SyntheticTransactionProducer:
         addr1, addr2 = self._generate_address_features(user)
         dist1, dist2 = self._generate_distance_features()
         p_email, r_email = self._generate_email_domains()
+        
+        # Generate enhanced features
+        current_time_float = float(current_time)
+        counting_features = self._generate_counting_features(user, card1, addr1, p_email, product_cd, current_time_float)
+        time_delta_features = self._generate_time_delta_features(user, card1, p_email, product_cd, current_time_float)
+        match_features = self._generate_match_features(card4, p_email, addr1, user, current_time_float)
 
         # Create transaction
         transaction = Transaction(
@@ -534,6 +826,49 @@ class SyntheticTransactionProducer:
             dist2=dist2,
             p_emaildomain=p_email,
             r_emaildomain=r_email,
+            
+            # Add enhanced features
+            c1=counting_features.get("c1"),
+            c2=counting_features.get("c2"),
+            c3=counting_features.get("c3"),
+            c4=counting_features.get("c4"),
+            c5=counting_features.get("c5"),
+            c6=counting_features.get("c6"),
+            c7=counting_features.get("c7"),
+            c8=counting_features.get("c8"),
+            c9=counting_features.get("c9"),
+            c10=counting_features.get("c10"),
+            c11=counting_features.get("c11"),
+            c12=counting_features.get("c12"),
+            c13=counting_features.get("c13"),
+            c14=counting_features.get("c14"),
+            
+            d1=time_delta_features.get("d1"),
+            d2=time_delta_features.get("d2"),
+            d3=time_delta_features.get("d3"),
+            d4=time_delta_features.get("d4"),
+            d5=time_delta_features.get("d5"),
+            d6=time_delta_features.get("d6"),
+            d7=time_delta_features.get("d7"),
+            d8=time_delta_features.get("d8"),
+            d9=time_delta_features.get("d9"),
+            d10=time_delta_features.get("d10"),
+            d11=time_delta_features.get("d11"),
+            d12=time_delta_features.get("d12"),
+            d13=time_delta_features.get("d13"),
+            d14=time_delta_features.get("d14"),
+            d15=time_delta_features.get("d15"),
+            
+            m1=match_features.get("m1"),
+            m2=match_features.get("m2"),
+            m3=match_features.get("m3"),
+            m4=match_features.get("m4"),
+            m5=match_features.get("m5"),
+            m6=match_features.get("m6"),
+            m7=match_features.get("m7"),
+            m8=match_features.get("m8"),
+            m9=match_features.get("m9"),
+            
             generated_timestamp=datetime.now().isoformat(),
             user_id=user.user_id,
             session_id=f"sess_{user.total_transactions // 5}",  # New session every 5 transactions
