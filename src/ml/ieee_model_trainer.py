@@ -606,12 +606,74 @@ class IEEEModelTrainer:
             common_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']
             X['P_emaildomain_common'] = X['P_emaildomain'].isin(common_domains).astype(int)
         
-        # C features aggregation
-        c_cols = [col for col in X.columns if col.startswith('C')]
+        # Enhanced C1-C14 counting features engineering
+        c_cols = [col for col in X.columns if col.startswith('C') and len(col) <= 3]  # C1-C14 specifically
         if len(c_cols) > 0:
+            logger.info(f"Engineering {len(c_cols)} counting features (C1-C14)")
+            
+            # Individual C feature transformations for key counting metrics
+            for col in ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14']:
+                if col in X.columns:
+                    # Log transform for skewed counting distributions
+                    X[f'{col}_log'] = np.log1p(X[col].fillna(0))
+                    # Binary indicator for presence
+                    X[f'{col}_exists'] = (X[col].notna()).astype(int)
+                    # Binned categories for counting ranges (as numeric codes)
+                    X[f'{col}_binned'] = pd.cut(X[col].fillna(0), bins=[0, 1, 5, 10, 50, float('inf')], 
+                                               labels=[0, 1, 2, 3, 4], 
+                                               include_lowest=True).astype(float)
+            
+            # Aggregate statistics for all C features
             X['C_features_sum'] = X[c_cols].sum(axis=1)
             X['C_features_mean'] = X[c_cols].mean(axis=1)
             X['C_features_std'] = X[c_cols].std(axis=1).fillna(0)
+            X['C_features_count_nonzero'] = (X[c_cols] > 0).sum(axis=1)
+            X['C_features_count_missing'] = X[c_cols].isnull().sum(axis=1)
+        
+        # Enhanced D1-D15 time delta features engineering
+        d_cols = [col for col in X.columns if col.startswith('D') and len(col) <= 3]  # D1-D15 specifically
+        if len(d_cols) > 0:
+            logger.info(f"Engineering {len(d_cols)} time delta features (D1-D15)")
+            
+            # Individual D feature transformations for temporal patterns
+            for col in ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D10', 'D11', 'D12', 'D13', 'D14', 'D15']:
+                if col in X.columns:
+                    # Log transform for time deltas (add 1 to handle 0 values)
+                    X[f'{col}_log'] = np.log1p(X[col].fillna(0))
+                    # Binary indicator for presence
+                    X[f'{col}_exists'] = (X[col].notna()).astype(int)
+                    # Time-based binning (assuming days) as numeric codes
+                    X[f'{col}_time_category'] = pd.cut(X[col].fillna(-1), 
+                                                      bins=[-1, 0, 1, 7, 30, 90, float('inf')],
+                                                      labels=[0, 1, 2, 3, 4, 5],
+                                                      include_lowest=True).astype(float)
+            
+            # Aggregate statistics for all D features
+            X['D_features_sum'] = X[d_cols].sum(axis=1)
+            X['D_features_mean'] = X[d_cols].mean(axis=1)
+            X['D_features_std'] = X[d_cols].std(axis=1).fillna(0)
+            X['D_features_count_nonzero'] = (X[d_cols] > 0).sum(axis=1)
+            X['D_features_count_missing'] = X[d_cols].isnull().sum(axis=1)
+        
+        # Enhanced M1-M9 match features engineering
+        m_cols = [col for col in X.columns if col.startswith('M') and len(col) <= 2]  # M1-M9 specifically
+        if len(m_cols) > 0:
+            logger.info(f"Engineering {len(m_cols)} match features (M1-M9)")
+            
+            # Individual M feature transformations for identity verification
+            for col in ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9']:
+                if col in X.columns:
+                    # Create binary indicators for match results
+                    X[f'{col}_is_true'] = (X[col] == 'T').astype(int)
+                    X[f'{col}_is_false'] = (X[col] == 'F').astype(int)
+                    X[f'{col}_is_found'] = (X[col].isin(['T', 'F'])).astype(int)
+                    X[f'{col}_missing'] = (X[col].isna() | (X[col] == 'NotFound')).astype(int)
+            
+            # Aggregate match statistics
+            X['M_features_true_count'] = sum(X[f'M{i}_is_true'] for i in range(1, 10) if f'M{i}' in X.columns)
+            X['M_features_false_count'] = sum(X[f'M{i}_is_false'] for i in range(1, 10) if f'M{i}' in X.columns)
+            X['M_features_found_count'] = sum(X[f'M{i}_is_found'] for i in range(1, 10) if f'M{i}' in X.columns)
+            X['M_features_match_rate'] = X['M_features_true_count'] / (X['M_features_found_count'] + 1e-6)  # Avoid division by zero
         
         # V features aggregation (first 100 only for speed)
         v_cols = [col for col in X.columns if col.startswith('V')][:100]
@@ -623,7 +685,7 @@ class IEEEModelTrainer:
         return X
     
     def _select_features(self, X: pd.DataFrame, y: pd.Series, max_features: int = 200) -> pd.DataFrame:
-        """Select most important features for training efficiency."""
+        """Select most important features for training efficiency, prioritizing IEEE-CIS features."""
         if len(X.columns) <= max_features:
             return X
         
@@ -631,12 +693,78 @@ class IEEEModelTrainer:
         
         # Use mutual information for feature selection
         from sklearn.feature_selection import SelectKBest, mutual_info_classif
+        from sklearn.preprocessing import LabelEncoder
+        import numpy as np  # Ensure numpy is available for where() function
         
-        selector = SelectKBest(mutual_info_classif, k=max_features)
-        X_selected = selector.fit_transform(X, y)
+        # Handle categorical columns by encoding them temporarily for feature selection
+        X_for_selection = X.copy()
         
-        selected_features = X.columns[selector.get_support()].tolist()
-        return pd.DataFrame(X_selected, columns=selected_features, index=X.index)
+        # Convert all object columns to string first, then encode
+        for col in X_for_selection.columns:
+            if X_for_selection[col].dtype == 'object':
+                # Convert all values to strings, handling NaN/None
+                X_for_selection[col] = X_for_selection[col].astype(str)
+                # Replace 'nan' strings with 'unknown'
+                X_for_selection[col] = X_for_selection[col].replace(['nan', 'None'], 'unknown')
+                
+                # Now apply label encoding
+                temp_encoder = LabelEncoder()
+                X_for_selection[col] = temp_encoder.fit_transform(X_for_selection[col])
+        
+        # Handle any remaining non-numeric data
+        X_for_selection = X_for_selection.apply(pd.to_numeric, errors='coerce').fillna(0)
+        
+        # Prioritize IEEE-CIS C, D, M features and their engineered variants
+        priority_features = []
+        regular_features = []
+        
+        for col in X.columns:
+            # Core IEEE-CIS features and their transformations get priority
+            if (col.startswith(('C', 'D', 'M')) and any(col.startswith(f'{prefix}{i}') 
+                for prefix in ['C', 'D', 'M'] for i in range(1, 16))) or \
+               any(engineered in col for engineered in ['_log', '_exists', '_binned', '_time_category', 
+                                                       '_is_true', '_is_false', '_is_found', '_missing']) or \
+               col in ['M_features_true_count', 'M_features_false_count', 'M_features_found_count', 
+                      'M_features_match_rate', 'C_features_count_nonzero', 'C_features_count_missing',
+                      'D_features_count_nonzero', 'D_features_count_missing'] or \
+               col.startswith(('TransactionAmt', 'TransactionDT', 'card', 'addr', 'P_emaildomain', 'ProductCD')):
+                priority_features.append(col)
+            else:
+                regular_features.append(col)
+        
+        logger.info(f"Found {len(priority_features)} priority IEEE-CIS features")
+        
+        # If we have fewer priority features than max_features, include some regular features
+        if len(priority_features) < max_features:
+            remaining_slots = max_features - len(priority_features)
+            
+            # Select best regular features using mutual information
+            if regular_features:
+                X_regular = X_for_selection[regular_features]
+                selector_regular = SelectKBest(mutual_info_classif, k=min(remaining_slots, len(regular_features)))
+                selector_regular.fit(X_regular, y)
+                selected_regular = [regular_features[i] for i in np.where(selector_regular.get_support())[0]]
+                
+                final_features = priority_features + selected_regular
+            else:
+                final_features = priority_features
+        else:
+            # Too many priority features, select best ones using mutual information
+            X_priority = X_for_selection[priority_features]
+            selector_priority = SelectKBest(mutual_info_classif, k=max_features)
+            selector_priority.fit(X_priority, y)
+            final_features = [priority_features[i] for i in np.where(selector_priority.get_support())[0]]
+        
+        logger.info(f"Selected features breakdown:")
+        ieee_count = sum(1 for f in final_features if f.startswith(('C', 'D', 'M')) or 
+                        any(engineered in f for engineered in ['_log', '_exists', '_binned', '_time_category',
+                                                              '_is_true', '_is_false', '_is_found', '_missing']))
+        core_count = sum(1 for f in final_features if f.startswith(('TransactionAmt', 'TransactionDT', 'card', 'addr')))
+        logger.info(f"  IEEE-CIS C/D/M features: {ieee_count}")
+        logger.info(f"  Core transaction features: {core_count}")
+        logger.info(f"  Other features: {len(final_features) - ieee_count - core_count}")
+        
+        return X[final_features]
     
     def prepare_train_test_split(self, X: pd.DataFrame, y: pd.Series, 
                                 test_size: float = 0.2, val_size: float = 0.1):
