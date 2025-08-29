@@ -120,14 +120,17 @@ services:
 
   # Redis Insight - Redis monitoring and debugging interface
   redis-insight:
-    image: redislabs/redisinsight:latest
+    image: redislabs/redisinsight:1.14.0
     container_name: stream-sentinel-redis-insight
     depends_on:
       - redis
     ports:
       - "8001:8001"
     volumes:
-      - redis-insight-data:/db
+      - redis-insight-data:/data
+    environment:
+      REDISINSIGHT_HOST: "0.0.0.0"
+      REDISINSIGHT_PORT: 8001
 
   # PostgreSQL - ACID-compliant storage for critical transactional data
   postgres:
