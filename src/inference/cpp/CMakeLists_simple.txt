@@ -1,0 +1,48 @@
+# Simple CMakeLists.txt for minimal XGBoost wrapper
+# Focused on simplicity and quick building
+
+cmake_minimum_required(VERSION 3.12)
+project(simple_xgboost_wrapper)
+
+# C++17 standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find required packages
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+find_package(pybind11 REQUIRED)
+
+# Find XGBoost
+find_path(XGBOOST_INCLUDE_DIR
+    NAMES xgboost/c_api.h
+    PATHS /usr/include /usr/local/include
+)
+
+find_library(XGBOOST_LIBRARY
+    NAMES xgboost
+    PATHS /usr/lib /usr/local/lib
+)
+
+if(NOT XGBOOST_INCLUDE_DIR OR NOT XGBOOST_LIBRARY)
+    message(FATAL_ERROR "XGBoost not found. Please install XGBoost development packages.")
+endif()
+
+include_directories(${XGBOOST_INCLUDE_DIR})
+
+# Create Python extension module
+pybind11_add_module(simple_xgboost_cpp
+    simple_xgboost_wrapper.cpp
+    simple_python_bindings.cpp
+)
+
+target_link_libraries(simple_xgboost_cpp PRIVATE ${XGBOOST_LIBRARY})
+
+# Compiler-specific optimizations
+target_compile_definitions(simple_xgboost_cpp PRIVATE VERSION_INFO=${EXAMPLE_VERSION_INFO})
+
+# Optional: Add simple test executable
+add_executable(test_simple_wrapper
+    simple_xgboost_wrapper.cpp
+    test_wrapper.cpp  # We'll create this next
+)
+target_link_libraries(test_simple_wrapper ${XGBOOST_LIBRARY})

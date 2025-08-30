@@ -34,6 +34,13 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
 
+# Import optional C++ accelerated inference
+try:
+    from inference.fast_inference import FastInferenceEngine
+    CPP_INFERENCE_AVAILABLE = True
+except ImportError:
+    CPP_INFERENCE_AVAILABLE = False
+
 
 @dataclass
 class UserProfile:
@@ -116,7 +123,8 @@ class FraudDetector:
                  consumer_group: str = "fraud-detection-group",
                  fraud_threshold: float = 0.7,
                  use_ml_model: bool = True,
-                 model_path: str = "models/ieee_fraud_model_production.pkl"):
+                 model_path: str = "models/ieee_fraud_model_production.pkl",
+                 enable_cpp_acceleration: bool = True):
         """
         Initialize fraud detection consumer.
         
@@ -125,6 +133,7 @@ class FraudDetector:
             fraud_threshold: Fraud score threshold for alert generation
             use_ml_model: Whether to use ML model or rule-based scoring
             model_path: Path to the trained ML model
+            enable_cpp_acceleration: Enable C++ accelerated inference (default: True)
         """
         # Initialize Kafka configuration
         self.kafka_config = get_kafka_config()
@@ -132,6 +141,7 @@ class FraudDetector:
         self.fraud_threshold = fraud_threshold
         self.consumer_group = consumer_group
         self.use_ml_model = use_ml_model
+        self.enable_cpp_acceleration = enable_cpp_acceleration and CPP_INFERENCE_AVAILABLE
         
         # Load ML model if enabled
         self.ml_model = None
@@ -225,9 +235,34 @@ class FraudDetector:
     def _load_ml_model(self, model_path: str) -> None:
         """Load the trained ML model for fraud detection."""
         try:
-            # Load the pickled model
-            with open(model_path, 'rb') as f:
-                model_data = pickle.load(f)
+            # Check if C++ acceleration is enabled
+            if self.enable_cpp_acceleration:
+                try:
+                    self.fast_inference_engine = FastInferenceEngine(model_path, enable_cpp=True)
+                    status = self.fast_inference_engine.get_status()
+                    
+                    if status['using_cpp']:
+                        self.logger.info("Successfully loaded C++ accelerated inference engine")
+                    else:
+                        self.logger.info("C++ inference not available, using Python fallback in FastInferenceEngine")
+                    
+                    # Still need to load Python model for compatibility with feature extraction
+                    with open(model_path, 'rb') as f:
+                        model_data = pickle.load(f)
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to initialize FastInferenceEngine: {e}")
+                    self.logger.warning("Falling back to standard Python XGBoost")
+                    self.fast_inference_engine = None
+                    
+                    # Load standard Python model
+                    with open(model_path, 'rb') as f:
+                        model_data = pickle.load(f)
+            else:
+                self.fast_inference_engine = None
+                # Load standard Python model  
+                with open(model_path, 'rb') as f:
+                    model_data = pickle.load(f)
                 
             # Extract the actual model and preprocessing components
             if isinstance(model_data, dict):
@@ -485,10 +520,19 @@ class FraudDetector:
             # Extract features compatible with the trained model
             features = self._extract_ml_features(transaction, user_profile)
             
-            # Predict fraud probability
-            fraud_probability = self.ml_model.predict_proba([features])[0][1]
-            
-            return float(fraud_probability)
+            # Use FastInferenceEngine if available, otherwise fall back to Python XGBoost
+            if hasattr(self, 'fast_inference_engine') and self.fast_inference_engine:
+                fraud_probability, performance_info = self.fast_inference_engine.predict_fraud_probability(features)
+                
+                # Log performance info periodically for monitoring
+                if self.processed_count % 1000 == 0:
+                    self.logger.info(f"ML inference: {performance_info}")
+                    
+                return float(fraud_probability)
+            else:
+                # Standard Python XGBoost inference
+                fraud_probability = self.ml_model.predict_proba([features])[0][1]
+                return float(fraud_probability)
             
         except Exception as e:
             self.logger.warning(f"ML fraud scoring failed: {e}, falling back to rule-based")
