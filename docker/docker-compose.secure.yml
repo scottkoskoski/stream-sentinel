@@ -1,0 +1,281 @@
+version: '3.8'
+
+# Stream-Sentinel Secure Production Overlay
+# This overlay enables TLS, authentication, and security hardening
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.secure.yml up -d
+
+services:
+  zookeeper:
+    environment:
+      # Enable SASL/SCRAM authentication
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/zookeeper_jaas.conf"
+      ZOOKEEPER_AUTH_PROVIDER_SASL: "org.apache.zookeeper.server.auth.SASLAuthenticationProvider"
+      ZOOKEEPER_REQUIRE_CLIENT_AUTH_SCHEME: "sasl"
+    volumes:
+      - ./security/zookeeper_jaas.conf:/etc/kafka/secrets/zookeeper_jaas.conf:ro
+      - ./security/certs/zookeeper:/etc/kafka/secrets/certs:ro
+    networks:
+      - stream-sentinel-secure
+
+  kafka:
+    environment:
+      # Security configuration
+      KAFKA_SECURITY_INTER_BROKER_PROTOCOL: "SASL_SSL"
+      KAFKA_SASL_ENABLED_MECHANISMS: "SCRAM-SHA-512"
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: "SCRAM-SHA-512"
+      
+      # SSL configuration
+      KAFKA_SSL_KEYSTORE_FILENAME: "kafka.keystore.jks"
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: "kafka_keystore_creds"
+      KAFKA_SSL_KEY_CREDENTIALS: "kafka_ssl_key_creds"
+      KAFKA_SSL_TRUSTSTORE_FILENAME: "kafka.truststore.jks"
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: "kafka_truststore_creds"
+      KAFKA_SSL_CLIENT_AUTH: "required"
+      
+      # Listener configuration for secure access
+      KAFKA_LISTENERS: "INTERNAL://kafka:29092,EXTERNAL://kafka:9093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:29092,EXTERNAL://localhost:9093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:SASL_SSL,EXTERNAL:SASL_SSL"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      
+      # JAAS configuration
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf"
+      
+      # ACL configuration
+      KAFKA_AUTHORIZER_CLASS_NAME: "kafka.security.auth.SimpleAclAuthorizer"
+      KAFKA_SUPER_USERS: "User:admin;User:kafka"
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      
+      # Additional security hardening
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_DELETE_TOPIC_ENABLE: "false"
+    
+    volumes:
+      - ./security/kafka_server_jaas.conf:/etc/kafka/secrets/kafka_server_jaas.conf:ro
+      - ./security/certs/kafka:/etc/kafka/secrets/:ro
+    
+    ports:
+      - "9093:9093"  # Secure external port
+    
+    networks:
+      - stream-sentinel-secure
+
+  schema-registry:
+    environment:
+      # Kafka security configuration
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: "SASL_SSL"
+      SCHEMA_REGISTRY_KAFKASTORE_SASL_MECHANISM: "SCRAM-SHA-512"
+      SCHEMA_REGISTRY_KAFKASTORE_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="schema-registry" password="${SCHEMA_REGISTRY_PASSWORD}";'
+      
+      # SSL configuration
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_TRUSTSTORE_LOCATION: "/etc/schema-registry/secrets/kafka.truststore.jks"
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_TRUSTSTORE_PASSWORD: "${SSL_TRUSTSTORE_PASSWORD}"
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_KEYSTORE_LOCATION: "/etc/schema-registry/secrets/kafka.keystore.jks"
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_KEYSTORE_PASSWORD: "${SSL_KEYSTORE_PASSWORD}"
+      SCHEMA_REGISTRY_KAFKASTORE_SSL_KEY_PASSWORD: "${SSL_KEY_PASSWORD}"
+      
+      # HTTPS configuration for Schema Registry API
+      SCHEMA_REGISTRY_LISTENERS: "https://0.0.0.0:8081"
+      SCHEMA_REGISTRY_SSL_TRUSTSTORE_LOCATION: "/etc/schema-registry/secrets/kafka.truststore.jks"
+      SCHEMA_REGISTRY_SSL_TRUSTSTORE_PASSWORD: "${SSL_TRUSTSTORE_PASSWORD}"
+      SCHEMA_REGISTRY_SSL_KEYSTORE_LOCATION: "/etc/schema-registry/secrets/kafka.keystore.jks"
+      SCHEMA_REGISTRY_SSL_KEYSTORE_PASSWORD: "${SSL_KEYSTORE_PASSWORD}"
+      SCHEMA_REGISTRY_SSL_KEY_PASSWORD: "${SSL_KEY_PASSWORD}"
+      
+      # Authentication
+      SCHEMA_REGISTRY_AUTHENTICATION_METHOD: "BASIC"
+      SCHEMA_REGISTRY_AUTHENTICATION_REALM: "StreamSentinelRealm"
+      SCHEMA_REGISTRY_AUTHENTICATION_ROLES: "admin,user"
+    
+    volumes:
+      - ./security/certs/schema-registry:/etc/schema-registry/secrets/:ro
+    
+    networks:
+      - stream-sentinel-secure
+
+  redis:
+    environment:
+      # Enable Redis AUTH
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_DISABLE_COMMANDS: "FLUSHDB,FLUSHALL,KEYS,CONFIG,DEBUG"
+    
+    command: >
+      --requirepass ${REDIS_PASSWORD}
+      --tls-port 6380
+      --port 0
+      --tls-cert-file /etc/redis/certs/redis.crt
+      --tls-key-file /etc/redis/certs/redis.key
+      --tls-ca-cert-file /etc/redis/certs/ca.crt
+      --tls-auth-clients yes
+    
+    volumes:
+      - ./security/certs/redis:/etc/redis/certs:ro
+    
+    ports:
+      - "6380:6380"  # Secure TLS port
+    
+    networks:
+      - stream-sentinel-secure
+
+  redis-insight:
+    environment:
+      REDIS_INSIGHT_HOST: "0.0.0.0"
+      REDIS_INSIGHT_PORT: "8001"
+      # Configure for TLS Redis connection
+      REDIS_TLS_ENABLED: "true"
+      REDIS_TLS_CA_CERT_PATH: "/certs/ca.crt"
+    
+    volumes:
+      - ./security/certs/redis:/certs:ro
+    
+    networks:
+      - stream-sentinel-secure
+
+  postgres:
+    environment:
+      # SSL configuration
+      POSTGRES_SSL_MODE: "require"
+      POSTGRES_SSL_CERT_FILE: "/var/lib/postgresql/certs/server.crt"
+      POSTGRES_SSL_KEY_FILE: "/var/lib/postgresql/certs/server.key"
+      POSTGRES_SSL_CA_FILE: "/var/lib/postgresql/certs/ca.crt"
+      
+      # Enhanced authentication
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    
+    command: >
+      postgres
+      -c ssl=on
+      -c ssl_cert_file=/var/lib/postgresql/certs/server.crt
+      -c ssl_key_file=/var/lib/postgresql/certs/server.key
+      -c ssl_ca_file=/var/lib/postgresql/certs/ca.crt
+      -c ssl_ciphers='ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256'
+      -c password_encryption=scram-sha-256
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_statement=all
+      -c shared_preload_libraries=pg_stat_statements
+    
+    volumes:
+      - ./security/certs/postgres:/var/lib/postgresql/certs:ro
+      - postgres-secure-data:/var/lib/postgresql/data
+    
+    networks:
+      - stream-sentinel-secure
+
+  clickhouse:
+    environment:
+      # SSL configuration
+      CLICKHOUSE_SSL_ENABLED: "true"
+      CLICKHOUSE_SSL_CERT_PATH: "/etc/clickhouse-server/certs/server.crt"
+      CLICKHOUSE_SSL_KEY_PATH: "/etc/clickhouse-server/certs/server.key"
+      CLICKHOUSE_SSL_CA_PATH: "/etc/clickhouse-server/certs/ca.crt"
+      
+      # Authentication
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD}"
+    
+    volumes:
+      - ./security/certs/clickhouse:/etc/clickhouse-server/certs:ro
+      - ./security/clickhouse-server-secure.xml:/etc/clickhouse-server/config.d/server-secure.xml:ro
+      - ./security/clickhouse-users-secure.xml:/etc/clickhouse-server/users.d/users-secure.xml:ro
+      - clickhouse-secure-data:/var/lib/clickhouse
+    
+    ports:
+      - "8443:8443"  # HTTPS port
+      - "9440:9440"  # Secure native port
+    
+    networks:
+      - stream-sentinel-secure
+
+  kafka-ui:
+    environment:
+      # Secure Kafka connection
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9093"
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: "SASL_SSL"
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM: "SCRAM-SHA-512"
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="kafka-ui" password="${KAFKA_UI_PASSWORD}";'
+      
+      # SSL configuration
+      KAFKA_CLUSTERS_0_SSL_TRUSTSTORELOCATION: "/etc/kafka-ui/secrets/kafka.truststore.jks"
+      KAFKA_CLUSTERS_0_SSL_TRUSTSTOREPASSWORD: "${SSL_TRUSTSTORE_PASSWORD}"
+      
+      # Secure Schema Registry connection
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: "https://schema-registry:8081"
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRYAUTH_USERNAME: "${SCHEMA_REGISTRY_USERNAME}"
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRYAUTH_PASSWORD: "${SCHEMA_REGISTRY_PASSWORD}"
+      
+      # UI Authentication
+      AUTH_TYPE: "LOGIN_FORM"
+      SPRING_SECURITY_USER_NAME: "${KAFKA_UI_USERNAME}"
+      SPRING_SECURITY_USER_PASSWORD: "${KAFKA_UI_PASSWORD}"
+    
+    volumes:
+      - ./security/certs/kafka-ui:/etc/kafka-ui/secrets:ro
+    
+    networks:
+      - stream-sentinel-secure
+
+# Security-hardened network
+networks:
+  stream-sentinel-secure:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.20.0.0/16"
+    driver_opts:
+      encrypted: "true"
+
+# Secure persistent volumes
+volumes:
+  postgres-secure-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./security/volumes/postgres
+  
+  clickhouse-secure-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind  
+      device: ./security/volumes/clickhouse
+
+  kafka-secure-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./security/volumes/kafka
+
+  zookeeper-secure-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./security/volumes/zookeeper
+
+# Security configuration notes:
+#
+# 1. All inter-service communication uses TLS encryption
+# 2. Kafka uses SASL/SCRAM authentication with ACLs
+# 3. Redis uses AUTH with TLS encryption
+# 4. PostgreSQL uses SCRAM-SHA-256 authentication with SSL
+# 5. ClickHouse uses password authentication with TLS
+# 6. Schema Registry uses BASIC authentication over HTTPS
+# 7. Kafka UI requires login credentials
+#
+# Required environment variables (create .env.secure file):
+# - REDIS_PASSWORD
+# - POSTGRES_PASSWORD
+# - CLICKHOUSE_PASSWORD
+# - KAFKA_UI_PASSWORD
+# - KAFKA_UI_USERNAME
+# - SCHEMA_REGISTRY_PASSWORD
+# - SCHEMA_REGISTRY_USERNAME
+# - SSL_TRUSTSTORE_PASSWORD
+# - SSL_KEYSTORE_PASSWORD
+# - SSL_KEY_PASSWORD
+#
+# Certificate generation required:
+# Run ./security/generate_certs.sh to create all necessary certificates

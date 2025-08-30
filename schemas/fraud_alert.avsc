@@ -1,0 +1,112 @@
+{
+  "type": "record",
+  "name": "FraudAlert",
+  "namespace": "com.streamsent.fraud", 
+  "doc": "Fraud alert generated for high-risk transactions requiring action",
+  "fields": [
+    {
+      "name": "alert_id",
+      "type": "string",
+      "doc": "Unique alert identifier"
+    },
+    {
+      "name": "transaction_id", 
+      "type": "string",
+      "doc": "Reference to the flagged transaction"
+    },
+    {
+      "name": "user_id",
+      "type": "string",
+      "doc": "User/account identifier"
+    },
+    {
+      "name": "severity",
+      "type": {
+        "type": "enum",
+        "name": "AlertSeverity",
+        "symbols": ["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+      },
+      "doc": "Alert severity level determining response action"
+    },
+    {
+      "name": "fraud_score",
+      "type": "double", 
+      "doc": "Fraud probability that triggered this alert"
+    },
+    {
+      "name": "amount",
+      "type": "double",
+      "doc": "Transaction amount (copied for alert context)"
+    },
+    {
+      "name": "risk_factors",
+      "type": {
+        "type": "record",
+        "name": "RiskFactors",
+        "fields": [
+          {"name": "is_high_amount", "type": "boolean"},
+          {"name": "is_unusual_hour", "type": "boolean"},
+          {"name": "amount_vs_avg_ratio", "type": "double"},
+          {"name": "velocity_score", "type": "double"},
+          {"name": "rapid_fire_count", "type": "int"}
+        ]
+      },
+      "doc": "Detailed risk factors that contributed to the alert"
+    },
+    {
+      "name": "recommended_actions",
+      "type": {
+        "type": "array", 
+        "items": {
+          "type": "enum",
+          "name": "RecommendedAction",
+          "symbols": ["MONITOR", "BLOCK_USER", "DECLINE_TRANSACTION", "MANUAL_REVIEW", "CONTACT_USER", "ESCALATE_TO_TEAM"]
+        }
+      },
+      "doc": "Recommended response actions based on severity and risk factors"
+    },
+    {
+      "name": "alert_timestamp",
+      "type": "long",
+      "logicalType": "timestamp-millis", 
+      "doc": "When the alert was generated"
+    },
+    {
+      "name": "expiration_timestamp",
+      "type": ["null", "long"],
+      "logicalType": "timestamp-millis",
+      "default": null,
+      "doc": "When the alert expires if no action taken"
+    },
+    {
+      "name": "investigation_queue",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Investigation queue assignment for manual review"
+    },
+    {
+      "name": "context",
+      "type": ["null", {
+        "type": "record",
+        "name": "AlertContext", 
+        "fields": [
+          {"name": "user_transaction_count_today", "type": "int"},
+          {"name": "user_average_amount", "type": "double"},
+          {"name": "similar_alerts_count", "type": "int"},
+          {"name": "merchant_risk_score", "type": ["null", "double"], "default": null}
+        ]
+      }],
+      "default": null,
+      "doc": "Additional context to aid in alert investigation"
+    },
+    {
+      "name": "metadata",
+      "type": ["null", {
+        "type": "map",
+        "values": "string"
+      }],
+      "default": null,
+      "doc": "Additional alert metadata"
+    }
+  ]
+}

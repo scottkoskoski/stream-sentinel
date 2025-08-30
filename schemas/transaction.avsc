@@ -1,0 +1,78 @@
+{
+  "type": "record",
+  "name": "Transaction",
+  "namespace": "com.streamsent.fraud",
+  "doc": "Financial transaction record for fraud detection processing",
+  "fields": [
+    {
+      "name": "transaction_id", 
+      "type": "string",
+      "doc": "Unique transaction identifier"
+    },
+    {
+      "name": "user_id",
+      "type": "string", 
+      "doc": "User/account identifier"
+    },
+    {
+      "name": "amount",
+      "type": "double",
+      "doc": "Transaction amount in USD"
+    },
+    {
+      "name": "timestamp",
+      "type": "long",
+      "logicalType": "timestamp-millis",
+      "doc": "Transaction timestamp in milliseconds since epoch"
+    },
+    {
+      "name": "merchant_id",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Merchant identifier (optional)"
+    },
+    {
+      "name": "card_type",
+      "type": {
+        "type": "enum",
+        "name": "CardType",
+        "symbols": ["CREDIT", "DEBIT", "PREPAID", "UNKNOWN"]
+      },
+      "default": "UNKNOWN",
+      "doc": "Type of payment card used"
+    },
+    {
+      "name": "transaction_type",
+      "type": {
+        "type": "enum", 
+        "name": "TransactionType",
+        "symbols": ["PURCHASE", "WITHDRAWAL", "TRANSFER", "REFUND", "OTHER"]
+      },
+      "default": "PURCHASE",
+      "doc": "Type of transaction"
+    },
+    {
+      "name": "location",
+      "type": ["null", {
+        "type": "record",
+        "name": "Location",
+        "fields": [
+          {"name": "country", "type": "string"},
+          {"name": "city", "type": ["null", "string"], "default": null},
+          {"name": "postal_code", "type": ["null", "string"], "default": null}
+        ]
+      }],
+      "default": null,
+      "doc": "Transaction location information"
+    },
+    {
+      "name": "metadata",
+      "type": ["null", {
+        "type": "map",
+        "values": "string"
+      }],
+      "default": null,
+      "doc": "Additional transaction metadata as key-value pairs"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "type": "record",
+  "name": "FraudScore", 
+  "namespace": "com.streamsent.fraud",
+  "doc": "Fraud detection score and risk assessment result",
+  "fields": [
+    {
+      "name": "transaction_id",
+      "type": "string",
+      "doc": "Reference to the original transaction"
+    },
+    {
+      "name": "user_id", 
+      "type": "string",
+      "doc": "User/account identifier"
+    },
+    {
+      "name": "fraud_score",
+      "type": "double",
+      "doc": "ML model fraud probability score (0.0-1.0)"
+    },
+    {
+      "name": "risk_level",
+      "type": {
+        "type": "enum",
+        "name": "RiskLevel", 
+        "symbols": ["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+      },
+      "doc": "Categorical risk assessment level"
+    },
+    {
+      "name": "model_version",
+      "type": "string",
+      "doc": "Version of the fraud detection model used"
+    },
+    {
+      "name": "processing_time_ms",
+      "type": "long",
+      "doc": "Time taken to process the transaction (milliseconds)"
+    },
+    {
+      "name": "features",
+      "type": ["null", {
+        "type": "record",
+        "name": "Features",
+        "fields": [
+          {"name": "amount_vs_avg_ratio", "type": "double"},
+          {"name": "velocity_score", "type": "double"}, 
+          {"name": "unusual_hour", "type": "boolean"},
+          {"name": "unusual_amount", "type": "boolean"},
+          {"name": "rapid_transactions", "type": "int"},
+          {"name": "user_profile_age_days", "type": ["null", "int"], "default": null}
+        ]
+      }],
+      "default": null,
+      "doc": "Key features used in fraud scoring"
+    },
+    {
+      "name": "rules_triggered",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "default": [],
+      "doc": "Business rules that triggered for this transaction"
+    },
+    {
+      "name": "timestamp",
+      "type": "long", 
+      "logicalType": "timestamp-millis",
+      "doc": "Timestamp when fraud score was calculated"
+    },
+    {
+      "name": "metadata",
+      "type": ["null", {
+        "type": "map",
+        "values": "string"
+      }],
+      "default": null,
+      "doc": "Additional scoring metadata"
+    }
+  ]
+}

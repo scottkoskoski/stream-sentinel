@@ -2,7 +2,7 @@
 
 > **Adaptive Real-Time Distributed Financial Fraud Detection System**
 
-A production-grade distributed fraud detection system with **online learning capabilities** that demonstrates advanced stream processing, adaptive ML systems, and enterprise-grade software architecture. Built with Apache Kafka, Redis, and Python to showcase high-performance MLOps and modern financial technology patterns.
+A production-grade distributed fraud detection system with **online learning capabilities** that demonstrates advanced stream processing, adaptive ML systems, and enterprise-grade software architecture. Built with Apache Kafka, Redis, and Python with XGBoost ML models to showcase high-performance MLOps and modern financial technology patterns.
 
 ## Project Purpose
 
@@ -39,7 +39,7 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 - **Detection Latency**: Sub-100ms fraud scoring with ML models
 - **Response Latency**: Sub-1ms alert processing and action routing
 - **System Throughput**: Horizontal scaling tested up to 100k+ TPS
-- **Fraud Detection**: Configurable thresholds with 85%+ accuracy (83.6% test AUC)
+- **Fraud Detection**: Configurable thresholds with 97%+ accuracy (97.05% CV AUC with XGBoost)
 - **Persistence Throughput**: 100k+ records per second to ClickHouse, zero real-time impact
 
 ### Online Learning Performance
@@ -364,8 +364,10 @@ stream-sentinel/
 ├── scripts/
 │   └── online_learning_demo.py     # Comprehensive system demo
 ├── models/
-│   ├── ieee_fraud_model_production.pkl  # Trained LightGBM model
-│   └── ieee_fraud_model_metadata.json   # Model performance metrics
+│   ├── ieee_fraud_model_production.pkl  # Trained XGBoost model
+│   ├── ieee_fraud_model_metadata.json   # Model performance metrics
+│   ├── checkpoints/                     # Training checkpoints & hyperparameter optimization
+│   └── hyperparameter_studies/          # Optuna optimization studies
 ├── data/
 │   ├── raw/                        # IEEE-CIS dataset (683MB)
 │   ├── processed/                  # Analysis results
@@ -489,14 +491,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 | System Availability | 99.9% | 99.99% |
 | Data Retention | 7 days | 30 days |
 | Consumer Lag | <1s | <500ms |
-| Online Learning Accuracy | 85%+ AUC | 90%+ AUC |
+| Online Learning Accuracy | 97.05% AUC | 97.5%+ AUC |
 
 ## Current Status & Achievements
 
 ### Completed (Phase 1-3: August 2025)
 - **Infrastructure**: Complete Kafka + Redis cluster with 6-service Docker setup
 - **Data Pipeline**: IEEE-CIS analysis, synthetic data generation, real-time processing
-- **ML Foundation**: LightGBM model with 83.6% test AUC, feature engineering pipeline
+- **ML Foundation**: XGBoost model with 97.05% CV AUC, advanced hyperparameter optimization pipeline
 - **Alert System**: Multi-tier classification with automated business actions
 - **Comprehensive Documentation**: 4,000+ lines covering theory and implementation
 
@@ -508,7 +510,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **A/B Testing Framework**: Statistical model comparison with automated decisions
 - **System Orchestration**: Event-driven workflow coordination with health monitoring
 
-## Future Roadmap
+## Architecture Roadmap & Future Development
+
+### Current Architecture Status
+- **Core System**: Production-ready Python-based distributed architecture with Apache Kafka and Redis
+- **ML Pipeline**: Advanced XGBoost models with 97%+ AUC and comprehensive hyperparameter optimization
+- **Online Learning**: Fully implemented adaptive learning system with drift detection and A/B testing
+- **Documentation**: 4,000+ lines of production-grade technical documentation
+
+### Future Performance Optimizations
+- **C++ Integration (Q4 2025)**: High-performance scoring engine for sub-10ms inference latency
+- **GPU Acceleration (Q1 2026)**: CUDA-optimized feature engineering and model inference
+- **Native Kafka Clients (Q1 2026)**: C++ Kafka consumers for maximum throughput efficiency
 
 ### Phase 5: Production Hardening (September-December 2025)
 - [ ] Prometheus metrics and Grafana dashboards for observability
