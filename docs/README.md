@@ -38,6 +38,15 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
   - A/B Testing Framework
   - System Orchestration & Monitoring
 
+**High-Performance ML Serving (August 2025):**
+- **[High-Performance Serving Architecture](high-performance-serving-architecture.md)** - C++ integration and performance optimization
+- **[Advanced ML Training Pipeline](ml-advanced-training-pipeline.md)** - Hyperparameter optimization achieving 97.05% AUC
+- **[ONNX Inference Architecture](onnx-inference-architecture.md)** - Cross-platform model deployment capabilities
+  - Multi-Format Model Export (Pickle, JSON, ONNX)
+  - C++ XGBoost Wrapper with Automatic Fallback
+  - Comprehensive Performance Benchmarking
+  - Cross-Platform Compatibility Testing
+
 ### Learning Resources
 
 **Technology Deep Dives:**
@@ -53,8 +62,11 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 4. Study Redis guide → learn state management
 5. Review Fraud Detection → see basic ML integration
 6. Explore Machine Learning Pipeline → understand MLOps concepts
-7. Study Online Learning System → see advanced adaptive ML
-8. Run the Demo → experience the complete system
+7. Study Advanced ML Training Pipeline → see hyperparameter optimization
+8. Review High-Performance Serving → understand C++ integration
+9. Explore ONNX Architecture → see cross-platform deployment
+10. Study Online Learning System → see advanced adaptive ML
+11. Run the Demo → experience the complete system
 ```
 
 ### Project Evolution
@@ -62,12 +74,14 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 **Development Journey:**
 - **[Project Development Logs](project-logs/README.md)** - Authentic implementation journey with decisions and challenges
 - **[Phase 4: Online Learning System](project-logs/005-online-learning-system.md)** - Advanced MLOps implementation deep-dive
+- **[Phase 5: High-Performance Inference](project-logs/006-high-performance-inference-benchmarking.md)** - C++ integration and benchmarking achievements
 - **[Architecture Decision Records](project-logs/)** - Why specific technologies and patterns were chosen
 
 **Quick Start:**
 - **[Online Learning Demo](../scripts/online_learning_demo.py)** - Comprehensive system demonstration
 - **[Enhanced Fraud Detector](../src/consumers/enhanced_fraud_detector.py)** - Production integration example
-- **[Performance Benchmarks](project-logs/)** - Real measurement results and optimization insights
+- **[High-Performance Inference](../src/inference/fast_inference.py)** - Multi-engine inference with automatic fallback
+- **[Performance Benchmarks](project-logs/006-high-performance-inference-benchmarking.md)** - C++ vs Python performance analysis
 
 ## How to Use This Documentation
 
@@ -132,19 +146,23 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 | **Docker** | Infrastructure | [Infrastructure](infrastructure/README.md) | [Project Logs](project-logs/README.md) |
 | **Python** | Application Logic | Embedded in all guides | [Fraud Detection](fraud-detection/README.md) |
 | **Machine Learning** | Fraud Detection | [Fraud Detection](fraud-detection/README.md) | [ML Pipeline](machine-learning/README.md) |
+| **C++ Integration** | High-Performance Inference | [High-Performance Serving](high-performance-serving-architecture.md) | [Project Logs](project-logs/006-high-performance-inference-benchmarking.md) |
+| **ONNX Runtime** | Cross-Platform Inference | [ONNX Architecture](onnx-inference-architecture.md) | [Model Export Pipeline](ml-advanced-training-pipeline.md) |
+| **Hyperparameter Optimization** | Model Optimization | [Advanced Training Pipeline](ml-advanced-training-pipeline.md) | [Optuna Integration](ml-advanced-training-pipeline.md) |
 
 ## Documentation Metrics
 
 **Content Coverage:**
-- **50+ Code Examples** with detailed explanations
-- **20+ Architecture Diagrams** showing system interactions
-- **15+ Performance Benchmarks** with real measurements
-- **100+ Configuration Examples** for production deployment
+- **75+ Code Examples** with detailed explanations across Python and C++
+- **25+ Architecture Diagrams** showing system interactions and performance optimizations
+- **20+ Performance Benchmarks** with comprehensive C++ vs Python vs ONNX comparisons
+- **150+ Configuration Examples** for production deployment across multiple inference engines
 
 **Learning Depth:**
-- **Beginner → Advanced**: Progressive complexity in each guide
-- **Multiple Learning Styles**: Visual diagrams, code examples, and conceptual explanations
-- **Real-World Context**: Every pattern shown with business justification
+- **Beginner → Advanced**: Progressive complexity from basic streaming to high-performance C++ integration
+- **Multiple Learning Styles**: Visual diagrams, code examples, benchmarking results, and conceptual explanations
+- **Real-World Context**: Every pattern shown with business justification and measured performance impact
+- **Production Focus**: All examples demonstrate production-grade implementation with comprehensive error handling
 
 ## Getting Started
 

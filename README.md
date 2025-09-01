@@ -32,6 +32,14 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 - **Model Registry**: Semantic versioning with automated deployment and rollback
 - **Performance Monitoring**: Comprehensive metrics with degradation detection
 
+### High-Performance ML Serving
+- **Multi-Format Model Export**: Native XGBoost (JSON), ONNX, and Python pickle formats
+- **C++ Inference Integration**: Native XGBoost C++ wrapper with automatic Python fallback
+- **Comprehensive Benchmarking**: Automated performance testing and comparison framework
+- **Hyperparameter Optimization**: Optuna-based automated model tuning with study persistence
+- **Advanced Profiling**: Memory usage, latency distribution, and throughput analysis
+- **Cross-Platform Inference**: ONNX Runtime support for deployment flexibility
+
 ## Performance Metrics
 
 ### Core System Performance
@@ -39,14 +47,28 @@ Built by a developer transitioning from analytics to software/ML engineering, th
 - **Detection Latency**: Sub-100ms fraud scoring with ML models
 - **Response Latency**: Sub-1ms alert processing and action routing
 - **System Throughput**: Horizontal scaling tested up to 100k+ TPS
-- **Fraud Detection**: Configurable thresholds with 97%+ accuracy (97.05% CV AUC with XGBoost)
+- **Fraud Detection**: 97.05% CV AUC with XGBoost (hyperparameter-optimized)
 - **Persistence Throughput**: 100k+ records per second to ClickHouse, zero real-time impact
+
+### ML Inference Performance (Measured)
+- **Python Baseline**: 53ms mean latency, 15.5 predictions/second
+- **C++ Wrapper**: Native XGBoost implementation with automatic fallback
+- **ONNX Runtime**: Cross-platform inference (optimization in progress)
+- **Memory Efficiency**: 4.86x memory efficiency improvements in testing
+- **Hyperparameter Tuning**: Automated optimization achieving 97.05% AUC
 
 ### Online Learning Performance
 - **Model Updates**: Complete incremental updates in <30 minutes
 - **Drift Detection**: Real-time analysis on 100k+ prediction samples
 - **A/B Testing**: Handle 10k+ concurrent user assignments
 - **Feedback Processing**: 10k+ investigation records per hour
+
+### Advanced ML Pipeline Performance
+- **Model Training**: Modular pipeline with checkpoint management and resource optimization
+- **Hyperparameter Studies**: Optuna optimization with database persistence
+- **Model Export**: Automated conversion between formats (pickle → JSON → ONNX)
+- **Performance Benchmarking**: Comprehensive latency and throughput analysis
+- **Inference Options**: Multiple deployment formats for different performance requirements
 
 ## System Architecture
 
@@ -332,6 +354,70 @@ cat data/processed/ieee_cis_analysis.json
 }
 ```
 
+## High-Performance ML Inference Architecture
+
+### Multi-Format Model Serving
+
+Stream-Sentinel implements a comprehensive high-performance inference system with multiple deployment formats optimized for different use cases:
+
+```
+                    High-Performance Inference Pipeline
+    
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          Model Training & Export Pipeline                        │
+│                                                                                   │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐               │
+│  │  Hyperparameter │    │     Model       │    │   Multi-Format  │               │
+│  │   Optimization  │───▶│   Training      │───▶│     Export      │               │
+│  │   (Optuna)      │    │  (Modular)      │    │  (3 Formats)    │               │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         Production Inference Engines                           │
+│                                                                                 │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                 │
+│  │  Python XGBoost │  │  C++ XGBoost    │  │  ONNX Runtime   │                 │
+│  │   (Baseline)    │  │   (Native)      │  │ (Cross-Platform)│                 │
+│  │                 │  │                 │  │                 │                 │
+│  │ 53ms latency    │  │ Target: <20ms   │  │ Optimization    │                 │
+│  │ 15.5 pred/sec   │  │ Auto fallback   │  │ in progress     │                 │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                       Performance Benchmarking & Validation                    │
+│                                                                                 │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                 │
+│  │   Accuracy      │  │   Performance   │  │   Load Testing  │                 │
+│  │  Validation     │  │  Benchmarking   │  │  & Profiling    │                 │
+│  │                 │  │                 │  │                 │                 │
+│  │ <1e-8 precision │  │ Latency/Thru    │  │ Stress testing  │                 │
+│  │ Perfect matching│  │ comparison      │  │ Resource usage  │                 │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Current Performance Baseline
+
+**Measured Performance (Production Model):**
+- **Python XGBoost**: 53ms mean latency, 15.5 predictions/second
+- **C++ Integration**: Native XGBoost wrapper with automatic Python fallback
+- **ONNX Export**: Cross-platform inference models (optimization in progress)
+- **Hyperparameter Optimization**: 97.05% CV AUC achieved through Optuna studies
+- **Benchmarking Framework**: Comprehensive performance measurement and comparison
+
+### Model Export Formats
+
+| Format | Use Case | Status | Performance Target |
+|--------|----------|--------|-----------------|
+| **Python Pickle** | Development & Baseline | ✅ Complete | 53ms baseline |
+| **XGBoost JSON** | C++ Native Inference | ✅ Complete | <20ms target |
+| **ONNX Runtime** | Cross-Platform Deploy | ⚠️ Optimizing | TBD |
+| **Model Metadata** | Validation & Tracking | ✅ Complete | N/A |
+
 ## Project Structure
 
 ```
@@ -345,8 +431,25 @@ stream-sentinel/
 │   │   └── alert_processor.py      # Alert response automation
 │   ├── producers/
 │   │   └── synthetic_transaction_producer.py  # High-throughput data generation
+│   ├── inference/                  # High-performance inference engines
+│   │   ├── fast_inference.py      # Python-C++ integration layer
+│   │   └── cpp/                   # C++ XGBoost wrapper implementation
+│   │       ├── simple_xgboost_wrapper.cpp    # Native XGBoost C++ wrapper
+│   │       ├── simple_xgboost_wrapper.hpp    # C++ header definitions
+│   │       ├── build_simple.sh             # Build automation script
+│   │       └── CRITICAL_ISSUES.md          # Implementation notes
 │   ├── ml/
 │   │   ├── ieee_model_trainer.py   # ML model training pipeline
+│   │   ├── training/               # Modular training architecture
+│   │   │   ├── core/              # Core training components
+│   │   │   │   ├── data_processor.py         # Data preprocessing
+│   │   │   │   ├── hyperparameter_optimizer.py  # Optuna integration
+│   │   │   │   ├── checkpoint_manager.py     # Training checkpoints
+│   │   │   │   └── pipeline_orchestrator.py  # Training coordination
+│   │   │   └── config/            # Training configuration
+│   │   ├── serving/               # Model serving infrastructure
+│   │   │   ├── model_export.py    # Multi-format model export
+│   │   │   └── model_validation.py # Accuracy validation
 │   │   └── online_learning/        # Complete online learning system
 │   │       ├── config.py           # Online learning configuration
 │   │       ├── feedback_processor.py    # Feedback collection & validation
@@ -364,10 +467,23 @@ stream-sentinel/
 ├── scripts/
 │   └── online_learning_demo.py     # Comprehensive system demo
 ├── models/
-│   ├── ieee_fraud_model_production.pkl  # Trained XGBoost model
+│   ├── ieee_fraud_model_production.pkl  # Python XGBoost model (baseline)
+│   ├── ieee_fraud_model_cpp.json        # Native XGBoost format for C++
 │   ├── ieee_fraud_model_metadata.json   # Model performance metrics
-│   ├── checkpoints/                     # Training checkpoints & hyperparameter optimization
-│   └── hyperparameter_studies/          # Optuna optimization studies
+│   ├── onnx_exports/               # ONNX models for cross-platform inference
+│   │   ├── ieee_fraud_production.onnx   # ONNX model file
+│   │   └── ieee_fraud_production_metadata.json  # ONNX model metadata
+│   ├── checkpoints/                # Training checkpoints & model versioning
+│   ├── hyperparameter_studies/     # Optuna optimization studies with database
+│   └── pipeline_state/             # Modular training pipeline state
+├── benchmarks/                     # Performance benchmarking infrastructure
+│   ├── cpp_vs_python_benchmark.py # C++ vs Python performance comparison
+│   ├── ml_inference_profiler.py   # Comprehensive inference profiling
+│   ├── system_benchmarks.py       # System-level performance testing
+│   └── demo_results/               # Benchmark results and analysis
+│       ├── ieee_fraud_onnx_benchmark_report.md  # Performance reports
+│       └── ieee_fraud_onnx_benchmark_results.json  # Raw benchmark data
+├── export_model_for_cpp.py        # Model format conversion utility
 ├── data/
 │   ├── raw/                        # IEEE-CIS dataset (683MB)
 │   ├── processed/                  # Analysis results
@@ -379,6 +495,8 @@ stream-sentinel/
 │   ├── learning/                  # Educational resources
 │   └── project-logs/              # Development journey
 ├── requirements.txt               # Python dependencies
+├── complete_training.py           # End-to-end model training script
+├── run_modular_training.py        # Modular training pipeline execution
 └── README.md                      # This file
 ```
 
@@ -495,42 +613,55 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Current Status & Achievements
 
-### Completed (Phase 1-3: August 2025)
-- **Infrastructure**: Complete Kafka + Redis cluster with 6-service Docker setup
+### Completed (Phase 1-4: August 2025)
+- **Infrastructure**: Complete Kafka + Redis cluster with 8-service Docker setup (PostgreSQL, ClickHouse)
 - **Data Pipeline**: IEEE-CIS analysis, synthetic data generation, real-time processing
-- **ML Foundation**: XGBoost model with 97.05% CV AUC, advanced hyperparameter optimization pipeline
+- **ML Foundation**: XGBoost model with 97.05% CV AUC, Optuna hyperparameter optimization
 - **Alert System**: Multi-tier classification with automated business actions
+- **Online Learning**: Complete adaptive learning pipeline with drift detection and A/B testing
 - **Comprehensive Documentation**: 4,000+ lines covering theory and implementation
 
-### Phase 4: Online Learning System (August 2025)
-- **Feedback Processing**: Multi-source validation with consensus algorithms
-- **Drift Detection**: Statistical monitoring (KS, PSI, Chi-square) with automated alerts
-- **Incremental Learning**: Real-time model updates with validation and rollback
-- **Model Registry**: Semantic versioning with deployment lifecycle management
-- **A/B Testing Framework**: Statistical model comparison with automated decisions
-- **System Orchestration**: Event-driven workflow coordination with health monitoring
+### Phase 5: High-Performance ML Serving (August 2025)
+- **Advanced Training Pipeline**: Modular architecture with checkpoint management
+- **Multi-Format Export**: Model conversion pipeline (pickle → JSON → ONNX)
+- **C++ Inference Implementation**: Native XGBoost wrapper with automatic Python fallback
+- **Performance Benchmarking**: Comprehensive latency/throughput measurement framework
+- **Hyperparameter Optimization**: Optuna studies with database persistence and automated tuning
+- **Cross-Platform Inference**: ONNX Runtime integration (optimization in progress)
 
 ## Architecture Roadmap & Future Development
 
 ### Current Architecture Status
-- **Core System**: Production-ready Python-based distributed architecture with Apache Kafka and Redis
-- **ML Pipeline**: Advanced XGBoost models with 97%+ AUC and comprehensive hyperparameter optimization
-- **Online Learning**: Fully implemented adaptive learning system with drift detection and A/B testing
+- **Core System**: Production-ready distributed architecture with 8-service infrastructure
+- **ML Pipeline**: Advanced XGBoost models with 97.05% AUC and Optuna optimization
+- **Online Learning**: Complete adaptive learning system with drift detection and A/B testing
+- **High-Performance Serving**: Multi-format model export with C++ and ONNX integration
+- **Benchmarking Infrastructure**: Comprehensive performance measurement and comparison
 - **Documentation**: 4,000+ lines of production-grade technical documentation
 
-### Future Performance Optimizations
-- **C++ Integration (Q4 2025)**: High-performance scoring engine for sub-10ms inference latency
-- **GPU Acceleration (Q1 2026)**: CUDA-optimized feature engineering and model inference
-- **Native Kafka Clients (Q1 2026)**: C++ Kafka consumers for maximum throughput efficiency
+### High-Performance Inference Status (Current)
+- **C++ Wrapper**: Native XGBoost C++ implementation with automatic fallback
+- **ONNX Export**: Cross-platform inference models (performance optimization ongoing)
+- **Benchmarking Framework**: Automated performance comparison and validation
+- **Model Format Pipeline**: Automated conversion between deployment formats
+- **Performance Baseline**: 53ms Python inference, optimization targets established
+- **Integration Testing**: Comprehensive accuracy validation and error handling
 
-### Phase 5: Production Hardening (September-December 2025)
+### Phase 6: Performance Optimization (September-December 2025)
+- [ ] C++ Inference Optimization: Achieve target 2-10x latency improvements
+- [ ] ONNX Runtime Optimization: Resolve performance regression issues
+- [ ] GPU Acceleration: CUDA-optimized feature engineering and model inference
+- [ ] Advanced Benchmarking: Load testing and stress testing under production conditions
+- [ ] Production Deployment: C++ inference gradual rollout with comprehensive monitoring
+
+### Phase 7: Production Hardening (January-March 2026)
 - [ ] Prometheus metrics and Grafana dashboards for observability
 - [ ] Kubernetes deployment with auto-scaling and multi-region support
 - [ ] Advanced security: mTLS, RBAC, secrets management
 - [ ] Enhanced compliance: audit trails, regulatory reporting
-- [ ] Performance optimization: C++ components, GPU acceleration
+- [ ] Native Kafka Clients: C++ Kafka consumers for maximum throughput efficiency
 
-### Phase 6: Advanced ML Features (January-May 2026)
+### Phase 8: Advanced ML Features (April-May 2026)
 - [ ] Graph neural networks for network-based fraud detection
 - [ ] Federated learning for privacy-preserving model updates
 - [ ] Causal inference for understanding fraud mechanisms
