@@ -117,8 +117,8 @@ dump.rdb
 kafka-logs/
 zookeeper-logs/
 
-# Claude context file (personal development notes)
-CLAUDE.md
+# Development notes (personal)
+development-notes.md
 
-# Architecture review
-ARCHITECTURE_REVIEW.md
+# Architecture documentation
+architecture-docs.md

@@ -29,7 +29,7 @@ g++ -std=c++17 -fPIC -O3 \
     -c ../simple_xgboost_wrapper.cpp \
     -o simple_xgboost_wrapper.o
 
-echo "✓ C++ wrapper compiled successfully"
+echo "C++ wrapper compiled successfully"
 
 # Create simple test executable
 echo "Creating test executable..."
@@ -47,7 +47,7 @@ int main() {
     std::string model_path = "../../models/ieee_fraud_model_cpp.json";
     
     if (wrapper.load_model(model_path)) {
-        std::cout << "✓ Model loaded successfully" << std::endl;
+        std::cout << "Model loaded successfully" << std::endl;
         
         // Test prediction with dummy features (200 features)
         std::vector<float> test_features(200, 1.0f);
@@ -55,17 +55,17 @@ int main() {
         double prediction = wrapper.predict(test_features);
         
         if (prediction >= 0.0) {
-            std::cout << "✓ Prediction successful: " << prediction << std::endl;
+            std::cout << "Prediction successful: " << prediction << std::endl;
         } else {
-            std::cout << "✗ Prediction failed: " << wrapper.get_last_error() << std::endl;
+            std::cout << "Prediction failed: " << wrapper.get_last_error() << std::endl;
             return 1;
         }
     } else {
-        std::cout << "✗ Model loading failed: " << wrapper.get_last_error() << std::endl;
+        std::cout << "Model loading failed: " << wrapper.get_last_error() << std::endl;
         return 1;
     }
     
-    std::cout << "🎉 Simple XGBoost wrapper test PASSED!" << std::endl;
+    std::cout << "Simple XGBoost wrapper test PASSED!" << std::endl;
     return 0;
 }
 EOF
@@ -78,7 +78,7 @@ g++ -std=c++17 -O3 \
     "$XGBOOST_LIB" \
     -o test_simple_wrapper
 
-echo "✓ Test executable created: test_simple_wrapper"
+echo "Test executable created: test_simple_wrapper"
 
 echo ""
 echo "Build completed successfully!"

@@ -821,7 +821,7 @@ class PerformanceBenchmark:
                 if result.stress_test_metrics:
                     f.write("## Stress Test Results\n\n")
                     m = result.stress_test_metrics
-                    f.write(f"- **Stress Test Passed**: {'✅ Yes' if result.stress_test_passed else '❌ No'}\n")
+                    f.write(f"- **Stress Test Passed**: {'Yes' if result.stress_test_passed else 'No'}\n")
                     f.write(f"- **Achieved Throughput**: {m.throughput_pps:.1f} RPS\n")
                     f.write(f"- **Mean Latency**: {m.mean_latency_ms:.2f}ms\n")
                     f.write(f"- **Error Rate**: {m.error_rate:.4f}\n\n")
@@ -833,7 +833,7 @@ class PerformanceBenchmark:
                     f.write(f"- **Latency Improvement**: {improvements.get('latency_improvement_factor', 1.0):.2f}x\n")
                     f.write(f"- **Throughput Improvement**: {improvements.get('throughput_improvement_factor', 1.0):.2f}x\n")
                     f.write(f"- **Memory Efficiency**: {improvements.get('memory_efficiency_ratio', 1.0):.2f}x\n")
-                    f.write(f"- **Regression Detected**: {'❌ Yes' if result.regression_detected else '✅ No'}\n\n")
+                    f.write(f"- **Regression Detected**: {'Yes' if result.regression_detected else 'No'}\n\n")
                 
                 # Issues
                 if result.errors or result.warnings:

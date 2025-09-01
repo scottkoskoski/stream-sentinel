@@ -1,6 +1,6 @@
 # CRITICAL C++ WRAPPER ISSUES - REQUIRES IMMEDIATE ATTENTION
 
-## 🚨 SHOWSTOPPER ISSUES
+## SHOWSTOPPER ISSUES
 
 ### 1. Model Format Incompatibility (CRITICAL)
 **Location**: `simple_xgboost_wrapper.cpp:37-40`
@@ -28,7 +28,7 @@
 
 **Solution Required**: Add null check before freeing
 
-## ✅ ARCHITECTURAL DECISION REQUIRED
+## ARCHITECTURAL DECISION REQUIRED
 
 **Option A**: Convert model format (Recommended)
 1. Export our trained XGBClassifier to native XGBoost format  
@@ -39,7 +39,7 @@
 1. Use Python C API to call XGBoost directly
 2. More complex but avoids format conversion
 
-## 🎯 IMMEDIATE ACTION PLAN
+## IMMEDIATE ACTION PLAN
 
 1. **FIRST**: Export model to native XGBoost format  
 2. **SECOND**: Fix prediction interpretation logic

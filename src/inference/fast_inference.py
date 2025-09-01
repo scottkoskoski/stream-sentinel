@@ -214,4 +214,4 @@ if __name__ == "__main__":
     
     print(f"Test prediction: {prob:.4f}")
     print(f"Performance info: {info}")
-    print("✓ FastInferenceEngine test complete")
+    print("FastInferenceEngine test complete")

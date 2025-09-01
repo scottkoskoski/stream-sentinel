@@ -404,9 +404,9 @@ stream-sentinel-clickhouse    Up (healthy)
 cd src/kafka && python test_connectivity.py
 
 # Expected output:
-# ✅ All Kafka connectivity tests PASSED!
-# ✅ Schema Registry connectivity verified
-# ✅ Topic creation and message handling verified
+# All Kafka connectivity tests PASSED!
+# Schema Registry connectivity verified
+# Topic creation and message handling verified
 # Stream-Sentinel infrastructure ready for fraud detection
 
 # Test database connectivity

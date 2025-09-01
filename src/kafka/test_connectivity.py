@@ -355,7 +355,7 @@ class KafkaConnectivityTester:
             return False
 
         # Test 2: Producer operations
-        self.logger.info("\n📤 Test 2: Producer Operations")
+        self.logger.info("\nTest 2: Producer Operations")
         producer_result = self.test_producer_operations()
         test_results.append(("Producer Operations", producer_result))
 
@@ -368,7 +368,7 @@ class KafkaConnectivityTester:
         time.sleep(2)
 
         # Test 3: Consumer operations
-        self.logger.info("\n📥 Test 3: Consumer Operations")
+        self.logger.info("\nTest 3: Consumer Operations")
         consumer_result = self.test_consumer_operations()
         test_results.append(("Consumer Operations", consumer_result))
 
@@ -390,12 +390,12 @@ class KafkaConnectivityTester:
                 all_passed = False
 
         if all_passed:
-            self.logger.info("\n🎉 All Kafka connectivity tests PASSED!")
+            self.logger.info("\nAll Kafka connectivity tests PASSED!")
             self.logger.info(
                 "Stream-Sentinel is ready for fraud detection pipeline development."
             )
         else:
-            self.logger.error("\n💥 Some tests FAILED!")
+            self.logger.error("\nSome tests FAILED!")
             self.logger.error("Please check Kafka cluster status and configuration.")
 
         self.logger.info("=" * 60)
@@ -410,11 +410,11 @@ def main():
         success = tester.run_full_test()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        tester.logger.info("\n🛑 Test interrupted by user")
+        tester.logger.info("\nTest interrupted by user")
         tester.cleanup_test_topic()
         sys.exit(1)
     except Exception as e:
-        tester.logger.error(f"💥 Unexpected error: {e}")
+        tester.logger.error(f"Unexpected error: {e}")
         tester.cleanup_test_topic()
         sys.exit(1)
 

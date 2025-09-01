@@ -241,7 +241,7 @@ class WindowedFraudAnalyzer:
 - **Sliding Windows**: Fixed-size, overlapping (rolling averages)
 - **Session Windows**: Variable-size based on activity gaps
 
-## 🧮 Feature Engineering Pipeline
+## Feature Engineering Pipeline
 
 Feature engineering transforms raw transaction data into ML-ready features for fraud detection.
 

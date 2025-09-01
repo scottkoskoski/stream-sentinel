@@ -8,7 +8,7 @@ Apache Kafka is a distributed event streaming platform that can handle trillions
 
 **Real-World Analogy**: Kafka is like a digital mail system for applications. Instead of sending individual emails, applications publish "events" to topics (like mailing lists), and other applications subscribe to topics they're interested in. Unlike email, messages are stored durably and can be replayed.
 
-## 🧠 Core Concepts
+## Core Concepts
 
 ### 1. Events and Messages
 
