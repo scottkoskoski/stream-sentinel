@@ -55,6 +55,7 @@ venv.bak/
 *.a
 *.lib
 build/
+build_simple/
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
@@ -88,6 +89,23 @@ tmp/
 temp/
 .cache/
 *.tmp
+*.prof
+
+# Database files that should be regenerated
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary scripts and utilities in root
+/test_*.py
+/profile_*.py
+/quick_*.py
+/run_*.py
+/complete_*.py
+/save_*.py
+/simple_*.py
+/export_*.py
+/setup_*.py
 
 # OS generated files
 .DS_Store
