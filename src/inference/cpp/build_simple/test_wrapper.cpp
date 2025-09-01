@@ -8,7 +8,7 @@ int main() {
     stream_sentinel::SimpleXGBoostWrapper wrapper;
     
     // Test model loading
-    std::string model_path = "/home/scottyk/Documents/stream-sentinel/models/ieee_fraud_model_cpp.json";
+    std::string model_path = "../../../../models/ieee_fraud_model_cpp.json";
     
     if (wrapper.load_model(model_path)) {
         std::cout << "Model loaded successfully" << std::endl;

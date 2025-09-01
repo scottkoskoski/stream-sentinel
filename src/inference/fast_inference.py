@@ -69,20 +69,48 @@ class FastInferenceEngine:
         # Try to load C++ wrapper if enabled
         if self.enable_cpp:
             try:
+                import os
+                import sys
+                
+                # Set up environment for C++ wrapper
+                cpp_dir = Path(__file__).parent / "cpp"
+                xgboost_lib_dir = "/home/scottyk/Documents/stream-sentinel/venv/lib/python3.13/site-packages/xgboost/lib"
+                
+                # Add C++ extension to Python path
+                if str(cpp_dir) not in sys.path:
+                    sys.path.insert(0, str(cpp_dir))
+                
+                # Set LD_LIBRARY_PATH for XGBoost shared library
+                current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
+                if xgboost_lib_dir not in current_ld_path:
+                    os.environ['LD_LIBRARY_PATH'] = f"{xgboost_lib_dir}:{current_ld_path}"
+                
                 import simple_xgboost_cpp
                 self.cpp_wrapper = simple_xgboost_cpp.SimpleXGBoostWrapper()
                 
-                if self.cpp_wrapper.load_model(self.model_path):
-                    self.using_cpp = True
-                    logger.info("C++ XGBoost wrapper loaded successfully")
+                # Use C++ compatible model file
+                cpp_model_path = self.model_path.replace('.pkl', '_cpp.json')
+                if not Path(cpp_model_path).exists():
+                    # Try alternative naming
+                    cpp_model_path = self.model_path.replace('_production.pkl', '_cpp.json')
+                    
+                if Path(cpp_model_path).exists():
+                    if self.cpp_wrapper.load_model(cpp_model_path):
+                        self.using_cpp = True
+                        logger.info(f"C++ XGBoost wrapper loaded successfully using model: {cpp_model_path}")
+                    else:
+                        error = self.cpp_wrapper.get_last_error()
+                        logger.warning(f"C++ wrapper failed to load model: {error}")
+                        logger.warning("Falling back to Python implementation")
+                        self.cpp_wrapper = None
                 else:
-                    error = self.cpp_wrapper.get_last_error()
-                    logger.warning(f"C++ wrapper failed to load model: {error}")
+                    logger.warning(f"C++ model file not found: {cpp_model_path}")
+                    logger.warning("Run export_model_for_cpp.py to create C++ compatible model")
                     logger.warning("Falling back to Python implementation")
                     self.cpp_wrapper = None
                     
-            except ImportError:
-                logger.info("C++ wrapper not available, using Python implementation")
+            except ImportError as e:
+                logger.info(f"C++ wrapper not available: {e}")
             except Exception as e:
                 logger.warning(f"C++ wrapper initialization failed: {e}")
                 logger.warning("Falling back to Python implementation")

@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Build script for Python extension module
+# Compiles simple_xgboost_cpp.so for Python import
+
+set -e
+
+echo "Building Python extension module for C++ XGBoost wrapper..."
+
+# Get Python and pybind11 configuration
+PYTHON_EXECUTABLE="/home/scottyk/Documents/stream-sentinel/venv/bin/python"
+PYBIND11_INCLUDES="$($PYTHON_EXECUTABLE -m pybind11 --includes)"
+PYTHON_EXTENSION_SUFFIX="$($PYTHON_EXECUTABLE -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX"))')"
+
+echo "Python executable: $PYTHON_EXECUTABLE"
+echo "Pybind11 includes: $PYBIND11_INCLUDES"
+echo "Extension suffix: $PYTHON_EXTENSION_SUFFIX"
+
+# Build directory  
+mkdir -p build_simple
+cd build_simple
+
+# XGBoost library path
+XGBOOST_LIB="/home/scottyk/Documents/stream-sentinel/venv/lib/python3.13/site-packages/xgboost/lib/libxgboost.so"
+
+if [ ! -f "$XGBOOST_LIB" ]; then
+    echo "Error: XGBoost shared library not found at $XGBOOST_LIB"
+    exit 1
+fi
+
+echo "Using XGBoost library: $XGBOOST_LIB"
+
+# Compile the wrapper object if not already compiled
+if [ ! -f "simple_xgboost_wrapper.o" ]; then
+    echo "Compiling C++ wrapper object..."
+    g++ -std=c++17 -fPIC -O3 \
+        -I../xgboost_headers \
+        -c ../simple_xgboost_wrapper.cpp \
+        -o simple_xgboost_wrapper.o
+    echo "C++ wrapper object compiled"
+fi
+
+# Compile Python extension module
+echo "Compiling Python extension module..."
+g++ -std=c++17 -fPIC -O3 -shared \
+    $PYBIND11_INCLUDES \
+    -I../xgboost_headers \
+    simple_xgboost_wrapper.o \
+    ../simple_python_bindings.cpp \
+    "$XGBOOST_LIB" \
+    -o "simple_xgboost_cpp${PYTHON_EXTENSION_SUFFIX}"
+
+echo "Python extension module created: simple_xgboost_cpp${PYTHON_EXTENSION_SUFFIX}"
+
+# Copy to a location where Python can import it
+INSTALL_DIR="/home/scottyk/Documents/stream-sentinel/src/inference/cpp"
+cp "simple_xgboost_cpp${PYTHON_EXTENSION_SUFFIX}" "$INSTALL_DIR/"
+
+echo "Extension module installed to: $INSTALL_DIR/simple_xgboost_cpp${PYTHON_EXTENSION_SUFFIX}"
+
+echo ""
+echo "Build completed successfully!"
+echo "You can now import the module with: import simple_xgboost_cpp"
