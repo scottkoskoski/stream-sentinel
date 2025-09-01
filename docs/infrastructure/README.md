@@ -1,213 +1,271 @@
 # Infrastructure Architecture
 
-Stream-Sentinel's infrastructure demonstrates production-grade distributed systems patterns using containerized services orchestrated through Docker Compose. This guide explains both the core technologies and the advanced online learning infrastructure that work together to create a resilient, adaptive fraud detection platform.
+Stream-Sentinel's infrastructure demonstrates production-grade distributed systems patterns using containerized services orchestrated through Docker Compose. The system provides a complete data processing pipeline with message streaming, real-time state management, and dual-database persistence for both transactional integrity and analytical queries.
 
-## Enhanced Architecture Overview
+## Architecture Overview
 
 ```
-                         Enhanced Stream-Sentinel Infrastructure
+                         Stream-Sentinel Infrastructure Architecture
     
     ┌─────────────────────────────────────────────────────────────────────────────────┐
-    │                              Docker Host                                        │
+    │                              Docker Host Network                                │
     │                                                                                 │
-    │  ┌─────────────────────────────────────────────────────────────────────────────┐ │
-    │  │                           Docker Network                                    │ │
-    │  │                                                                             │ │
-    │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │ │
-    │  │  │  Zookeeper   │  │    Kafka     │  │Schema Registry│  │  Kafka UI    │     │ │
-    │  │  │    :2181     │  │   :9092      │  │    :8081      │  │    :8080     │     │ │
-    │  │  │              │  │              │  │              │  │              │     │ │
-    │  │  │ Coordination │◄─┤ Message      │◄─┤ Data Format  │  │ Monitoring   │     │ │
-    │  │  │ & Metadata   │  │ Streaming    │  │ Evolution    │  │ & Debug      │     │ │
-    │  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘     │ │
-    │  │                                                                             │ │
-    │  │  ┌─────────────────────────────────────────────────────────────────────┐   │ │
-    │  │  │                         Redis Cluster                               │   │ │
-    │  │  │                          :6379                                      │   │ │
-    │  │  │                                                                     │   │ │
-    │  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐      │   │ │
-    │  │  │  │DB0: User│ │DB1: Main│ │DB2: Feed│ │DB3: Model│ │DB4: Drift│      │   │ │
-    │  │  │  │Profiles │ │ State   │ │ back   │ │Registry │ │Detection│      │   │ │
-    │  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘      │   │ │
-    │  │  │                                                                     │   │ │
-    │  │  │  ┌─────────────────┐                                               │   │ │
-    │  │  │  │ DB5: A/B Tests  │          Redis Insight :8001                  │   │ │
-    │  │  │  │ & Experiments   │          Cache Monitor & Debug                │   │ │
-    │  │  │  └─────────────────┘                                               │   │ │
-    │  │  └─────────────────────────────────────────────────────────────────────┘   │ │
-    │  │                                                                             │ │
-    │  └─────────────────────────────────────────────────────────────────────────────┘ │
+    │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+    │  │  Zookeeper   │  │    Kafka     │  │Schema Registry│  │  Kafka UI    │       │
+    │  │    :2181     │  │   :9092      │  │    :8081      │  │    :8080     │       │
+    │  │              │  │              │  │              │  │              │       │
+    │  │ Coordination │◄─┤ Message      │◄─┤ Data Format  │  │ Monitoring   │       │
+    │  │ & Metadata   │  │ Streaming    │  │ Evolution    │  │ & Debug      │       │
+    │  │              │  │ 6 Partitions │  │              │  │              │       │
+    │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘       │
+    │                                                                                 │
+    │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+    │  │    Redis     │  │ Redis Insight│  │ PostgreSQL   │  │  ClickHouse  │       │
+    │  │    :6379     │  │    :8001     │  │    :5432     │  │ :8123/:9000  │       │
+    │  │              │  │              │  │              │  │              │       │
+    │  │ User State   │  │ Cache        │  │ OLTP         │  │ OLAP         │       │
+    │  │ Management   │  │ Monitoring   │  │ Fraud Alerts │  │ Analytics    │       │
+    │  │ 512MB LRU    │  │ & Debug      │  │ User Mgmt    │  │ Time-Series  │       │
+    │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘       │
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🧰 Technology Stack Deep Dive
+## Core Technology Stack
 
 ### Apache Kafka - Distributed Event Streaming
 
 **What is Kafka?**
-Apache Kafka is a distributed event streaming platform that handles real-time data feeds. Think of it as a high-performance messaging system that can handle millions of events per second across multiple servers.
+Apache Kafka is a distributed event streaming platform that handles real-time data feeds. It acts as a high-performance messaging system capable of processing thousands of events per second with fault tolerance and durability.
 
 **Why Kafka for Fraud Detection?**
-- **High Throughput**: Can process 10k+ transactions per second
+- **High Throughput**: Processes 1,000+ transactions per second validated
 - **Durability**: Messages are persisted to disk and replicated
-- **Real-time**: Sub-millisecond message delivery
-- **Scalability**: Horizontal scaling through partitioning
+- **Real-time**: Sub-millisecond message delivery within the cluster
+- **Scalability**: Horizontal scaling through partitioning (6 partitions configured)
 - **Fault Tolerance**: Automatic failover and data recovery
 
-**How Kafka Works in Stream-Sentinel:**
-```python
-# Producer (Transaction Generator)
-producer.produce(
-    topic='synthetic-transactions',
-    key=user_id,
-    value=transaction_data,
-    partition=hash(user_id) % 12  # Distribute across 12 partitions
-)
-
-# Consumer (Fraud Detector)
-consumer.subscribe(['synthetic-transactions'])
-for message in consumer:
-    transaction = json.loads(message.value())
-    fraud_score = detect_fraud(transaction)
+**Stream-Sentinel Kafka Configuration:**
+```yaml
+# Core Kafka settings from docker-compose.yml
+KAFKA_NUM_PARTITIONS: 6                 # Optimized for development
+KAFKA_COMPRESSION_TYPE: 'lz4'           # Fast compression
+KAFKA_LOG_RETENTION_HOURS: 168          # 7 days retention
+KAFKA_DEFAULT_REPLICATION_FACTOR: 1     # Single-node development
+KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 ```
 
-**Kafka Configuration in Stream-Sentinel:**
-```yaml
-# docker-compose.yml excerpt
-kafka:
-  environment:
-    KAFKA_NUM_PARTITIONS: 12        # High parallelism
-    KAFKA_COMPRESSION_TYPE: 'lz4'   # Fast compression
-    KAFKA_LOG_RETENTION_HOURS: 168  # 7 days retention
-    KAFKA_DEFAULT_REPLICATION_FACTOR: 1  # Development setting
+**Topic Architecture:**
+```python
+# Primary data flow topics
+topics = {
+    'synthetic-transactions': {
+        'partitions': 6,
+        'purpose': 'IEEE-CIS format transaction data',
+        'retention': '7 days'
+    },
+    'fraud-alerts': {
+        'partitions': 6, 
+        'purpose': 'High-priority fraud detections',
+        'retention': '7 days'
+    },
+    'fraud-detection-results': {
+        'partitions': 6,
+        'purpose': 'Complete detection results for persistence',
+        'retention': '7 days'
+    },
+    'performance-metrics': {
+        'partitions': 3,
+        'purpose': 'System performance monitoring',
+        'retention': '3 days'
+    }
+}
 ```
 
 ### Redis - High-Performance State Management
 
 **What is Redis?**
-Redis is an in-memory data structure store used as a database, cache, and message broker. It's extremely fast because data lives in RAM rather than on disk.
+Redis is an in-memory data structure store used for real-time state management. Stream-Sentinel uses Redis to maintain user behavioral profiles that are updated with each transaction for velocity-based fraud detection.
 
 **Why Redis for Fraud Detection?**
 - **Speed**: Sub-millisecond read/write operations
-- **Data Structures**: Built-in support for complex data types (hashes, sets, lists)
-- **Persistence**: Can save data to disk for durability
-- **Memory Efficiency**: Optimized storage with LRU eviction
+- **Data Structures**: Built-in support for hashes, perfect for user profiles  
+- **Persistence**: AOF (Append Only File) enabled for crash recovery
+- **Memory Management**: LRU eviction with 512MB memory limit
+- **Atomic Operations**: Safe concurrent updates from multiple consumers
 
-**How Redis Works in Stream-Sentinel:**
+**User Profile Storage Pattern:**
 ```python
-# User Profile Storage
-redis_client.hset(
-    f"user:{user_id}",
-    mapping={
+# User profile structure in Redis
+user_profile = {
+    f"user_profile:{user_id}": {
+        "user_id": str(user_id),
         "total_transactions": 42,
-        "avg_amount": 127.50,
-        "last_transaction_time": "2025-08-26T14:30:00Z",
-        "daily_count": 5
+        "total_amount": 5247.50,
+        "avg_transaction_amount": 125.0,
+        "last_transaction_time": "2025-01-15T14:30:00Z",
+        "last_transaction_amount": 89.99,
+        "daily_transaction_count": 3,
+        "daily_amount": 275.48,
+        "last_reset_date": "2025-01-15",
+        "suspicious_activity_count": 0
     }
-)
+}
 
-# Fast Lookups During Fraud Detection
-user_profile = redis_client.hgetall(f"user:{user_id}")
-if float(current_amount) > float(user_profile['avg_amount']) * 5:
-    fraud_indicators.append("high_amount_vs_average")
+# Redis configuration
+redis_config = {
+    "maxmemory": "512mb",
+    "maxmemory-policy": "allkeys-lru",
+    "appendonly": "yes",  # Persistence enabled
+    "auto-aof-rewrite-percentage": 100
+}
 ```
 
-**Redis Configuration:**
-```bash
-# Optimized for fraud detection workload
-redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
+### PostgreSQL - ACID-Compliant Transactional Storage
+
+**What is PostgreSQL?**
+PostgreSQL serves as the OLTP (Online Transaction Processing) database for Stream-Sentinel, storing critical data that requires ACID compliance and immediate consistency.
+
+**PostgreSQL Configuration:**
+```yaml
+# Production-optimized PostgreSQL settings
+POSTGRES_DB: stream_sentinel
+POSTGRES_USER: stream_sentinel_user
+max_connections: 200
+shared_buffers: 256MB
+effective_cache_size: 1GB
+maintenance_work_mem: 64MB
+```
+
+**OLTP Data Storage:**
+- **Fraud Alerts**: High-severity fraud detections requiring investigation
+- **User Accounts**: Account status, blocking actions, investigation history
+- **Audit Logs**: Compliance-ready audit trails for regulatory requirements
+- **Model Performance**: ML model accuracy tracking and performance metrics
+
+### ClickHouse - High-Performance Analytics Database
+
+**What is ClickHouse?**
+ClickHouse serves as the OLAP (Online Analytical Processing) database, optimized for time-series analytics and high-volume transaction data storage.
+
+**ClickHouse Configuration:**
+```yaml
+# Analytics-optimized ClickHouse settings
+CLICKHOUSE_DB: stream_sentinel
+CLICKHOUSE_USER: stream_sentinel_user
+ulimits:
+  nofile: 262144  # Handle high connection counts
+```
+
+**OLAP Data Storage:**
+- **Transaction Records**: All processed transactions with fraud scores
+- **Feature Data**: ML features and engineered attributes
+- **Detection Results**: Complete fraud detection results and metadata
+- **Performance Metrics**: System throughput and latency measurements
+
+### Schema Registry - Data Format Evolution
+
+**What is Schema Registry?**
+Confluent Schema Registry provides centralized schema management for Kafka messages, ensuring data quality and enabling safe schema evolution without breaking consumers.
+
+**Schema Evolution Example:**
+```json
+// Current Transaction Schema (Version 1)
+{
+  "type": "record",
+  "name": "Transaction", 
+  "fields": [
+    {"name": "transaction_id", "type": "string"},
+    {"name": "card1", "type": "long"},
+    {"name": "transaction_amt", "type": "double"},
+    {"name": "generated_timestamp", "type": "string"},
+    {"name": "product_cd", "type": ["null", "string"], "default": null}
+  ]
+}
 ```
 
 ### Zookeeper - Coordination Service
 
 **What is Zookeeper?**
-Apache Zookeeper is a coordination service for distributed applications. It provides configuration management, synchronization, and group services.
+Apache Zookeeper coordinates the Kafka cluster, managing broker metadata, topic configurations, and consumer group coordination.
 
-**Why Zookeeper for Kafka?**
-- **Metadata Management**: Stores topic configurations and broker information
-- **Leader Election**: Manages which Kafka broker is the controller
-- **Configuration Storage**: Centralized configuration management
-- **Service Discovery**: Helps services find and connect to each other
+**Zookeeper Responsibilities:**
+- **Broker Registration**: Maintains list of available Kafka brokers
+- **Topic Metadata**: Stores partition assignments and configurations
+- **Consumer Coordination**: Manages consumer group membership and offset tracking
+- **Leader Election**: Elects partition leaders for high availability
 
-**How Zookeeper Works:**
-```
-Kafka Broker Registration:
-/brokers/ids/1 -> {"host":"kafka","port":9092}
+## Docker Compose Service Architecture
 
-Topic Metadata:
-/brokers/topics/synthetic-transactions -> {"partitions":12}
+### Service Dependencies
 
-Consumer Groups:
-/consumers/fraud-detection-group/offsets/synthetic-transactions/0 -> 1847
-```
-
-### Schema Registry - Data Format Evolution
-
-**What is Schema Registry?**
-Confluent Schema Registry provides a centralized repository for managing and validating schemas for Kafka messages. It ensures data compatibility as your schemas evolve.
-
-**Why Schema Registry?**
-- **Data Quality**: Ensures all messages conform to expected format
-- **Evolution**: Safely change message formats without breaking consumers
-- **Validation**: Reject malformed messages at production time
-- **Documentation**: Self-documenting data contracts
-
-**Schema Evolution Example:**
-```json
-// Version 1: Basic Transaction
-{
-  "type": "record",
-  "name": "Transaction",
-  "fields": [
-    {"name": "transaction_id", "type": "string"},
-    {"name": "amount", "type": "double"},
-    {"name": "timestamp", "type": "long"}
-  ]
-}
-
-// Version 2: Added User Context (Backward Compatible)
-{
-  "type": "record", 
-  "name": "Transaction",
-  "fields": [
-    {"name": "transaction_id", "type": "string"},
-    {"name": "amount", "type": "double"},
-    {"name": "timestamp", "type": "long"},
-    {"name": "user_id", "type": ["null", "string"], "default": null}
-  ]
-}
-```
-
-## Docker Compose Orchestration
-
-**Why Docker Compose?**
-Docker Compose allows us to define and run multi-container applications with a single configuration file. Perfect for development and testing of distributed systems.
-
-**Key Benefits:**
-- **Reproducible Environment**: Same setup across all development machines
-- **Service Discovery**: Containers can find each other by name
-- **Network Isolation**: Services communicate on private networks
-- **Volume Management**: Persistent data storage
-- **Health Checks**: Automatic service monitoring
-
-**Service Dependencies:**
 ```yaml
+# Service startup order and dependencies
 services:
-  zookeeper:
-    # Base coordination service
+  zookeeper:          # Foundation service
+    # No dependencies
     
-  kafka:
+  kafka:              # Core messaging
     depends_on:
-      - zookeeper  # Kafka needs Zookeeper for metadata
+      - zookeeper
       
-  schema-registry:
-    depends_on:
-      - kafka      # Schema Registry stores schemas in Kafka
-      
-  kafka-ui:
+  schema-registry:    # Schema management  
     depends_on:
       - kafka
-      - schema-registry  # UI shows both Kafka and Schema Registry data
+      
+  kafka-ui:           # Monitoring dashboard
+    depends_on:
+      - kafka
+      - schema-registry
+      
+  redis:              # State management
+    # No dependencies - independent service
+    
+  redis-insight:      # Redis monitoring
+    depends_on:
+      - redis
+      
+  postgres:           # OLTP database
+    # No dependencies - independent service
+    
+  clickhouse:         # OLAP database  
+    # No dependencies - independent service
+```
+
+### Health Monitoring
+
+Each service includes comprehensive health checks:
+
+```yaml
+# Kafka health check
+healthcheck:
+  test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+  interval: 30s
+  timeout: 10s  
+  retries: 3
+  start_period: 60s
+
+# Redis health check
+healthcheck:
+  test: ["CMD", "redis-cli", "ping"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+
+# PostgreSQL health check  
+healthcheck:
+  test: ["CMD-SHELL", "pg_isready -U stream_sentinel_user -d stream_sentinel"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 30s
+
+# ClickHouse health check
+healthcheck:
+  test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8123/ping"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 30s
 ```
 
 ## Monitoring & Observability
@@ -217,23 +275,25 @@ services:
 **Access**: http://localhost:8080
 
 **Key Features:**
-- **Topic Management**: Create, configure, and monitor Kafka topics
-- **Message Browser**: Inspect individual messages and their content
-- **Consumer Groups**: Monitor lag and partition assignment
-- **Schema Registry Integration**: View and manage message schemas
-- **Performance Metrics**: Throughput, error rates, and partition distribution
+- **Topic Management**: Monitor message throughput and partition distribution
+- **Message Browser**: Inspect transaction content and fraud detection results  
+- **Consumer Groups**: Track processing lag and partition assignments
+- **Schema Registry**: View message format evolution and compatibility
+- **Performance Metrics**: Real-time throughput and error rate monitoring
 
 **Fraud Detection Monitoring:**
-```
-Topics to Monitor:
-├── synthetic-transactions (12 partitions)
-├── fraud-alerts (6 partitions) 
-└── user-actions (3 partitions)
+```bash
+# Key topics to monitor
+synthetic-transactions     # Input transaction stream
+fraud-alerts               # High-priority fraud detections  
+fraud-detection-results    # Complete results for persistence
+performance-metrics        # System health and performance
 
-Key Metrics:
-├── Messages per second (target: 10k+)
-├── Consumer lag (target: <1s)
-└── Error rate (target: <0.1%)
+# Key metrics
+- Messages/second: Target 1,000+ sustained
+- Consumer lag: Target <5 seconds  
+- Error rate: Target <0.1%
+- Partition distribution: Balanced load across 6 partitions
 ```
 
 ### Redis Insight - State Management Dashboard
@@ -242,48 +302,50 @@ Key Metrics:
 
 **Key Features:**
 - **Memory Usage**: Track Redis memory consumption and key distribution
-- **Command Execution**: Run Redis commands directly in the web interface
-- **Key Browser**: Inspect user profiles and cached data
-- **Performance Monitoring**: Track operations per second and latency
+- **Key Browser**: Inspect user profiles and behavioral state
+- **Command Interface**: Execute Redis commands directly in web UI
+- **Real-time Monitoring**: Operations per second and latency tracking
 
 **User Profile Monitoring:**
-```
-Key Patterns:
-├── user:{user_id} -> Hash with transaction statistics
-├── daily:{user_id}:{date} -> Daily transaction counts
-└── alerts:{user_id} -> List of recent fraud alerts
+```bash
+# Key patterns in Redis
+user_profile:{user_id}     # User behavioral profiles (TTL: 30 days)
 
-Memory Usage:
-├── Total: ~100MB (500 users * ~200KB each)
-├── Eviction: LRU policy when memory limit reached
-└── Persistence: AOF for crash recovery
+# Memory monitoring
+Total Memory: ~100MB (estimated for 10,000 active users)
+Key Count: ~10,000 user profiles  
+Eviction Policy: LRU when memory limit reached
+Persistence: AOF enabled for crash recovery
 ```
 
 ## Configuration Management
 
 ### Environment-Aware Configuration
 
-Stream-Sentinel uses a sophisticated configuration system that adapts to different environments:
+Stream-Sentinel uses sophisticated configuration management that adapts to different deployment environments:
 
 ```python
 # src/kafka/config.py
 class Environment(Enum):
     DEVELOPMENT = "development"  # Local Docker setup
-    STAGING = "staging"          # Cloud testing environment  
-    PRODUCTION = "production"    # Live trading environment
+    STAGING = "staging"          # Cloud testing environment
+    PRODUCTION = "production"    # Live deployment
 
 def get_kafka_config(environment):
     if environment == Environment.DEVELOPMENT:
         return {
             "bootstrap.servers": "localhost:9092",
-            "acks": "1",  # Faster development feedback
-            "retries": 10
+            "acks": "1",             # Faster development feedback
+            "retries": 10,
+            "linger.ms": 5,          # Small batching for low latency
+            "compression.type": "lz4"
         }
     elif environment == Environment.PRODUCTION:
         return {
-            "bootstrap.servers": "kafka-1:9092,kafka-2:9092,kafka-3:9092",
-            "acks": "all",  # Maximum durability
-            "retries": 2147483647,
+            "bootstrap.servers": "kafka-1:9092,kafka-2:9092,kafka-3:9092", 
+            "acks": "all",           # Maximum durability
+            "retries": 2147483647,   # Retry indefinitely
+            "enable.idempotence": True,
             "security.protocol": "SASL_SSL"
         }
 ```
@@ -292,138 +354,171 @@ def get_kafka_config(environment):
 
 **Kafka Optimizations:**
 ```yaml
-# High throughput producer settings
-KAFKA_LINGER_MS: 5                    # Batch messages for efficiency
-KAFKA_COMPRESSION_TYPE: 'lz4'         # Fast compression algorithm
-KAFKA_BATCH_SIZE: 16384               # Optimal batch size for fraud data
+# Producer performance tuning
+KAFKA_LINGER_MS: 5                    # Small batch latency
+KAFKA_COMPRESSION_TYPE: 'lz4'         # Fast compression
+KAFKA_BATCH_SIZE: 16384               # Optimal for fraud detection data
 
-# Consumer optimization
+# Consumer performance tuning  
 KAFKA_FETCH_MIN_BYTES: 1024          # Minimize network overhead
-KAFKA_MAX_POLL_RECORDS: 1000         # Process messages in batches
+KAFKA_MAX_POLL_RECORDS: 500          # Balanced throughput/latency
 ```
 
 **Redis Optimizations:**
 ```bash
-# Memory management
-maxmemory 512mb                       # Limit memory usage
-maxmemory-policy allkeys-lru          # Evict oldest keys when full
+# Memory management for user profiles
+maxmemory 512mb                       # Sufficient for development workload
+maxmemory-policy allkeys-lru          # Evict least recently used profiles
 
-# Persistence  
-appendonly yes                        # Enable AOF for durability
-auto-aof-rewrite-percentage 100       # Rewrite AOF when it doubles
+# Persistence for state recovery
+appendonly yes                        # Enable AOF persistence
+auto-aof-rewrite-percentage 100       # Rewrite when AOF doubles in size
 ```
 
-## Health Monitoring & Diagnostics
-
-### Service Health Checks
-
-Each service includes health checks to ensure proper operation:
-
-```yaml
-# Kafka health check
-healthcheck:
-  test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
-  interval: 30s
-  timeout: 10s
-  retries: 3
-  start_period: 60s
-
-# Redis health check  
-healthcheck:
-  test: ["CMD", "redis-cli", "ping"]
-  interval: 30s
-  timeout: 10s
-  retries: 3
-```
-
-### Troubleshooting Common Issues
-
-**Kafka Connection Issues:**
-```bash
-# Check if Kafka is accessible
-kafka-broker-api-versions --bootstrap-server localhost:9092
-
-# Verify topic exists
-kafka-topics --bootstrap-server localhost:9092 --list
-
-# Check consumer group status
-kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group fraud-detection-group
-```
-
-**Redis Connection Issues:**
-```bash
-# Test Redis connectivity
-redis-cli -h localhost -p 6379 ping
-
-# Check memory usage
-redis-cli -h localhost -p 6379 info memory
-
-# Monitor commands in real-time
-redis-cli -h localhost -p 6379 monitor
-```
-
-## Getting Started
-
-### Prerequisites Verification
-
-```bash
-# Check Docker installation
-docker --version          # Should be 20.0+
-docker-compose --version  # Should be 1.25+
-
-# Check available resources
-docker system df          # Available disk space
-free -h                   # Available memory (8GB+ recommended)
-```
+## Deployment and Operations
 
 ### Infrastructure Startup
 
 ```bash
-# Start all services
+# Complete infrastructure startup
 cd docker && docker-compose up -d
 
-# Verify all services are healthy
+# Verify all services are healthy  
 docker-compose ps
 
-# Check logs if any service fails
-docker-compose logs kafka
-docker-compose logs redis
+# Expected output: All services should show "Up" status
+stream-sentinel-zookeeper     Up (healthy)
+stream-sentinel-kafka         Up (healthy)  
+stream-sentinel-schema-registry Up (healthy)
+stream-sentinel-kafka-ui      Up (healthy)
+stream-sentinel-redis         Up (healthy)
+stream-sentinel-redis-insight Up
+stream-sentinel-postgres      Up (healthy)
+stream-sentinel-clickhouse    Up (healthy)
 ```
 
-### Validation Steps
+### Validation and Testing
 
 ```bash
-# Test Kafka connectivity
-python src/kafka/test_connectivity.py
+# Test Kafka connectivity and topic operations
+cd src/kafka && python test_connectivity.py
 
 # Expected output:
-# All Kafka connectivity tests PASSED!
-# Stream-Sentinel is ready for fraud detection pipeline development.
+# ✅ All Kafka connectivity tests PASSED!
+# ✅ Schema Registry connectivity verified
+# ✅ Topic creation and message handling verified
+# Stream-Sentinel infrastructure ready for fraud detection
+
+# Test database connectivity
+docker exec stream-sentinel-postgres psql -U stream_sentinel_user -d stream_sentinel -c "SELECT version();"
+docker exec stream-sentinel-clickhouse clickhouse-client --query "SELECT version()"
+
+# Test Redis state management
+redis-cli -h localhost -p 6379 ping
+# Expected: PONG
+```
+
+### Troubleshooting
+
+**Common Issues and Solutions:**
+
+```bash
+# Kafka connection issues
+kafka-broker-api-versions --bootstrap-server localhost:9092
+
+# Redis memory issues  
+redis-cli -h localhost -p 6379 info memory
+
+# PostgreSQL connection issues
+docker exec stream-sentinel-postgres pg_isready -U stream_sentinel_user -d stream_sentinel
+
+# ClickHouse connection issues
+curl http://localhost:8123/ping
 ```
 
 ## Performance Characteristics
 
-### Throughput Benchmarks
+### Measured Performance Benchmarks
 
 | Component | Development | Production Target |
 |-----------|-------------|-------------------|
-| Kafka Messages/sec | 10,000+ | 100,000+ |
-| Redis Operations/sec | 100,000+ | 1,000,000+ |
-| Total Latency | <100ms | <10ms |
-| Memory Usage | ~1GB | ~8GB |
+| Kafka Messages/sec | 1,000+ (validated) | 10,000+ |
+| Redis Operations/sec | 10,000+ | 100,000+ |
+| Transaction Processing | <100ms (measured) | <50ms |
+| Total System Memory | ~2GB | ~8GB |
 
-### Scaling Considerations
+### Scaling Recommendations
 
 **Horizontal Scaling:**
-- Add more Kafka partitions for higher parallelism
-- Deploy multiple Redis instances with sharding
-- Use multiple consumer instances for load distribution
+- **Kafka**: Increase partitions from 6 to 12+ for higher parallelism
+- **Consumer Instances**: Deploy multiple fraud detection consumers
+- **Database Sharding**: Distribute user profiles across Redis instances
+- **Load Balancing**: Use multiple Kafka brokers for production workloads
 
 **Vertical Scaling:**
-- Increase memory for larger user profile cache
-- Add CPU cores for higher message throughput
-- Use SSD storage for faster Kafka log writes
+- **Memory**: Increase Redis memory limit for larger user profile cache  
+- **CPU**: Add cores for higher message processing throughput
+- **Storage**: Use SSD for Kafka log persistence and database performance
+
+### Resource Requirements
+
+**Development Environment:**
+```bash
+# Minimum system requirements
+CPU: 4 cores minimum, 8 cores recommended
+Memory: 8GB minimum, 16GB recommended  
+Storage: 10GB for containers and data
+Network: Localhost (no external network required)
+
+# Container resource allocation
+Kafka + Zookeeper: ~1GB memory
+Redis: 512MB memory (configured limit)
+Databases: ~1GB memory combined  
+Monitoring: ~500MB memory
+```
+
+**Production Environment:**
+```bash
+# Recommended production resources
+CPU: 16+ cores for high-throughput processing
+Memory: 32GB+ for larger state cache and buffering
+Storage: SSD with 100GB+ for data persistence
+Network: Gigabit for inter-service communication
+
+# Production scaling targets
+Throughput: 10,000+ TPS sustained
+Latency: <50ms end-to-end processing
+Availability: 99.9% uptime with failover
+Data Retention: 30 days Kafka, unlimited databases
+```
+
+## Integration Points
+
+### Data Flow Architecture
+
+```bash
+# Complete data processing pipeline
+Synthetic Producer → Kafka Topics → Fraud Detector → State Management (Redis)
+                                  ↓
+                  Alert Processor → Database Persistence (PostgreSQL + ClickHouse)
+                                  ↓  
+                  Performance Monitoring → Metrics Topics → Monitoring Dashboards
+```
+
+### External Integration
+
+**Database Connections:**
+- **PostgreSQL**: `postgresql://stream_sentinel_user:stream_sentinel_password@localhost:5432/stream_sentinel`
+- **ClickHouse**: `http://stream_sentinel_user:stream_sentinel_password@localhost:8123/stream_sentinel`
+- **Redis**: `redis://localhost:6379/0` (no authentication in development)
+
+**Monitoring Endpoints:**
+- **Kafka UI**: http://localhost:8080 (topic management and monitoring)
+- **Redis Insight**: http://localhost:8001 (state management monitoring)
+- **Schema Registry**: http://localhost:8081 (schema management API)
 
 ---
 
-This infrastructure forms the foundation for Stream-Sentinel's fraud detection capabilities, providing the reliability, performance, and scalability needed for production financial transaction processing.
+**Navigation:** [← Documentation Index](../README.md) | [Configuration →](../../src/kafka/config.py) | [Docker Compose →](../../docker/docker-compose.yml)
+
+*This infrastructure provides the robust, scalable foundation for Stream-Sentinel's production-grade fraud detection system, demonstrating modern distributed systems patterns with containerized microservices architecture.*

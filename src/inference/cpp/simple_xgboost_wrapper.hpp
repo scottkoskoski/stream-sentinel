@@ -11,7 +11,7 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include <xgboost/c_api.h>
+#include "xgboost_headers/c_api.h"
 
 namespace stream_sentinel {
 

@@ -9,6 +9,7 @@
 #include "simple_xgboost_wrapper.hpp"
 #include <iostream>
 #include <fstream>
+#include <cmath>  // For NAN
 
 namespace stream_sentinel {
 
@@ -21,22 +22,33 @@ SimpleXGBoostWrapper::~SimpleXGBoostWrapper() {
 bool SimpleXGBoostWrapper::load_model(const std::string& model_path) {
     cleanup(); // Clean up any existing model
     
-    // Check if file exists
-    std::ifstream file(model_path);
+    // Convert .pkl path to .json path for native format
+    std::string native_model_path = model_path;
+    size_t pkl_pos = native_model_path.find(".pkl");
+    if (pkl_pos != std::string::npos) {
+        native_model_path.replace(pkl_pos, 4, "_cpp.json");
+    } else {
+        // Assume it's already a native format path
+        native_model_path = model_path;
+    }
+    
+    // Check if native format file exists
+    std::ifstream file(native_model_path);
     if (!file.good()) {
-        return set_error("Model file not found: " + model_path);
+        return set_error("Native model file not found: " + native_model_path + 
+                        " (Run export_model_for_cpp.py first)");
     }
     file.close();
     
     // Load XGBoost model using C API
-    const char* model_path_cstr = model_path.c_str();
+    const char* model_path_cstr = native_model_path.c_str();
     if (XGBoosterCreate(nullptr, 0, &booster_) != 0) {
         return set_error("Failed to create XGBoost booster");
     }
     
     if (XGBoosterLoadModel(booster_, model_path_cstr) != 0) {
         cleanup();
-        return set_error("Failed to load model from: " + model_path);
+        return set_error("Failed to load model from: " + native_model_path);
     }
     
     return true;
@@ -69,25 +81,25 @@ double SimpleXGBoostWrapper::predict(const std::vector<float>& features) {
     
     int ret = XGBoosterPredict(booster_, dmatrix_, 0, 0, 0, &out_len, &out_result);
     
-    // Clean up DMatrix immediately after prediction
-    XGDMatrixFree(dmatrix_);
-    dmatrix_ = nullptr;
+    // Clean up DMatrix immediately after prediction (only if valid)
+    if (dmatrix_) {
+        XGDMatrixFree(dmatrix_);
+        dmatrix_ = nullptr;
+    }
     
     if (ret != 0 || out_len == 0 || !out_result) {
         set_error("XGBoost prediction failed");
         return -1.0;
     }
     
-    // For binary classification, XGBoost returns log-odds by default
-    // We need the probability, which is typically the second class probability
-    // or we can use sigmoid transformation: 1 / (1 + exp(-logit))
+    // Our exported model returns probabilities directly (verified in export)
+    // No sigmoid transformation needed - just return the probability
     double probability = static_cast<double>(out_result[0]);
     
-    // If output is already a probability (0-1), return directly
-    // If it's log-odds, apply sigmoid transformation
+    // Sanity check: ensure probability is in valid range
     if (probability < 0.0 || probability > 1.0) {
-        // Apply sigmoid: 1 / (1 + exp(-x))
-        probability = 1.0 / (1.0 + std::exp(-probability));
+        set_error("Invalid probability returned: " + std::to_string(probability));
+        return -1.0;
     }
     
     return probability;

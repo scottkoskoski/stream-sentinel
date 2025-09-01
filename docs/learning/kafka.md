@@ -51,8 +51,8 @@ system-metrics         → Performance monitoring events
 # Creating a topic optimized for fraud detection
 topic_config = {
     "name": "synthetic-transactions",
-    "num_partitions": 12,        # High parallelism
-    "replication_factor": 3,     # Data safety (production)
+    "num_partitions": 6,         # Balanced parallelism for development
+    "replication_factor": 1,     # Single-node development setup
     "retention_ms": 604800000,   # 7 days retention
     "compression_type": "lz4"    # Fast compression
 }
@@ -64,13 +64,14 @@ topic_config = {
 Partitions split a topic into parallel lanes. Each partition is an ordered, append-only log of events.
 
 ```
-Topic: synthetic-transactions (12 partitions)
+Topic: synthetic-transactions (6 partitions)
 
-Partition 0: [tx1] → [tx5] → [tx9]  → [tx13] (user_001 transactions)
-Partition 1: [tx2] → [tx6] → [tx10] → [tx14] (user_002 transactions)  
-Partition 2: [tx3] → [tx7] → [tx11] → [tx15] (user_003 transactions)
-...
-Partition 11:[tx4] → [tx8] → [tx12] → [tx16] (user_012 transactions)
+Partition 0: [tx1] → [tx7] → [tx13] → [tx19] (user_001 transactions)
+Partition 1: [tx2] → [tx8] → [tx14] → [tx20] (user_002 transactions)  
+Partition 2: [tx3] → [tx9] → [tx15] → [tx21] (user_003 transactions)
+Partition 3: [tx4] → [tx10] → [tx16] → [tx22] (user_004 transactions)
+Partition 4: [tx5] → [tx11] → [tx17] → [tx23] (user_005 transactions)
+Partition 5: [tx6] → [tx12] → [tx18] → [tx24] (user_006 transactions)
 ```
 
 **Why Partitions Matter:**
@@ -189,16 +190,14 @@ finally:
 Consumer groups allow multiple consumer instances to work together, automatically distributing partitions among group members.
 
 ```
-Topic: synthetic-transactions (12 partitions)
+Topic: synthetic-transactions (6 partitions)
 Consumer Group: fraud-detection-group
 
-Consumer 1: Processes partitions 0, 1, 2, 3
-Consumer 2: Processes partitions 4, 5, 6, 7  
-Consumer 3: Processes partitions 8, 9, 10, 11
+Consumer 1: Processes partitions 0, 1, 2
+Consumer 2: Processes partitions 3, 4, 5
 
 If Consumer 2 fails:
 Consumer 1: Processes partitions 0, 1, 2, 3, 4, 5
-Consumer 3: Processes partitions 6, 7, 8, 9, 10, 11
 ```
 
 **Benefits:**
@@ -215,25 +214,31 @@ Consumer 3: Processes partitions 6, 7, 8, 9, 10, 11
 # Topic configurations optimized for different data types
 TOPICS = {
     "synthetic-transactions": {
-        "partitions": 12,           # High concurrency for transaction processing
+        "partitions": 6,            # Balanced concurrency for development
         "retention_hours": 168,     # 7 days for fraud analysis
         "compression": "lz4",       # Fast processing
-        "use_case": "Real-time transaction processing"
+        "use_case": "IEEE-CIS format transaction data"
     },
     
     "fraud-alerts": {
-        "partitions": 6,            # Medium concurrency for alerts
-        "retention_hours": 720,     # 30 days for compliance
-        "compression": "gzip",      # Better compression for long-term storage
-        "cleanup_policy": "compact", # Keep latest alert per user
-        "use_case": "Fraud detection results"
+        "partitions": 6,            # Balanced concurrency for alerts
+        "retention_hours": 168,     # 7 days for development
+        "compression": "lz4",       # Fast compression
+        "use_case": "High-priority fraud detections"
     },
     
-    "user-actions": {
-        "partitions": 3,            # Lower volume data
-        "retention_hours": 2160,    # 90 days for audit trail
-        "compression": "gzip",      # Optimize for storage
-        "use_case": "Account actions and responses"
+    "fraud-detection-results": {
+        "partitions": 6,            # Complete detection results
+        "retention_hours": 168,     # 7 days retention
+        "compression": "lz4",       # Fast processing
+        "use_case": "Complete detection results for persistence"
+    },
+    
+    "performance-metrics": {
+        "partitions": 3,            # Lower volume monitoring data
+        "retention_hours": 72,      # 3 days for metrics
+        "compression": "lz4",       # Fast processing
+        "use_case": "System performance and health metrics"
     }
 }
 ```

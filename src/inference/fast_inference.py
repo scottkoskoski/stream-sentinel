@@ -48,8 +48,20 @@ class FastInferenceEngine:
         # Always load Python model as fallback
         try:
             with open(self.model_path, 'rb') as f:
-                self.python_model = pickle.load(f)
-            logger.info(f"Python XGBoost model loaded from {self.model_path}")
+                model_data = pickle.load(f)
+                
+            # Extract the actual model from dictionary structure if needed
+            if isinstance(model_data, dict):
+                self.python_model = model_data.get('model')
+                if self.python_model is None:
+                    raise ValueError("Model dictionary doesn't contain 'model' key")
+                logger.info(f"Extracted XGBoost model from dict structure: {type(self.python_model)}")
+            else:
+                # Fallback for simple model pickle
+                self.python_model = model_data
+                logger.info(f"Loaded simple XGBoost model: {type(self.python_model)}")
+                
+            logger.info(f"Python XGBoost model loaded successfully from {self.model_path}")
         except Exception as e:
             logger.error(f"Failed to load Python model: {e}")
             raise

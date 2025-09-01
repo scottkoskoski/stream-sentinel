@@ -31,13 +31,18 @@ Redis (Remote Dictionary Server) is an in-memory data structure store that funct
 Hashes are field-value pairs, perfect for storing structured data like user profiles.
 
 ```redis
-# Redis hash structure
-HSET user:001 
+# Redis hash structure for user profile
+HSET user_profile:001 
+  user_id "001"
   total_transactions 42
-  avg_amount 127.50
-  last_transaction_time "2025-08-26T14:30:00Z"
-  daily_count 5
-  fraud_alerts 0
+  total_amount 5347.50
+  avg_transaction_amount 127.50
+  last_transaction_time "2025-01-15T14:30:00Z"
+  last_transaction_amount 89.99
+  daily_transaction_count 5
+  daily_amount 275.48
+  last_reset_date "2025-01-15"
+  suspicious_activity_count 0
 ```
 
 **Python Implementation:**
@@ -57,7 +62,7 @@ class UserProfileManager:
     
     def get_user_profile(self, user_id):
         """Get user profile as dictionary"""
-        profile = self.redis_client.hgetall(f"user:{user_id}")
+        profile = self.redis_client.hgetall(f"user_profile:{user_id}")
         
         if not profile:
             # Create new user profile
@@ -69,30 +74,32 @@ class UserProfileManager:
         return profile
     
     def create_new_user_profile(self, user_id):
-        """Initialize new user profile"""
+        """Initialize new user profile matching fraud detector schema"""
         profile = {
             'user_id': user_id,
             'total_transactions': 0,
             'total_amount': 0.0,
             'avg_transaction_amount': 0.0,
             'last_transaction_time': None,
-            'daily_count': 0,
+            'last_transaction_amount': 0.0,
+            'daily_transaction_count': 0,
             'daily_amount': 0.0,
             'last_reset_date': None,
-            'fraud_alerts': 0
+            'suspicious_activity_count': 0
         }
         
-        # Store in Redis
-        self.redis_client.hset(f"user:{user_id}", mapping=profile)
-        self.redis_client.expire(f"user:{user_id}", 3600 * 24 * 7)  # 7 day TTL
+        # Store in Redis with 30-day TTL
+        key = f"user_profile:{user_id}"
+        self.redis_client.hset(key, mapping=profile)
+        self.redis_client.expire(key, 3600 * 24 * 30)  # 30 day TTL
         
         return profile
     
     def update_user_profile(self, user_id, transaction):
         """Atomically update user profile with new transaction"""
-        key = f"user:{user_id}"
-        amount = float(transaction['amount'])
-        timestamp = transaction['timestamp']
+        key = f"user_profile:{user_id}"
+        amount = float(transaction['transaction_amt'])  # IEEE-CIS field name
+        timestamp = transaction['generated_timestamp']   # IEEE-CIS field name
         
         # Use Redis pipeline for atomic updates
         pipe = self.redis_client.pipeline()
@@ -100,7 +107,7 @@ class UserProfileManager:
         # Increment counters
         pipe.hincrby(key, 'total_transactions', 1)
         pipe.hincrbyfloat(key, 'total_amount', amount)
-        pipe.hincrby(key, 'daily_count', 1)
+        pipe.hincrby(key, 'daily_transaction_count', 1)
         pipe.hincrbyfloat(key, 'daily_amount', amount)
         
         # Update last transaction info
