@@ -23,8 +23,13 @@ wheels/
 *.egg
 MANIFEST
 
-# Virtual environments
+# Virtual environments and environment files
 .env
+.env.local
+.env.development
+.env.staging
+.env.production
+.env.secure
 .venv
 env/
 venv/
