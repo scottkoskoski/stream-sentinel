@@ -288,7 +288,11 @@ class FraudDetector:
                         self.model_features = metadata.get('feature_names', [])
                     model_metrics = metadata.get('model_metrics', {})
                     self.logger.info(f"Loaded ML model: {metadata.get('model_type', 'unknown')}")
-                    self.logger.info(f"Model AUC: {model_metrics.get('val_auc', 'unknown'):.4f}")
+                    val_auc = model_metrics.get('val_auc')
+                    if val_auc is not None and isinstance(val_auc, (int, float)):
+                        self.logger.info(f"Model AUC: {val_auc:.4f}")
+                    else:
+                        self.logger.info("Model AUC: unknown")
             else:
                 self.logger.warning("Model metadata not found, using pickle feature names")
                 

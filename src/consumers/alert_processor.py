@@ -293,16 +293,18 @@ class AlertProcessor:
             profile_data = self.redis_client.hgetall(f"user_risk:{user_id}")
             
             if profile_data:
-                return {
-                    "user_id": profile_data.get('user_id', user_id),
-                    "risk_level": profile_data.get('risk_level', 'medium'),
-                    "total_alerts": int(profile_data.get('total_alerts', 0)),
-                    "confirmed_fraud_count": int(profile_data.get('confirmed_fraud_count', 0)),
-                    "false_positive_count": int(profile_data.get('false_positive_count', 0)),
-                    "last_alert_date": profile_data.get('last_alert_date'),
-                    "account_age_days": int(profile_data.get('account_age_days', 30)),
-                    "is_high_value_customer": profile_data.get('is_high_value_customer') == 'true'
+                # Define schema for proper deserialization
+                profile_schema = {
+                    "user_id": str,
+                    "risk_level": str, 
+                    "total_alerts": int,
+                    "confirmed_fraud_count": int,
+                    "false_positive_count": int,
+                    "last_alert_date": str,
+                    "account_age_days": int,
+                    "is_high_value_customer": bool
                 }
+                return self._deserialize_from_redis(profile_data, profile_schema)
             else:
                 # Create default risk profile for new user
                 return {
@@ -560,7 +562,8 @@ class AlertProcessor:
         }
         
         investigation_id = f"inv_{alert.get('alert_id')}_{int(time.time())}"
-        self.redis_client.hset(f"investigation:{investigation_id}", mapping=investigation_data)
+        serialized_investigation = self._serialize_for_redis(investigation_data)
+        self.redis_client.hset(f"investigation:{investigation_id}", mapping=serialized_investigation)
         self.redis_client.lpush("investigation_queue", investigation_id)
         
         # Set TTL for investigation (7 days)
@@ -599,7 +602,8 @@ class AlertProcessor:
         }
         
         review_id = f"review_{alert.get('alert_id')}_{int(time.time())}"
-        self.redis_client.hset(f"review:{review_id}", mapping=review_data)
+        serialized_review = self._serialize_for_redis(review_data)
+        self.redis_client.hset(f"review:{review_id}", mapping=serialized_review)
         self.redis_client.lpush("manual_review_queue", review_id)
         
         # Set TTL for review (3 days)
@@ -702,12 +706,51 @@ class AlertProcessor:
             }
             
             notification_id = f"notif_{int(time.time())}_{self.notifications_sent}"
-            self.redis_client.hset(f"notification:{notification_id}", mapping=notification_data)
+            serialized_notification = self._serialize_for_redis(notification_data)
+            self.redis_client.hset(f"notification:{notification_id}", mapping=serialized_notification)
             self.redis_client.expire(f"notification:{notification_id}", 2592000)  # 30 days
             
         except Exception as e:
             self.logger.error(f"Failed to send notification: {e}")
     
+    def _serialize_for_redis(self, data: Dict[str, Any]) -> Dict[str, str]:
+        """Convert dictionary values to Redis-compatible strings."""
+        serialized = {}
+        for key, value in data.items():
+            if value is None:
+                serialized[key] = ""
+            elif isinstance(value, bool):
+                serialized[key] = "true" if value else "false"
+            elif isinstance(value, (dict, list)):
+                serialized[key] = json.dumps(value)
+            else:
+                serialized[key] = str(value)
+        return serialized
+    
+    def _deserialize_from_redis(self, data: Dict[str, str], schema: Dict[str, type]) -> Dict[str, Any]:
+        """Convert Redis string values back to proper Python types."""
+        deserialized = {}
+        for key, value in data.items():
+            if key not in schema or value == "":
+                deserialized[key] = value
+                continue
+                
+            expected_type = schema[key]
+            if expected_type == bool:
+                deserialized[key] = value == "true"
+            elif expected_type == int:
+                deserialized[key] = int(value) if value else 0
+            elif expected_type == float:
+                deserialized[key] = float(value) if value else 0.0
+            elif expected_type == dict or expected_type == list:
+                try:
+                    deserialized[key] = json.loads(value) if value else ({} if expected_type == dict else [])
+                except json.JSONDecodeError:
+                    deserialized[key] = {} if expected_type == dict else []
+            else:
+                deserialized[key] = value
+        return deserialized
+        
     def update_user_risk_profile(self, user_id: str, alert_response: AlertResponse):
         """Update user risk profile based on alert response."""
         try:
@@ -726,8 +769,9 @@ class AlertProcessor:
             elif current_profile['total_alerts'] >= 10:
                 current_profile['risk_level'] = 'high'
             
-            # Save updated profile
-            self.redis_client.hset(f"user_risk:{user_id}", mapping=current_profile)
+            # Serialize and save updated profile
+            serialized_profile = self._serialize_for_redis(current_profile)
+            self.redis_client.hset(f"user_risk:{user_id}", mapping=serialized_profile)
             self.redis_client.expire(f"user_risk:{user_id}", 7776000)  # 90 days
             
         except Exception as e:
@@ -736,10 +780,14 @@ class AlertProcessor:
     def store_audit_trail(self, alert_response: AlertResponse):
         """Store alert response in audit trail."""
         try:
+            # Serialize alert response for Redis storage
+            alert_data = alert_response.to_dict()
+            serialized_data = self._serialize_for_redis(alert_data)
+            
             # Store detailed response
             self.redis_client.hset(
                 f"alert_response:{alert_response.response_id}",
-                mapping=alert_response.to_dict()
+                mapping=serialized_data
             )
             self.redis_client.expire(f"alert_response:{alert_response.response_id}", 31536000)  # 1 year
             
