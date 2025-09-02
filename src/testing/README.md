@@ -4,7 +4,7 @@
 
 A production-ready integration testing framework designed for distributed fraud detection systems, demonstrating FAANG-level testing sophistication with comprehensive multi-service validation, realistic fraud scenarios, and advanced distributed systems testing patterns.
 
-### 🏗️ Architecture Overview
+### Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -22,33 +22,33 @@ A production-ready integration testing framework designed for distributed fraud 
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
 ```
 
-### ✨ Key Features
+### Key Features
 
-#### 🚀 **Production-Grade Service Orchestration**
+#### **Production-Grade Service Orchestration**
 - **Docker Compose Integration**: Full service lifecycle management with automatic cleanup
 - **Dependency-Aware Startup**: Topological sort with parallel execution groups
 - **Health Checking**: Protocol-aware validation with exponential backoff and jitter
 - **Resource Management**: Memory, CPU, and network resource allocation and monitoring
 
-#### 🎯 **IEEE-CIS Based Test Data Generation**
+#### **IEEE-CIS Based Test Data Generation**
 - **Statistical Accuracy**: Leverages real-world fraud patterns from IEEE-CIS dataset analysis
 - **Behavioral Modeling**: Sophisticated user behavior profiles with temporal preferences
 - **Fraud Scenarios**: Velocity attacks, amount anomalies, mixed populations, stress testing
 - **Temporal Patterns**: Hour-of-day fraud rate variations matching real-world data
 
-#### 🔍 **Cross-Service State Validation**
+#### **Cross-Service State Validation**
 - **Multi-Service Consistency**: Validates state across Redis, PostgreSQL, and ClickHouse
 - **Data Flow Integrity**: End-to-end transaction tracing with detailed diagnostics
 - **Performance Impact Monitoring**: Measures validation overhead and optimization opportunities
 - **Referential Integrity**: Comprehensive constraint and relationship validation
 
-#### ⚡ **Eventually Consistent Assertions**
+#### **Eventually Consistent Assertions**
 - **Distributed Systems Patterns**: Handles timing issues and eventual consistency
 - **Exponential Backoff with Jitter**: Prevents thundering herd problems
 - **Performance SLA Validation**: Latency and throughput compliance checking
 - **Comprehensive Diagnostics**: Detailed failure analysis and debugging support
 
-### 🛠️ Quick Start
+### Quick Start
 
 #### Prerequisites
 ```bash
@@ -106,7 +106,7 @@ async def test_fraud_detection_pipeline():
         assert result.success
 ```
 
-### 📊 Test Scenarios
+### Test Scenarios
 
 #### 1. **Legitimate Baseline**
 ```python
@@ -160,7 +160,7 @@ scenario = data_factory.create_stress_test_scenario(
 # Expected: System maintains SLA under high load
 ```
 
-### 🔧 Advanced Configuration
+### Advanced Configuration
 
 #### Environment-Specific Settings
 ```python
@@ -234,7 +234,7 @@ class CustomTestDataFactory(TestDataFactory):
         )
 ```
 
-### 🎭 Service Failure Scenarios
+### Service Failure Scenarios
 
 #### Redis Failure Recovery
 ```python
@@ -286,7 +286,7 @@ async def test_kafka_partition_resilience(service_orchestrator):
     assert result.success
 ```
 
-### 📈 Performance Validation
+### Performance Validation
 
 #### Latency SLA Compliance
 ```python
@@ -347,7 +347,7 @@ async def test_memory_usage_compliance(service_orchestrator):
     await memory_monitor.stop_monitoring()
 ```
 
-### 🧪 Advanced Testing Patterns
+### Advanced Testing Patterns
 
 #### Data Consistency Validation
 ```python
@@ -414,7 +414,7 @@ async def test_chaos_engineering_resilience():
         assert resilience_result.success, f"System failed under {failure_name}"
 ```
 
-### 🎯 Best Practices
+### Best Practices
 
 #### 1. **Test Isolation**
 ```python
@@ -473,7 +473,7 @@ async def test_diagnostics(request):
         await generate_failure_report(request.node.name)
 ```
 
-### 📊 Metrics and Reporting
+### Metrics and Reporting
 
 The framework automatically collects comprehensive metrics:
 
@@ -484,7 +484,7 @@ The framework automatically collects comprehensive metrics:
 - **Resource Utilization**: Track memory, CPU, and network usage
 - **Error Rates and Failure Patterns**: Identify system weaknesses
 
-### 🎓 Educational Value
+### Educational Value
 
 This framework demonstrates advanced distributed systems concepts:
 

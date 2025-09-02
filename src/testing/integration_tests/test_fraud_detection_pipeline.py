@@ -182,7 +182,7 @@ class TestFraudDetectionPipeline:
         assert avg_latency < scenario.max_processing_latency_ms, \
             f"Average processing latency {avg_latency:.1f}ms exceeds SLA {scenario.max_processing_latency_ms:.1f}ms"
         
-        logging.info(f"✅ Legitimate baseline test passed - {len(transaction_ids)} transactions processed with 0 false positives")
+        logging.info(f"Legitimate baseline test passed - {len(transaction_ids)} transactions processed with 0 false positives")
     
     @pytest.mark.asyncio
     async def test_velocity_attack_detection(self,
@@ -249,7 +249,7 @@ class TestFraudDetectionPipeline:
         
         assert performance_result.success, "Performance SLA violated during velocity attack processing"
         
-        logging.info(f"✅ Velocity attack detection test passed - {detected_alerts} alerts generated")
+        logging.info(f"Velocity attack detection test passed - {detected_alerts} alerts generated")
     
     @pytest.mark.asyncio  
     async def test_mixed_population_realistic_scenario(self,
@@ -337,7 +337,7 @@ class TestFraudDetectionPipeline:
         
         assert message_flow_result.success, "End-to-end message flow validation failed"
         
-        logging.info(f"✅ Mixed population test passed - realistic fraud detection with {actual_fraud_rate:.1%} fraud rate")
+        logging.info(f"Mixed population test passed - realistic fraud detection with {actual_fraud_rate:.1%} fraud rate")
     
     @pytest.mark.asyncio
     async def test_service_failure_recovery(self,
@@ -428,7 +428,7 @@ class TestFraudDetectionPipeline:
         assert post_recovery_latency <= acceptable_latency, \
             f"Post-recovery latency {post_recovery_latency:.1f}ms exceeds acceptable threshold {acceptable_latency:.1f}ms"
         
-        logging.info(f"✅ Service failure recovery test passed - system recovered with {post_recovery_latency:.1f}ms latency")
+        logging.info(f"Service failure recovery test passed - system recovered with {post_recovery_latency:.1f}ms latency")
     
     # Helper methods for test implementation
     
