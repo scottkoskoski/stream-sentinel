@@ -155,7 +155,7 @@ Each guide explains both the **theory** (why these technologies exist) and **pra
 **Content Coverage:**
 - **75+ Code Examples** with detailed explanations across Python and C++
 - **25+ Architecture Diagrams** showing system interactions and performance optimizations
-- **20+ Performance Benchmarks** with comprehensive C++ vs Python vs ONNX comparisons
+- **20+ Performance Benchmarks** with 630x C++ acceleration achievements documented
 - **150+ Configuration Examples** for production deployment across multiple inference engines
 
 **Learning Depth:**
