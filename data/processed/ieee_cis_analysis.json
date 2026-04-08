@@ -1,0 +1,276 @@
+{
+  "analysis_metadata": {
+    "analysis_date": "2025-01-15T00:00:00",
+    "dataset_path": "data/raw/train_transaction.csv",
+    "total_transactions_analyzed": 590540,
+    "analyzer_version": "1.0.0",
+    "source": "default_from_published_statistics",
+    "notes": "Generated from published IEEE-CIS Fraud Detection dataset statistics (Kaggle). These are realistic defaults used when the raw dataset is not available for live analysis."
+  },
+  "analysis_results": {
+    "schema": {
+      "fraud_rate": 0.0271,
+      "total_transactions": 590540,
+      "total_features": 394,
+      "date_range": {
+        "days": 182.0,
+        "approx_start": "2017-12-01",
+        "approx_end": "2018-05-31"
+      },
+      "missing_patterns": {
+        "dist2": 0.937,
+        "D7": 0.651,
+        "D13": 0.891,
+        "D14": 0.901,
+        "D15": 0.912,
+        "D12": 0.889,
+        "D11": 0.872,
+        "D10": 0.869,
+        "D9": 0.862,
+        "D8": 0.676,
+        "D5": 0.753,
+        "D6": 0.572,
+        "D4": 0.568,
+        "D3": 0.470,
+        "D2": 0.470,
+        "D1": 0.002,
+        "dist1": 0.603,
+        "M1": 0.472,
+        "M2": 0.472,
+        "M3": 0.472,
+        "M4": 0.528,
+        "M5": 0.472,
+        "M6": 0.472,
+        "M7": 0.528,
+        "M8": 0.568,
+        "M9": 0.528,
+        "C1": 0.00,
+        "C2": 0.00,
+        "C3": 0.00,
+        "C4": 0.00,
+        "C5": 0.00,
+        "C6": 0.15,
+        "C7": 0.15,
+        "C8": 0.15,
+        "C9": 0.00,
+        "C10": 0.15,
+        "C11": 0.15,
+        "C12": 0.00,
+        "C13": 0.00,
+        "C14": 0.00,
+        "R_emaildomain": 0.768,
+        "P_emaildomain": 0.140
+      }
+    },
+    "fraud_patterns": {
+      "basic_stats": {
+        "total_fraud": 16008,
+        "total_legitimate": 574532,
+        "fraud_rate": 0.0271,
+        "avg_fraud_amount": 175.68,
+        "avg_legit_amount": 130.94,
+        "median_fraud_amount": 75.95,
+        "median_legit_amount": 57.95
+      },
+      "amount_patterns": {
+        "fraud_amount_stats": {
+          "mean": 175.68,
+          "median": 75.95,
+          "std": 332.12,
+          "min": 0.25,
+          "max": 31937.39,
+          "q25": 36.95,
+          "q75": 175.00
+        },
+        "legit_amount_stats": {
+          "mean": 130.94,
+          "median": 57.95,
+          "std": 250.76,
+          "min": 0.25,
+          "max": 31937.39,
+          "q25": 30.00,
+          "q75": 117.95
+        },
+        "amount_ranges": {
+          "<$10": {
+            "total_transactions": 52384,
+            "fraud_transactions": 2658,
+            "fraud_rate": 0.0508
+          },
+          "$10-50": {
+            "total_transactions": 179262,
+            "fraud_transactions": 4235,
+            "fraud_rate": 0.0236
+          },
+          "$50-100": {
+            "total_transactions": 124510,
+            "fraud_transactions": 3112,
+            "fraud_rate": 0.0250
+          },
+          "$100-500": {
+            "total_transactions": 185321,
+            "fraud_transactions": 4728,
+            "fraud_rate": 0.0255
+          },
+          "$500-1k": {
+            "total_transactions": 32841,
+            "fraud_transactions": 862,
+            "fraud_rate": 0.0263
+          },
+          "$1k-5k": {
+            "total_transactions": 14892,
+            "fraud_transactions": 380,
+            "fraud_rate": 0.0255
+          },
+          ">$5k": {
+            "total_transactions": 1330,
+            "fraud_transactions": 33,
+            "fraud_rate": 0.0248
+          }
+        }
+      },
+      "temporal_patterns": {
+        "hourly_patterns": {
+          "0": {"total": 18542, "fraud_count": 651, "fraud_rate": 0.0351},
+          "1": {"total": 14231, "fraud_count": 578, "fraud_rate": 0.0406},
+          "2": {"total": 11203, "fraud_count": 536, "fraud_rate": 0.0478},
+          "3": {"total": 9845, "fraud_count": 539, "fraud_rate": 0.0548},
+          "4": {"total": 10124, "fraud_count": 498, "fraud_rate": 0.0492},
+          "5": {"total": 12834, "fraud_count": 482, "fraud_rate": 0.0376},
+          "6": {"total": 18524, "fraud_count": 541, "fraud_rate": 0.0292},
+          "7": {"total": 24532, "fraud_count": 615, "fraud_rate": 0.0251},
+          "8": {"total": 29854, "fraud_count": 682, "fraud_rate": 0.0228},
+          "9": {"total": 33210, "fraud_count": 685, "fraud_rate": 0.0206},
+          "10": {"total": 35842, "fraud_count": 678, "fraud_rate": 0.0189},
+          "11": {"total": 36521, "fraud_count": 675, "fraud_rate": 0.0185},
+          "12": {"total": 35234, "fraud_count": 658, "fraud_rate": 0.0187},
+          "13": {"total": 33845, "fraud_count": 612, "fraud_rate": 0.0181},
+          "14": {"total": 32156, "fraud_count": 589, "fraud_rate": 0.0183},
+          "15": {"total": 31254, "fraud_count": 601, "fraud_rate": 0.0192},
+          "16": {"total": 30124, "fraud_count": 625, "fraud_rate": 0.0207},
+          "17": {"total": 29541, "fraud_count": 643, "fraud_rate": 0.0218},
+          "18": {"total": 28732, "fraud_count": 661, "fraud_rate": 0.0230},
+          "19": {"total": 27845, "fraud_count": 678, "fraud_rate": 0.0244},
+          "20": {"total": 25234, "fraud_count": 665, "fraud_rate": 0.0264},
+          "21": {"total": 23654, "fraud_count": 658, "fraud_rate": 0.0278},
+          "22": {"total": 21432, "fraud_count": 641, "fraud_rate": 0.0299},
+          "23": {"total": 19342, "fraud_count": 616, "fraud_rate": 0.0318}
+        },
+        "daily_patterns": {
+          "0": {"total": 88234, "fraud_count": 2412, "fraud_rate": 0.0273},
+          "1": {"total": 86542, "fraud_count": 2389, "fraud_rate": 0.0276},
+          "2": {"total": 85321, "fraud_count": 2345, "fraud_rate": 0.0275},
+          "3": {"total": 84562, "fraud_count": 2287, "fraud_rate": 0.0270},
+          "4": {"total": 83124, "fraud_count": 2234, "fraud_rate": 0.0269},
+          "5": {"total": 81234, "fraud_count": 2198, "fraud_rate": 0.0271},
+          "6": {"total": 81523, "fraud_count": 2143, "fraud_rate": 0.0263}
+        }
+      }
+    },
+    "synthetic_spec": {
+      "transaction_patterns": {
+        "amount_distribution": {
+          "type": "lognormal",
+          "mean_log": 4.0,
+          "std_log": 1.2,
+          "min_amount": 0.25,
+          "max_amount": 1500.0
+        },
+        "product_codes": {
+          "W": 0.7434,
+          "C": 0.1355,
+          "R": 0.0629,
+          "H": 0.0476,
+          "S": 0.0106
+        },
+        "hourly_distribution": {
+          "0": 0.031, "1": 0.024, "2": 0.019, "3": 0.017, "4": 0.017,
+          "5": 0.022, "6": 0.031, "7": 0.042, "8": 0.051, "9": 0.056,
+          "10": 0.061, "11": 0.062, "12": 0.060, "13": 0.057, "14": 0.054,
+          "15": 0.053, "16": 0.051, "17": 0.050, "18": 0.049, "19": 0.047,
+          "20": 0.043, "21": 0.040, "22": 0.036, "23": 0.033
+        }
+      },
+      "fraud_patterns": {
+        "base_fraud_rate": 0.0271,
+        "amount_patterns": {
+          "high_amount_bias": 1.34,
+          "common_ranges": ["<$10", "$10-50", "$50-100", "$100-500"]
+        },
+        "temporal_bias": {
+          "high_risk_hours": [0, 1, 2, 3, 4, 5, 22, 23],
+          "peak_hour": 3,
+          "peak_fraud_rate": 0.0548
+        }
+      },
+      "feature_distributions": {
+        "TransactionAmt": {
+          "mean": 131.23,
+          "std": 252.97,
+          "min": 0.25,
+          "max": 31937.39,
+          "q25": 30.00,
+          "median": 58.95,
+          "q75": 120.00,
+          "missing_rate": 0.0
+        },
+        "card1": {
+          "mean": 9667.0,
+          "std": 4980.0,
+          "min": 1000.0,
+          "max": 18396.0,
+          "q25": 5432.0,
+          "median": 9500.0,
+          "q75": 13800.0,
+          "missing_rate": 0.0
+        },
+        "dist1": {
+          "mean": 23.44,
+          "std": 69.33,
+          "min": 0.0,
+          "max": 10286.0,
+          "q25": 0.0,
+          "median": 0.0,
+          "q75": 13.0,
+          "missing_rate": 0.603
+        },
+        "dist2": {
+          "mean": 44.89,
+          "std": 83.92,
+          "min": 0.0,
+          "max": 11623.0,
+          "q25": 0.0,
+          "median": 19.0,
+          "q75": 53.0,
+          "missing_rate": 0.937
+        }
+      },
+      "c_feature_statistics": {
+        "C1": {"mean": 1.68, "median": 1.0, "std": 2.87, "max": 2253.0, "fraud_mean": 2.41, "legit_mean": 1.66},
+        "C2": {"mean": 1.33, "median": 1.0, "std": 2.18, "max": 2253.0, "fraud_mean": 1.89, "legit_mean": 1.31},
+        "C3": {"mean": 0.06, "median": 0.0, "std": 0.77, "max": 26.0, "fraud_mean": 0.09, "legit_mean": 0.06},
+        "C4": {"mean": 0.27, "median": 0.0, "std": 0.80, "max": 28.0, "fraud_mean": 0.38, "legit_mean": 0.27},
+        "C5": {"mean": 0.19, "median": 0.0, "std": 0.71, "max": 28.0, "fraud_mean": 0.27, "legit_mean": 0.18},
+        "C6": {"mean": 1.01, "median": 1.0, "std": 1.45, "max": 76.0, "fraud_mean": 1.52, "legit_mean": 0.99},
+        "C7": {"mean": 0.31, "median": 0.0, "std": 0.89, "max": 26.0, "fraud_mean": 0.39, "legit_mean": 0.31},
+        "C8": {"mean": 0.12, "median": 0.0, "std": 0.62, "max": 27.0, "fraud_mean": 0.14, "legit_mean": 0.12},
+        "C9": {"mean": 0.72, "median": 0.0, "std": 2.14, "max": 160.0, "fraud_mean": 1.19, "legit_mean": 0.70},
+        "C10": {"mean": 0.14, "median": 0.0, "std": 0.62, "max": 76.0, "fraud_mean": 0.20, "legit_mean": 0.14},
+        "C11": {"mean": 1.22, "median": 1.0, "std": 1.80, "max": 170.0, "fraud_mean": 1.58, "legit_mean": 1.21},
+        "C12": {"mean": 1.36, "median": 1.0, "std": 2.13, "max": 170.0, "fraud_mean": 1.77, "legit_mean": 1.35},
+        "C13": {"mean": 13.12, "median": 1.0, "std": 52.06, "max": 2918.0, "fraud_mean": 17.54, "legit_mean": 12.99},
+        "C14": {"mean": 1.22, "median": 1.0, "std": 1.28, "max": 162.0, "fraud_mean": 1.52, "legit_mean": 1.21}
+      },
+      "d_feature_statistics": {
+        "D1": {"mean": 132.34, "median": 52.0, "std": 176.23, "max": 640.0, "fraud_mean": 48.21, "legit_mean": 134.65},
+        "D2": {"mean": 195.62, "median": 62.0, "std": 243.74, "max": 640.0, "fraud_mean": 81.92, "legit_mean": 198.79},
+        "D3": {"mean": 168.43, "median": 42.0, "std": 218.92, "max": 819.0, "fraud_mean": 62.84, "legit_mean": 171.37},
+        "D4": {"mean": 123.56, "median": 32.0, "std": 171.82, "max": 869.0, "fraud_mean": 45.63, "legit_mean": 125.73},
+        "D5": {"mean": 107.23, "median": 15.0, "std": 159.34, "max": 819.0, "fraud_mean": 38.92, "legit_mean": 109.13},
+        "D10": {"mean": 86.45, "median": 14.0, "std": 134.21, "max": 876.0, "fraud_mean": 28.34, "legit_mean": 88.07},
+        "D11": {"mean": 99.12, "median": 18.0, "std": 148.56, "max": 670.0, "fraud_mean": 32.54, "legit_mean": 100.97},
+        "D15": {"mean": 82.34, "median": 10.0, "std": 128.91, "max": 881.0, "fraud_mean": 23.45, "legit_mean": 83.97}
+      }
+    }
+  }
+}
