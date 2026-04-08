@@ -19,6 +19,8 @@ Stream-Sentinel follows **BACKWARD compatibility** for all schema evolution:
 
 ## Schema Registry Integration
 
+Schema Registry integration is **optional**. When Schema Registry is available, Avro encoding provides type safety and schema evolution. When unavailable, the system falls back to JSON serialization transparently via `src/kafka/schema_utils.py`.
+
 ### Configuration
 
 ```bash

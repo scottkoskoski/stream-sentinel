@@ -22,8 +22,12 @@ This directory contains a complete, production-grade testing framework for the S
                 ├─ 10k+ TPS sustained throughput
                 ├─ Sub-100ms latency validation
                 └─ Memory/CPU profiling
+
+            Contract Tests (5%)
+            ├─ Producer-consumer schema compatibility
+            └─ Message format validation
             
-        End-to-End Tests (20%)
+        End-to-End Tests (15%)
         ├─ Complete fraud detection workflows
         ├─ Alert processing automation
         └─ Cross-service integration
@@ -31,7 +35,7 @@ This directory contains a complete, production-grade testing framework for the S
     Integration Tests (35%)
     ├─ Kafka message flow validation
     ├─ Redis state management
-    ├─ Database persistence operations
+    ├─ Database persistence operations (PostgreSQL, ClickHouse)
     └─ ML pipeline integration
     
 Unit Tests (40%)
@@ -62,7 +66,8 @@ Unit Tests (40%)
 | Category | Duration | Infrastructure | Description |
 |----------|----------|----------------|-------------|
 | **Unit** | 2-5 min | No | Individual component validation |
-| **Integration** | 10-20 min | Yes | Real service interactions |
+| **Integration** | 10-20 min | Yes | Real service interactions (Kafka, Redis, databases) |
+| **Contract** | 2-5 min | No | Producer-consumer schema compatibility |
 | **End-to-End** | 20-30 min | Yes | Complete workflow validation |
 | **Performance** | 30-60 min | Yes | 10k+ TPS throughput validation |
 | **Chaos** | 45-90 min | Yes | Failure modes and resilience |
@@ -126,7 +131,7 @@ docker-compose -f docker-compose.test.yml down -v
 - **Feature Engineering** (`test_feature_engineering.py`)
   - 25+ real-time features validation
   - Edge case handling (missing data, invalid timestamps)
-  - Temporal pattern detection (8 AM fraud peak)
+  - Temporal pattern detection (2-4 AM fraud peak)
   - Amount categorization (small <$10, large >$1000)
   - User behavioral analysis
 
@@ -187,6 +192,13 @@ pytest tests/unit/ --cov=src --cov-report=html
   - Memory management and eviction
   - Connection failure recovery
   - High-frequency operations (1k+ ops/sec)
+
+- **Database Integration** (`test_database_integration.py`)
+  - PostgreSQL fraud alert persistence
+  - ClickHouse analytics data insertion
+  - Batch insert operations
+  - Cross-database consistency validation
+  - Connection pool management
 
 **Key Integration Scenarios:**
 ```python
@@ -286,6 +298,22 @@ def test_redis_connection_failure_handling():
     assert features["is_new_user"] == 1  # Default fallback
 ```
 
+### Contract Tests (`tests/contract/`)
+
+**Producer-consumer data contract validation:**
+
+- **Producer-Consumer Contract** (`test_producer_consumer_contract.py`)
+  - Schema compatibility between producers and consumers
+  - Message format validation
+  - Field presence and type enforcement
+  - Backward compatibility verification
+
+**Execution:**
+```bash
+# Run contract tests
+pytest tests/contract/ -v
+```
+
 ## Test Data Management
 
 ### Synthetic Data Generation
@@ -313,7 +341,7 @@ high_velocity_fraud = fraud_scenarios["high_velocity"]
 **Data Characteristics:**
 - **User Consistency**: 1000+ users with persistent behavioral patterns
 - **Fraud Rate**: 2.7% baseline matching IEEE-CIS analysis
-- **Temporal Patterns**: 8 AM fraud peak, realistic hourly distributions
+- **Temporal Patterns**: 2-4 AM fraud peak, realistic hourly distributions
 - **Amount Distributions**: Log-normal with realistic bounds
 - **Fraud Injection**: Multi-factor determination (velocity, amount, time)
 

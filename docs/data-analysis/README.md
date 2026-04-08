@@ -40,10 +40,10 @@ The Data Analysis Pipeline represents a sophisticated approach to understanding 
 ```python
 # Discovered fraud patterns by time of day
 fraud_patterns = {
-    "peak_fraud_hour": 8,      # 8:00 AM shows highest fraud rate
-    "peak_fraud_rate": 0.0616, # 6.16% vs 2.71% baseline
-    "low_fraud_hours": [2, 3, 4], # Lowest fraud activity
-    "weekend_variation": 1.23   # Weekend fraud rate multiplier
+    "peak_fraud_hours": [2, 3, 4],  # 2-4 AM shows highest fraud rate
+    "peak_fraud_rate": 0.0616,      # 6.16% vs 2.71% baseline
+    "low_fraud_hours": [10, 11, 12], # Lowest fraud activity
+    "weekend_variation": 1.23        # Weekend fraud rate multiplier
 }
 ```
 
@@ -238,6 +238,12 @@ class GenerationStats:
 - **Transaction Generation**: Statistically accurate transaction creation
 - **Fraud Injection**: Multi-factor fraud determination and injection
 - **High-Throughput Production**: Optimized Kafka production with performance monitoring
+- **Entity-Tracking Features**: Card (C), Device (D), and Merchant (M) features for enriched fraud detection
+
+**Generation Configuration** (`src/producers/config.py`):
+- **Centralized Parameters**: All generation parameters (fraud rates, feature distributions, entity tracking) are config-driven
+- **IEEE-CIS Defaults**: Default analysis loaded from `data/processed/ieee_cis_analysis.json`
+- **Entity Tracking**: Configurable C/D/M feature generation for card, device, and merchant attributes
 
 ### Analysis Results
 
@@ -250,7 +256,7 @@ class GenerationStats:
     "fraud_rate": 0.02714
   },
   "fraud_patterns": {
-    "temporal_patterns": {"peak_hour": 8, "peak_rate": 0.0616},
+    "temporal_patterns": {"peak_hours": [2, 3, 4], "peak_rate": 0.0616},
     "amount_patterns": {"micro_fraud_rate": 0.0508},
     "behavioral_patterns": {"velocity_indicators": [...]}  
   },
@@ -331,7 +337,7 @@ python tests/performance/test_generation_throughput.py
 **Statistical Fidelity:**
 - **Fraud Rate Accuracy**: Generated fraud rate matches IEEE-CIS baseline (2.71% ± 0.1%)
 - **Distribution Matching**: Amount distributions maintain log-normal characteristics
-- **Temporal Accuracy**: Peak fraud hours and patterns preserved in synthetic data
+- **Temporal Accuracy**: Peak fraud hours (2-4 AM) and patterns preserved in synthetic data
 - **Feature Correlation**: Inter-feature correlations maintained from original dataset
 
 **Behavioral Consistency:**

@@ -78,7 +78,9 @@ A production-grade online learning system that enables fraud detection models to
 | Component | Purpose | Key Features |
 |-----------|---------|--------------|
 | `FeedbackProcessor` | Collect and validate fraud investigation feedback | Multi-validator consensus, quality scoring, temporal weighting |
-| `DriftDetector` | Monitor model and data drift | Statistical tests, performance monitoring, automated alerting |
+| `DriftDetector` | Monitor model and data drift (batch analysis) | Statistical tests, performance monitoring, automated alerting |
+| `LiveDriftMonitor` | Real-time PSI-based drift monitoring in streaming inference (`live_drift_monitor.py`) | Configurable check interval, baseline comparison, drift alert publishing to `model-drift-alerts` topic |
+| `RetrainingTrigger` | Listen for drift alerts and trigger model retraining (`retraining_trigger.py`) | Guard conditions (min samples, cooldown, severity threshold), publishes to `model-retraining-jobs` topic |
 | `IncrementalLearner` | Update models with new data | Batch processing, validation, rollback, memory management |
 | `ModelRegistry` | Manage model versions and deployment | Semantic versioning, lifecycle management, artifact storage |
 | `ABTestManager` | Run model comparison experiments | Traffic routing, statistical analysis, automated decisions |

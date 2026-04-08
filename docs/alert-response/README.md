@@ -1,288 +1,132 @@
 # Alert Response System
 
-*Stream-Sentinel's comprehensive automated fraud response system with multi-tier severity classification, SLA-driven response automation, and complete audit trail management.*
+The alert processor (`src/consumers/alert_processor.py`) consumes fraud alerts from the `fraud-alerts` Kafka topic, classifies severity, executes response actions, tracks SLA compliance, and maintains user risk profiles. It is the enforcement layer that closes the loop with the fraud detection pipeline.
 
-## System Overview
-
-The Alert Response System is a production-grade event-driven system that processes fraud alerts from the detection pipeline, classifies them by severity, and automatically routes appropriate business responses. The system demonstrates enterprise-level fraud response automation with comprehensive audit trails and SLA compliance.
-
-**Key Features:**
-- **Real-Time Processing**: Sub-second alert processing with SLA monitoring
-- **Multi-Tier Severity**: Four-level classification (LOW → CRITICAL)
-- **Automated Actions**: Business rule-driven response automation
-- **Audit Compliance**: Complete response history and compliance tracking
-- **Performance Monitoring**: Response time tracking and SLA management
-
-## Alert Processing Pipeline
-
-### Alert Severity Classification
-
-```python
-class AlertSeverity(Enum):
-    LOW = "low"        # Statistical tracking and logging
-    MEDIUM = "medium"   # Enhanced monitoring and notifications
-    HIGH = "high"       # Manual review and transaction blocking
-    CRITICAL = "critical" # Immediate account blocking
-```
-
-### Response Actions
-
-```python
-class ResponseAction(Enum):
-    LOG_ONLY = "log_only"                # Low severity: logging only
-    NOTIFY_TEAM = "notify_team"          # Medium: team notifications
-    MANUAL_REVIEW = "manual_review"      # High: queue for investigation
-    AUTO_INVESTIGATE = "auto_investigate" # High: automated analysis
-    IMMEDIATE_BLOCK = "immediate_block"   # Critical: instant user blocking
-    ESCALATE = "escalate"                # Critical: management escalation
-```
-
-### SLA Response Targets
-
-| Severity | Response Time Target | Typical Actions |
-|----------|---------------------|----------------|
-| **CRITICAL** | < 1 second | Immediate account blocking, escalation |
-| **HIGH** | < 5 seconds | Manual review queue, transaction blocking |
-| **MEDIUM** | < 30 seconds | Team notifications, enhanced monitoring |
-| **LOW** | < 5 minutes | Statistical logging, pattern tracking |
-
-## Implementation Architecture
-
-### Alert Processing Flow
+## Processing Pipeline
 
 ```
-                    Alert Response Processing Pipeline
-    
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Fraud Alerts   │    │  Alert Context  │    │  Response       │    │  Action         │
-│    (Kafka)      │───▶│   Enrichment    │───▶│ Classification  │───▶│  Execution      │
-│                 │    │                 │    │                 │    │                 │
-│ • Alert Data    │    │ • User History  │    │ • Severity      │    │ • User Blocking │
-│ • Fraud Score   │    │ • Risk Profile  │    │ • SLA Check     │    │ • Notifications │
-│ • User Context  │    │ • Pattern Match │    │ • Action Route  │    │ • Investigations│
-└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                        │                        │                        │
-         ▼                        ▼                        ▼                        ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│     Redis       │    │   Historical    │    │   Response      │    │   Compliance    │
-│  Alert Cache    │    │   Analysis      │    │   Tracking      │    │  Audit Trail    │
-│                 │    │                 │    │                 │    │                 │
-│ • Alert History │    │ • User Patterns │    │ • SLA Monitor   │    │ • Full History  │
-│ • Context Data  │    │ • Risk Trends   │    │ • Performance   │    │ • Response Log  │
-│ • User State    │    │ • Alert Freq    │    │ • Action Status │    │ • Compliance    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+fraud-alerts (Kafka)
+        |
+        v
+  Severity classification
+  (score + risk factors)
+        |
+        v
+  Response action selection
+        |
+        v
+  Action execution
+  (block, investigate, review, notify, log)
+        |
+        v
+  User risk profile update (Redis)
+        |
+        v
+  Audit trail record
+        |
+        v
+  SLA compliance check
 ```
 
-### Alert Context Enrichment
+## Severity Classification
 
-**Enhanced Alert Processing:**
-```python
-@dataclass
-class AlertContext:
-    """Enhanced alert context with additional analysis."""
-    original_alert: Dict[str, Any]
-    user_risk_profile: Dict[str, Any]
-    historical_alerts: List[Dict[str, Any]]
-    transaction_pattern: Dict[str, Any]
-    recommended_action: ResponseAction
-    confidence_score: float
-    enrichment_timestamp: str
-```
+Severity is determined by the fraud score combined with contextual risk factors:
 
-**Context Enrichment Process:**
-1. **User Risk Profile**: Historical transaction patterns and fraud indicators
-2. **Alert History**: Previous alerts and response outcomes for pattern analysis
-3. **Transaction Context**: Current transaction patterns and anomaly detection
-4. **Recommendation Engine**: AI-driven action recommendations with confidence scoring
+| Severity | Condition | SLA Target |
+|----------|-----------|------------|
+| **CRITICAL** | Score >= 0.9 | 1 second |
+| **HIGH** | Score >= 0.7 with additional risk factors (high amount, rapid velocity, unusual hour) | 5 seconds |
+| **MEDIUM** | Score >= 0.4 with fraud indicators present | 30 seconds |
+| **LOW** | All other alerts below the above thresholds | 5 minutes |
 
-## Response Automation
+Risk factors that escalate severity include high transaction amounts, rapid transaction velocity, unusual hours (2-4 AM peak fraud window), and amount deviation from user history.
 
-### Business Rule Engine
+## Response Actions
 
-**Severity-Based Response Matrix:**
-```python
-# Automatic response routing based on severity and context
-def determine_response_action(self, alert: Dict, context: AlertContext) -> ResponseAction:
-    severity = self._classify_severity(alert, context)
-    
-    if severity == AlertSeverity.CRITICAL:
-        if context.confidence_score > 0.9:
-            return ResponseAction.IMMEDIATE_BLOCK
-        else:
-            return ResponseAction.ESCALATE
-            
-    elif severity == AlertSeverity.HIGH:
-        if context.user_risk_profile["repeat_offender"]:
-            return ResponseAction.AUTO_INVESTIGATE
-        else:
-            return ResponseAction.MANUAL_REVIEW
-    
-    # ... additional business logic
-```
+Each severity level maps to one or more response actions:
 
-### Automated Actions
+| Action | Severity | Behavior |
+|--------|----------|----------|
+| `IMMEDIATE_BLOCK` | CRITICAL | Adds user to Redis `blocked_users` set with 24h TTL. The fraud detector enforces this on subsequent transactions via SISMEMBER check, skipping scoring entirely. |
+| `AUTO_INVESTIGATE` | HIGH | Triggers automated analysis of the user's transaction history and patterns. |
+| `MANUAL_REVIEW` | HIGH | Queues the alert for human investigation with a complete context package. |
+| `NOTIFY_TEAM` | MEDIUM | Sends notifications to the fraud operations team. |
+| `LOG_ONLY` | LOW | Records the alert for statistical tracking and pattern analysis. |
 
-**User Account Management:**
-- **Immediate Blocking**: Real-time account suspension for critical alerts
-- **Transaction Limiting**: Temporary restrictions on high-risk accounts
-- **Enhanced Monitoring**: Increased surveillance for suspicious patterns
+### Blocking Enforcement Loop
 
-**Team Notifications:**
-- **Email Alerts**: Automated notifications to fraud investigation team
-- **Slack Integration**: Real-time alerts to fraud response channels
-- **Dashboard Updates**: Real-time alert status and metrics
+The blocking mechanism creates a closed feedback loop between the alert processor and the fraud detector:
 
-**Investigation Queue:**
-- **Priority Routing**: High-severity alerts prioritized for manual review
-- **Context Packages**: Complete investigation packages with all relevant data
-- **Assignment Logic**: Automatic assignment to available investigators
+1. Alert processor receives a CRITICAL-severity fraud alert.
+2. Alert processor adds the user ID to the Redis `blocked_users` set with a 24-hour TTL.
+3. On subsequent transactions, the fraud detector checks `blocked_users` via SISMEMBER before scoring.
+4. If the user is found in the set, the transaction is emitted to the `blocked-transactions` topic and scoring is skipped entirely.
 
-## Performance and Monitoring
+The 24-hour TTL provides automatic unblocking. Manual unblocking is also possible by removing the user from the Redis set.
 
-### SLA Compliance Tracking
+## User Risk Profiling
 
-**Response Time Monitoring:**
-```python
-# SLA targets (milliseconds)
-self.sla_targets = {
-    AlertSeverity.CRITICAL: 1000,    # 1 second
-    AlertSeverity.HIGH: 5000,        # 5 seconds  
-    AlertSeverity.MEDIUM: 30000,     # 30 seconds
-    AlertSeverity.LOW: 300000        # 5 minutes
-}
-```
+The alert processor maintains a risk profile for each user in Redis, tracking escalation over time:
 
-**Performance Metrics:**
-- **Mean Response Time**: Average processing time by severity level
-- **SLA Compliance Rate**: Percentage of alerts processed within SLA targets
-- **Action Success Rate**: Success rate of automated actions
-- **Escalation Rate**: Percentage of alerts requiring human intervention
+- **Alert count**: Total number of fraud alerts generated for the user.
+- **Confirmed fraud count**: Number of alerts later confirmed as actual fraud.
+- **Risk level escalation**: Risk level increases based on alert frequency and confirmation rate.
+- **Profile TTL**: 90-day expiration on risk profile data.
 
-### Real-Time Statistics
+Risk profiles inform severity classification -- a user with a history of confirmed fraud will have alerts escalated more aggressively than a first-time alert.
 
-**System Performance Dashboard:**
-```python
-# Alert processing statistics
-self.processed_alerts = 0      # Total alerts processed
-self.blocked_users = 0         # Users automatically blocked
-self.notifications_sent = 0    # Team notifications sent
-self.sla_violations = 0        # SLA target violations
-self.false_positive_rate = 0.0 # False positive tracking
-```
+## Audit Trail
 
-## Integration Points
+Every alert processed generates a complete audit record containing:
 
-### Kafka Integration
+- Original alert data (fraud score, transaction details, risk factors)
+- Severity classification and reasoning
+- Response action taken
+- Execution timestamp and processing duration
+- SLA compliance status (met or violated, with margin)
+- User risk profile state at time of processing
 
-**Input Topics:**
-- **`fraud-alerts`**: Primary fraud alert stream from detection system
-- **Alert format**: JSON with fraud score, user context, and transaction details
+The audit trail provides a full response history for compliance review and operational analysis.
 
-**Output Topics:**
-- **`alert-responses`**: Response actions taken for each alert
-- **Response format**: Complete audit trail with timing and action details
+## SLA Tracking
 
-### Redis Integration
+The alert processor monitors response times against SLA targets for each severity level. Metrics tracked include:
 
-**Data Storage:**
-- **Alert History**: Historical alerts per user for pattern analysis
-- **User Risk Profiles**: Aggregated risk indicators and patterns
-- **Response Cache**: Recent response actions for duplicate detection
-- **SLA Tracking**: Response time statistics and performance metrics
+- Mean response time by severity
+- SLA compliance rate (percentage of alerts processed within target)
+- SLA violation count and details
+- P50, P95, P99 response time distributions
 
-### External System Integration
+SLA violations are logged and surfaced through Prometheus metrics (exposed on port 8002).
 
-**Notification Systems:**
-- **Email Service**: SMTP integration for team notifications
-- **Slack API**: Real-time alerts to fraud response channels
-- **SMS Gateway**: Critical alert notifications for on-call personnel
+## Observability
 
-**Business Systems:**
-- **User Management API**: Account blocking and restriction management
-- **Transaction API**: Transaction blocking and reversal capabilities
-- **CRM Integration**: Customer communication and case management
+The alert processor exposes Prometheus metrics on port 8002, including:
 
-## Current Implementation
+- Alerts processed (counter, by severity)
+- Users blocked (counter)
+- Response time histogram (by severity)
+- SLA violations (counter, by severity)
+- Active alerts in processing (gauge)
 
-**Primary Implementation:**
-- **`src/consumers/alert_processor.py`** - Complete alert response system
-- **Classes**: AlertProcessor, AlertContext, ResponseAction, AlertSeverity
-- **Features**: SLA monitoring, automated actions, audit trails
+Structured JSON logging via `src/utils/logging.py` includes contextual fields: `alert_id`, `user_id`, `severity`, `action`, and processing timestamps.
 
-**Integration Points:**
-- **Enhanced Fraud Detector**: `src/consumers/enhanced_fraud_detector.py`
-- **Alert Generation**: Real-time fraud score-based alert creation
-- **Kafka Topics**: `fraud-alerts` → `alert-responses` pipeline
+## Kafka Integration
 
-**Development Documentation:**
-- **[Project Log](../project-logs/003-alert-response-system.md)** - Implementation journey and decisions
-- **[Stream Processing Guide](../stream-processing/README.md)** - Kafka integration patterns
+| Topic | Direction | Purpose |
+|-------|-----------|---------|
+| `fraud-alerts` | Input | Fraud alerts from the detection pipeline |
+| `fraud-detection-results` | Output | Enriched results with severity and action metadata |
 
-## Configuration and Deployment
-
-### Environment Configuration
+## Running
 
 ```bash
-# Alert processor configuration
-export ALERT_CONSUMER_GROUP="alert-response-group"
-export NOTIFICATION_EMAIL="fraud-team@company.com"
-export REDIS_ALERT_DB=3
-export SLA_MONITORING_ENABLED=true
+python src/consumers/alert_processor.py
 ```
 
-### Production Deployment
+Configuration is managed through environment variables (see `.env.example`) and the centralized Kafka config in `src/kafka/config.py`.
 
-```bash
-# Start alert response system
-cd src/consumers
-python alert_processor.py
+## Related Documentation
 
-# Monitor alert processing
-tail -f logs/alert_processor.log
-
-# Check Redis alert statistics
-redis-cli -c "HGETALL alert_processor_stats"
-```
-
-### Testing and Validation
-
-```bash
-# Integration testing
-python -m pytest tests/integration/test_alert_processing.py
-
-# Performance testing
-python tests/performance/test_alert_sla_compliance.py
-
-# End-to-end testing
-python tests/e2e/test_fraud_workflows.py::test_alert_response_pipeline
-```
-
-## Operational Excellence
-
-### Monitoring and Observability
-
-**Key Metrics:**
-- **Alert Processing Rate**: Alerts processed per second
-- **Response Time Distribution**: P50, P95, P99 response times by severity
-- **SLA Compliance Rate**: Percentage within target response times
-- **Action Success Rate**: Successful completion of automated actions
-- **False Positive Rate**: Rate of incorrect severity classifications
-
-**Alerting:**
-- **SLA Violations**: Immediate alerts when response times exceed targets
-- **System Errors**: Alert processing failures and recovery status
-- **Queue Depth**: Alert backlog and processing capacity monitoring
-
-### Reliability and Recovery
-
-**Fault Tolerance:**
-- **Graceful Degradation**: Continue processing with reduced functionality
-- **Automatic Retry**: Retry failed actions with exponential backoff
-- **Dead Letter Queue**: Failed alerts routed for manual investigation
-- **Circuit Breaker**: Prevent cascade failures in external system integration
-
----
-
-**Navigation:** [← Documentation Index](../README.md) | [Fraud Detection →](../fraud-detection/README.md)
-
-*The Alert Response System represents a comprehensive production-grade fraud response automation platform, demonstrating enterprise-level event-driven architecture with SLA compliance and complete audit trail management.*
+- [Fraud Detection Pipeline](../fraud-detection/README.md) -- Upstream detection and blocking enforcement
+- [State Management](../state-management/README.md) -- Redis patterns for blocked users and risk profiles

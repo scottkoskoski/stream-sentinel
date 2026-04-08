@@ -60,14 +60,30 @@ user_accounts (
     blocked_at TIMESTAMP WITH TIME ZONE
 );
 
+-- ML model performance tracking
+model_performance (
+    id UUID PRIMARY KEY,
+    model_version VARCHAR(100) NOT NULL,
+    evaluation_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    metric_name VARCHAR(100) NOT NULL,
+    metric_value DECIMAL(10,6) NOT NULL,
+    data_period_start TIMESTAMP WITH TIME ZONE NOT NULL,
+    data_period_end TIMESTAMP WITH TIME ZONE NOT NULL,
+    sample_size INTEGER NOT NULL,
+    metadata JSONB
+);
+
 -- Compliance audit logging
 system_audit_log (
     event_type VARCHAR(100) NOT NULL,
     entity_type VARCHAR(100) NOT NULL,
     entity_id VARCHAR(255) NOT NULL,
     action VARCHAR(100) NOT NULL,
+    actor_id VARCHAR(255),
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    details JSONB
+    details JSONB,
+    ip_address INET,
+    user_agent TEXT
 );
 ```
 
@@ -112,6 +128,19 @@ detection_results (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
 TTL timestamp + INTERVAL 2 YEAR;
+
+-- System performance metrics
+performance_metrics (
+    timestamp DateTime64(3),
+    metric_name String,
+    metric_value Float64,
+    component String,
+    instance_id String,
+    additional_labels Map(String, String)
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (metric_name, timestamp)
+TTL timestamp + INTERVAL 6 MONTH;
 ```
 
 ## Data Flow Architecture

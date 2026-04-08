@@ -14,8 +14,9 @@ Stream-Sentinel's state management system centers on Redis as the primary state 
 │   Streams       │    │  State Store    │    │   Consumer      │    │   Registry      │
 │                 │    │                 │    │                 │    │                 │
 │ • Transactions  ├────┤ • User Profiles ├────┤ • Profile Load  ├────┤ • Model Cache   │
-│ • Alerts        │    │ • Feature Cache │    │ • State Update  │    │ • A/B Testing   │
-│ • Feedback      │    │ • Model Meta    │    │ • Daily Reset   │    │ • Drift State   │
+│ • Alerts        │    │ • Blocked Users │    │ • Block Check   │    │ • A/B Testing   │
+│ • Feedback      │    │ • Feature Cache │    │ • State Update  │    │ • Drift State   │
+│                 │    │ • Drift Base    │    │ • Daily Reset   │    │ • Drift Baseline│
 └─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                        │                        │                        │
          ▼                        ▼                        ▼                        ▼
@@ -83,6 +84,38 @@ redis_client.expire(profile_key, 2592000)  # 30-day TTL
 - **HSET with mapping**: Atomic bulk updates for consistency
 - **TTL Management**: 30-day expiration for memory management
 - **Connection Pooling**: Redis client with timeout configuration
+
+## Blocking Enforcement
+
+### Blocked Users Set
+
+The fraud detection pipeline uses a Redis set to track blocked users. The `fraud_detector.py` consumer checks this set before scoring any transaction:
+
+```python
+# Redis key: blocked_users (SET)
+# Check if user is blocked before scoring
+if redis_client.sismember("blocked_users", user_id):
+    # Skip scoring, publish to blocked-transactions topic
+    publish_to_blocked_transactions(transaction)
+    return
+```
+
+**Blocking Workflow:**
+- The `alert_processor.py` adds users to the `blocked_users` set when escalation criteria are met
+- The `fraud_detector.py` checks membership before scoring -- blocked users are routed to the `blocked-transactions` Kafka topic
+- Blocking is immediate across all consumer instances since Redis is the shared state store
+
+### Drift Baseline Storage
+
+The live drift monitor (`live_drift_monitor.py`) stores PSI baseline distributions in Redis for real-time comparison against incoming feature distributions:
+
+```python
+# Redis key: drift_baseline:{model_id}
+# Stores reference feature distributions for PSI calculation
+redis_client.hset(f"drift_baseline:{model_id}", mapping=baseline_distributions)
+```
+
+This enables the fraud detector to perform continuous drift monitoring without reloading baseline data from disk.
 
 ## Real-Time State Operations
 

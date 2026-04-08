@@ -746,10 +746,65 @@ class RobustStreamProcessor:
         }
         
         self.dead_letter_producer.produce(
-            topic='fraud-detection-dlq',
+            topic='dead-letter-queue',
             value=json.dumps(dead_letter_message)
         )
 ```
+
+## Dead Letter Queue
+
+Messages that fail processing after retries are published to the `dead-letter-queue` Kafka topic via `src/kafka/dlq.py`. This ensures no data is silently lost and provides a mechanism for later investigation and reprocessing.
+
+```python
+from src.kafka.dlq import DeadLetterQueuePublisher
+
+dlq_publisher = DeadLetterQueuePublisher()
+
+# Failed messages are automatically routed to the DLQ
+dlq_publisher.publish(
+    original_message=message,
+    error_reason="Feature extraction failed: missing required field",
+    source_topic="synthetic-transactions",
+    consumer_group="fraud-detection-group"
+)
+```
+
+The `dlq_consumer.py` can then be used to inspect, analyze, and optionally replay failed messages.
+
+## Batch Processing Mode
+
+The fraud detector supports a batch processing mode for higher throughput, enabled via command-line flags:
+
+```bash
+# Batch mode: buffer messages and score in batches
+python src/consumers/fraud_detector.py --batch --batch-size 32 --batch-timeout-ms 100
+```
+
+In batch mode, messages are buffered until either the batch size is reached or the timeout expires, then scored together. This reduces per-message overhead and improves throughput at the cost of slightly higher per-message latency.
+
+## Schema Registry Integration
+
+Stream-Sentinel optionally integrates with Confluent Schema Registry for Avro-based message serialization. When Schema Registry is available, producers and consumers use Avro encoding for type safety and schema evolution. When unavailable, the system falls back to JSON serialization transparently via `src/kafka/schema_utils.py`.
+
+## Structured Logging
+
+All consumers use structured JSON logging via `src/utils/logging.py`, providing consistent, machine-parseable log output with contextual fields:
+
+```python
+from src.utils.logging import get_logger
+
+logger = get_logger("fraud_detector")
+
+# Produces structured JSON log entries with contextual fields
+logger.info("Transaction processed", extra={
+    "transaction_id": "tx_12345",
+    "user_id": "user_001",
+    "fraud_score": 0.87,
+    "processing_time_ms": 12.3
+})
+```
+
+Each consumer exposes Prometheus metrics on dedicated ports (8000-8003) for operational monitoring.
 
 ## Next Steps
 
