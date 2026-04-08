@@ -32,6 +32,7 @@ from pathlib import Path
 # Import our configuration system
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
+from utils.logging import get_logger, configure_logging, ContextLogger
 
 
 class AlertSeverity(Enum):
@@ -107,7 +108,11 @@ class AlertProcessor:
         """
         # Initialize Kafka configuration
         self.kafka_config = get_kafka_config()
-        self.logger = self._setup_logging()
+        self.logger = ContextLogger(
+            get_logger("stream_sentinel.alert_processor"),
+            consumer_group=consumer_group,
+            component="alert_processor",
+        )
         self.consumer_group = consumer_group
         self.notification_email = notification_email or "fraud-team@company.com"
         
@@ -146,20 +151,10 @@ class AlertProcessor:
             f"notifications: {self.notification_email}"
         )
     
-    def _setup_logging(self) -> logging.Logger:
-        """Setup logging for alert processing operations."""
-        logger = logging.getLogger("stream_sentinel.alert_processor")
-        
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
-            
-        return logger
+    @staticmethod
+    def _setup_logging() -> logging.Logger:
+        """Legacy stub -- logging is now configured by utils.logging."""
+        return get_logger("stream_sentinel.alert_processor")
     
     def _create_consumer(self) -> Consumer:
         """Create Kafka consumer for alert processing."""
@@ -534,8 +529,12 @@ class AlertProcessor:
         )
         
         self.logger.warning(
-            f"IMMEDIATE BLOCK executed for user {user_id}, "
-            f"fraud score: {alert.get('fraud_score', 0):.3f}"
+            "Immediate block executed",
+            extra={
+                "user_id": user_id,
+                "fraud_score": round(alert.get('fraud_score', 0), 3),
+                "alert_id": alert.get('alert_id'),
+            },
         )
         
         return {
@@ -876,29 +875,34 @@ class AlertProcessor:
             self.processed_alerts += 1
             
             # Log processing results
+            log_extra = {
+                "alert_id": alert_id,
+                "user_id": alert.get('user_id'),
+                "severity": severity.value,
+                "action": alert_response.action.value,
+                "response_time_ms": round(total_processing_time, 1),
+                "sla_target_ms": sla_target,
+                "sla_met": sla_met,
+            }
             if not sla_met:
-                self.logger.warning(
-                    f"SLA MISS: Alert {alert_id} processed in {total_processing_time:.1f}ms "
-                    f"(target: {sla_target}ms), severity: {severity.value}, "
-                    f"action: {alert_response.action.value}"
-                )
+                self.logger.warning("SLA miss on alert processing", extra=log_extra)
             else:
-                self.logger.info(
-                    f"Alert processed: {alert_id}, severity: {severity.value}, "
-                    f"action: {alert_response.action.value}, "
-                    f"time: {total_processing_time:.1f}ms"
-                )
+                self.logger.info("Alert processed", extra=log_extra)
             
             # Log statistics every 100 alerts
             if self.processed_alerts % 100 == 0:
                 elapsed = time.time() - self.start_time
                 aps = self.processed_alerts / elapsed  # Alerts per second
-                
+
                 self.logger.info(
-                    f"Alert processing stats - Processed: {self.processed_alerts}, "
-                    f"Blocked users: {self.blocked_users}, "
-                    f"Notifications: {self.notifications_sent}, "
-                    f"APS: {aps:.1f}"
+                    "Alert processing statistics",
+                    extra={
+                        "processed_alerts": self.processed_alerts,
+                        "blocked_users": self.blocked_users,
+                        "notifications_sent": self.notifications_sent,
+                        "alerts_per_second": round(aps, 1),
+                        "uptime_seconds": round(elapsed, 1),
+                    },
                 )
                 
         except Exception as e:
@@ -980,18 +984,21 @@ class AlertProcessor:
 
 def main():
     """Main entry point for alert response processor."""
+    configure_logging()
+    logger = get_logger(__name__)
+
     try:
         processor = AlertProcessor(
             consumer_group="alert-response-group",
             notification_email="fraud-team@company.com"
         )
-        
+
         processor.run()
-        
+
     except KeyboardInterrupt:
-        print("\nShutdown requested by user")
+        logger.info("Shutdown requested by user")
     except Exception as e:
-        print(f"Fatal error: {e}")
+        logger.error("Fatal error", extra={"error": str(e)})
         sys.exit(1)
 
 

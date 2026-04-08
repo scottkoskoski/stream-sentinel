@@ -26,6 +26,7 @@ pyflakes==3.4.0
 pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.0
+python-json-logger==3.2.1
 python-lsp-jsonrpc==1.1.2
 python-lsp-server==1.13.0
 pytz==2025.2

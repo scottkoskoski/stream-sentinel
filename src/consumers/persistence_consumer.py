@@ -11,23 +11,29 @@ import logging
 import signal
 import sys
 import time
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
 # Add src to path for imports
-sys.path.append('/home/scottyk/Documents/stream-sentinel/src')
+sys.path.append(str(Path(__file__).parent.parent))
 
 from persistence.database import get_persistence_layer, close_persistence_layer
 from persistence.schemas import FraudAlert, TransactionRecord, AlertSeverity, AlertStatus
 from kafka.config import get_kafka_config
+from utils.logging import get_logger, configure_logging, ContextLogger
 
 
 class PersistenceConsumer:
     """Kafka consumer for database persistence operations."""
     
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = ContextLogger(
+            get_logger(__name__),
+            consumer_group="stream-sentinel-persistence",
+            component="persistence_consumer",
+        )
         self.consumer = None
         self.persistence_layer = None
         self.running = False
@@ -378,15 +384,23 @@ class PersistenceConsumer:
             db_metrics = self.persistence_layer.get_performance_metrics()
             
             self.logger.info(
-                f"Persistence Consumer Metrics - "
-                f"Messages: {self.messages_processed}, "
-                f"Errors: {self.processing_errors} ({error_rate:.2f}%), "
-                f"Rate: {messages_per_second:.2f} msg/s, "
-                f"Uptime: {uptime:.1f}s"
+                "Persistence consumer metrics",
+                extra={
+                    "messages_processed": self.messages_processed,
+                    "processing_errors": self.processing_errors,
+                    "error_rate_pct": round(error_rate, 2),
+                    "messages_per_second": round(messages_per_second, 2),
+                    "uptime_seconds": round(uptime, 1),
+                },
             )
-            
-            self.logger.info(f"Database Metrics - PostgreSQL: {db_metrics['postgresql']}")
-            self.logger.info(f"Database Metrics - ClickHouse: {db_metrics['clickhouse']}")
+
+            self.logger.info(
+                "Database metrics",
+                extra={
+                    "postgresql": db_metrics.get('postgresql'),
+                    "clickhouse": db_metrics.get('clickhouse'),
+                },
+            )
             
             self.last_metrics_log = current_time
     
@@ -424,24 +438,15 @@ class PersistenceConsumer:
 
 def main():
     """Main entry point for persistence consumer."""
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('/tmp/persistence_consumer.log')
-        ]
-    )
-    
-    logger = logging.getLogger(__name__)
+    configure_logging()
+    logger = get_logger(__name__)
     logger.info("Starting Stream-Sentinel Persistence Consumer")
-    
+
     try:
         consumer = PersistenceConsumer()
         consumer.start()
     except Exception as e:
-        logger.error(f"Failed to start persistence consumer: {e}")
+        logger.error("Failed to start persistence consumer", extra={"error": str(e)})
         sys.exit(1)
 
 

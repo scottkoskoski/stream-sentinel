@@ -33,6 +33,7 @@ from pathlib import Path
 # Import our configuration system
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
+from utils.logging import get_logger, configure_logging, ContextLogger
 
 # Import optional C++ accelerated inference
 try:
@@ -137,7 +138,11 @@ class FraudDetector:
         """
         # Initialize Kafka configuration
         self.kafka_config = get_kafka_config()
-        self.logger = self._setup_logging()
+        self.logger = ContextLogger(
+            get_logger("stream_sentinel.fraud_detector"),
+            consumer_group=consumer_group,
+            component="fraud_detector",
+        )
         self.fraud_threshold = fraud_threshold
         self.consumer_group = consumer_group
         self.use_ml_model = use_ml_model
@@ -196,20 +201,10 @@ class FraudDetector:
             f"threshold: {fraud_threshold}"
         )
     
-    def _setup_logging(self) -> logging.Logger:
-        """Setup logging for fraud detection operations."""
-        logger = logging.getLogger("stream_sentinel.fraud_detector")
-        
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-            logger.setLevel(logging.DEBUG)  # Enable debug logging
-            
-        return logger
+    @staticmethod
+    def _setup_logging() -> logging.Logger:
+        """Legacy stub -- logging is now configured by utils.logging."""
+        return get_logger("stream_sentinel.fraud_detector")
     
     def _create_consumer(self) -> Consumer:
         """Create Kafka consumer for transaction processing."""
@@ -818,8 +813,13 @@ class FraudDetector:
             
             self.fraud_alerts_count += 1
             self.logger.warning(
-                f"FRAUD ALERT: User {features.user_id}, Score: {features.fraud_score:.3f}, "
-                f"Amount: ${features.amount:.2f}"
+                "Fraud alert generated",
+                extra={
+                    "transaction_id": features.transaction_id,
+                    "user_id": features.user_id,
+                    "fraud_score": round(features.fraud_score, 3),
+                    "amount": round(features.amount, 2),
+                },
             )
             
         except Exception as e:
@@ -1112,10 +1112,15 @@ class FraudDetector:
                 fraud_rate = self.fraud_alerts_count / self.processed_count * 100
 
                 self.logger.info(
-                    f"Processed: {self.processed_count}, "
-                    f"Fraud alerts: {self.fraud_alerts_count} ({fraud_rate:.2f}%), "
-                    f"Blocked: {self.blocked_count}, "
-                    f"TPS: {tps:.1f}"
+                    "Processing statistics",
+                    extra={
+                        "processed_count": self.processed_count,
+                        "fraud_alerts_count": self.fraud_alerts_count,
+                        "fraud_rate_pct": round(fraud_rate, 2),
+                        "blocked_count": self.blocked_count,
+                        "tps": round(tps, 1),
+                        "uptime_seconds": round(elapsed, 1),
+                    },
                 )
 
         except Exception as e:
@@ -1206,19 +1211,22 @@ class FraudDetector:
 
 def main():
     """Main entry point for fraud detection consumer."""
+    configure_logging()
+    logger = get_logger(__name__)
+
     try:
         # Create and run fraud detector
         detector = FraudDetector(
             consumer_group="fraud-detection-group",
             fraud_threshold=0.3  # Lower threshold for testing
         )
-        
+
         detector.run()
-        
+
     except KeyboardInterrupt:
-        print("\nShutdown requested by user")
+        logger.info("Shutdown requested by user")
     except Exception as e:
-        print(f"Fatal error: {e}")
+        logger.error("Fatal error", extra={"error": str(e)})
         sys.exit(1)
 
 

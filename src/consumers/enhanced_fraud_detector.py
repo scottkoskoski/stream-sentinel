@@ -32,13 +32,18 @@ from pathlib import Path
 # Import existing fraud detector components
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
+from utils.logging import get_logger, configure_logging, ContextLogger
 
-# Import online learning components
-from ml.online_learning import (
-    OnlineLearningConfig, get_online_learning_config,
-    ModelRegistry, ABTestManager, DriftDetector,
-    PerformanceMetrics
-)
+# Import online learning components -- graceful fallback if unavailable
+try:
+    from ml.online_learning import (
+        OnlineLearningConfig, get_online_learning_config,
+        ModelRegistry, ABTestManager, DriftDetector,
+        PerformanceMetrics
+    )
+    ONLINE_LEARNING_AVAILABLE = True
+except ImportError:
+    ONLINE_LEARNING_AVAILABLE = False
 
 # Import original fraud detector components
 try:
@@ -57,6 +62,22 @@ except ImportError:
         daily_amount: float = 0.0
         last_reset_date: Optional[str] = None
         suspicious_activity_count: int = 0
+
+        def update_daily_stats(self, amount: float, timestamp: str) -> None:
+            current_date = datetime.fromisoformat(timestamp).date().isoformat()
+            if self.last_reset_date != current_date:
+                self.daily_transaction_count = 0
+                self.daily_amount = 0.0
+                self.last_reset_date = current_date
+            self.daily_transaction_count += 1
+            self.daily_amount += amount
+
+        def update_transaction_stats(self, amount: float, timestamp: str) -> None:
+            self.total_transactions += 1
+            self.total_amount += amount
+            self.avg_transaction_amount = self.total_amount / self.total_transactions
+            self.last_transaction_time = timestamp
+            self.last_transaction_amount = amount
     
     @dataclass
     class FraudFeatures:
@@ -117,49 +138,63 @@ class EnhancedFraudDetector:
     """
     
     def __init__(self):
+        # Setup logging
+        self.logger = ContextLogger(
+            get_logger(__name__),
+            consumer_group="enhanced-fraud-detection",
+            component="enhanced_fraud_detector",
+        )
+
         # Initialize configurations
         self.kafka_config = get_kafka_config()
-        self.online_config = get_online_learning_config()
-        
-        # Setup logging
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
-        
+        self.online_learning_available = ONLINE_LEARNING_AVAILABLE
+
+        if self.online_learning_available:
+            try:
+                self.online_config = get_online_learning_config()
+            except Exception as e:
+                self.logger.warning(f"Failed to load online learning config, using defaults: {e}")
+                self.online_learning_available = False
+                self.online_config = None
+        else:
+            self.logger.warning("Online learning modules not importable; running in degraded mode")
+            self.online_config = None
+
         # Initialize connections
         self._init_kafka()
         self._init_redis()
-        
-        # Initialize online learning components
+
+        # Initialize online learning components (graceful degradation)
         self._init_online_learning_components()
-        
+
         # Load current model
         self.current_model = None
         self.model_metadata = {}
         self._load_production_model()
-        
+
         # User profile management
         self.user_profiles = {}
         self.profile_cache_size = 10000
-        
+
         # Performance tracking
         self.prediction_count = 0
         self.fraud_detection_count = 0
         self.start_time = time.time()
-        
+
         # A/B testing state
         self.ab_test_active = False
         self.variant_assignment = {}
-        
+
         # Drift monitoring
-        self.drift_monitoring_enabled = True
+        self.drift_monitoring_enabled = self.online_learning_available
         self.feature_buffer = []
         self.max_buffer_size = 1000
-        
+
         # Graceful shutdown
         self.running = False
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-        
+
         self.logger.info("Enhanced Fraud Detector initialized successfully")
     
     def _init_kafka(self) -> None:
@@ -191,38 +226,59 @@ class EnhancedFraudDetector:
     def _init_redis(self) -> None:
         """Initialize Redis connections."""
         try:
+            redis_host = getattr(self.online_config, 'redis_host', 'localhost') if self.online_config else 'localhost'
+            redis_port = getattr(self.online_config, 'redis_port', 6379) if self.online_config else 6379
+            redis_password = getattr(self.online_config, 'redis_password', None) if self.online_config else None
+
             self.redis_client = redis.Redis(
-                host=self.online_config.redis_host,
-                port=self.online_config.redis_port,
-                password=self.online_config.redis_password,
+                host=redis_host,
+                port=redis_port,
+                password=redis_password,
                 db=0,  # Main database
                 decode_responses=True
             )
             self.redis_client.ping()
-            
+
         except Exception as e:
             self.logger.error(f"Failed to initialize Redis: {e}")
             raise
     
     def _init_online_learning_components(self) -> None:
-        """Initialize online learning components."""
+        """Initialize online learning components with graceful degradation."""
+        self.model_registry = None
+        self.ab_test_manager = None
+        self.drift_detector = None
+
+        if not self.online_learning_available:
+            self.logger.info("Online learning components disabled (modules not available)")
+            return
+
         try:
             self.model_registry = ModelRegistry(self.online_config)
-            self.ab_test_manager = ABTestManager(self.online_config)
-            self.drift_detector = DriftDetector(self.online_config)
-            
-            self.logger.info("Online learning components initialized")
-            
+            self.logger.info("ModelRegistry initialized")
         except Exception as e:
-            self.logger.error(f"Failed to initialize online learning components: {e}")
-            raise
+            self.logger.warning(f"Failed to initialize ModelRegistry, continuing without it: {e}")
+
+        try:
+            self.ab_test_manager = ABTestManager(self.online_config)
+            self.logger.info("ABTestManager initialized")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize ABTestManager, continuing without it: {e}")
+
+        try:
+            self.drift_detector = DriftDetector(self.online_config)
+            self.logger.info("DriftDetector initialized")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize DriftDetector, continuing without it: {e}")
     
     def _load_production_model(self) -> bool:
         """Load the current production model."""
         try:
             # Try to load from model registry first
-            production_model = self.model_registry.get_active_model("production")
-            
+            production_model = None
+            if self.model_registry is not None:
+                production_model = self.model_registry.get_active_model("production")
+
             if production_model:
                 self.current_model = production_model
                 self.model_metadata = {
@@ -316,7 +372,7 @@ class EnhancedFraudDetector:
             
             # Determine A/B test variant
             ab_variant = None
-            if self.ab_test_active:
+            if self.ab_test_active and self.ab_test_manager is not None:
                 ab_variant = self.ab_test_manager.assign_variant(user_id, transaction_data)
             
             # Select model based on A/B test
@@ -615,12 +671,13 @@ class EnhancedFraudDetector:
         
         self.feature_buffer.append(feature_dict)
         
-        # Add to drift detector
-        self.drift_detector.add_prediction_sample(
-            feature_dict, 
-            prediction,
-            actual_label=None
-        )
+        # Add to drift detector if available
+        if self.drift_detector is not None:
+            self.drift_detector.add_prediction_sample(
+                feature_dict,
+                prediction,
+                actual_label=None
+            )
     
     def _handle_prediction_result(self, result: EnhancedPredictionResult) -> None:
         """Handle prediction result - publish alerts and record metrics."""
@@ -630,7 +687,7 @@ class EnhancedFraudDetector:
                 self._publish_fraud_alert(result)
             
             # Record A/B test result if applicable
-            if result.ab_test_variant:
+            if result.ab_test_variant and self.ab_test_manager is not None:
                 self.ab_test_manager.record_prediction_result(
                     result.user_id,
                     result.ab_test_variant,
@@ -678,10 +735,13 @@ class EnhancedFraudDetector:
     
     def _record_performance_metrics(self, result: EnhancedPredictionResult) -> None:
         """Record performance metrics for monitoring."""
+        if self.drift_detector is None or not self.online_learning_available:
+            return
+
         try:
             # Create performance metrics
             current_time = datetime.now()
-            
+
             metrics = PerformanceMetrics(
                 timestamp=current_time.isoformat(),
                 auc_score=0.85,  # Would be calculated from actual performance
@@ -697,10 +757,10 @@ class EnhancedFraudDetector:
                 avg_prediction_time_ms=result.prediction_latency_ms,
                 p95_prediction_time_ms=result.prediction_latency_ms * 1.2  # Estimated
             )
-            
+
             # Add to drift detector
             self.drift_detector.add_performance_metrics(metrics)
-            
+
         except Exception as e:
             self.logger.error(f"Failed to record performance metrics: {e}")
     
@@ -721,21 +781,24 @@ class EnhancedFraudDetector:
         try:
             # Check for model updates
             self._check_model_updates()
-            
+
             # Run drift detection
-            if self.drift_monitoring_enabled:
+            if self.drift_monitoring_enabled and self.drift_detector is not None:
                 drift_alerts = self.drift_detector.detect_drift()
                 if drift_alerts:
                     self.logger.info(f"Drift detection found {len(drift_alerts)} alerts")
-            
+
             # Save performance statistics
             self._save_performance_stats()
-            
+
         except Exception as e:
             self.logger.error(f"Error in periodic tasks: {e}")
     
     def _check_model_updates(self) -> None:
         """Check for model updates from the model registry."""
+        if self.model_registry is None:
+            return
+
         try:
             # Check if there's a new production model
             new_model = self.model_registry.get_active_model("production")
@@ -801,6 +864,7 @@ class EnhancedFraudDetector:
 
 def main():
     """Main entry point."""
+    configure_logging()
     detector = EnhancedFraudDetector()
     detector.run()
 

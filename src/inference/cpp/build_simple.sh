@@ -11,11 +11,14 @@ echo "Building Simple XGBoost C++ Wrapper..."
 mkdir -p build_simple
 cd build_simple
 
-# XGBoost library path (from our Python installation)
-XGBOOST_LIB="/home/scottyk/Documents/stream-sentinel/venv/lib/python3.13/site-packages/xgboost/lib/libxgboost.so"
+# XGBoost library path -- auto-detect from Python or accept override via env var
+if [ -z "$XGBOOST_LIB" ]; then
+    XGBOOST_LIB="$(python3 -c "import xgboost, pathlib; print(pathlib.Path(xgboost.__file__).parent / 'lib' / 'libxgboost.so')" 2>/dev/null || true)"
+fi
 
-if [ ! -f "$XGBOOST_LIB" ]; then
-    echo "Error: XGBoost shared library not found at $XGBOOST_LIB"
+if [ -z "$XGBOOST_LIB" ] || [ ! -f "$XGBOOST_LIB" ]; then
+    echo "Error: XGBoost shared library not found."
+    echo "Set XGBOOST_LIB to the path of libxgboost.so, or install xgboost in the active Python environment."
     exit 1
 fi
 
