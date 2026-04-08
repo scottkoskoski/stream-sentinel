@@ -53,6 +53,17 @@ except ImportError:
     except ImportError:
         FEATURE_ENGINEER_AVAILABLE = False
 
+# Import live drift monitor
+try:
+    from ml.online_learning.live_drift_monitor import LiveDriftMonitor
+    DRIFT_MONITOR_AVAILABLE = True
+except ImportError:
+    try:
+        from src.ml.online_learning.live_drift_monitor import LiveDriftMonitor
+        DRIFT_MONITOR_AVAILABLE = True
+    except ImportError:
+        DRIFT_MONITOR_AVAILABLE = False
+
 
 @dataclass
 class UserProfile:
@@ -131,12 +142,13 @@ class FraudDetector:
     transactions.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  consumer_group: str = "fraud-detection-group",
                  fraud_threshold: float = 0.7,
                  use_ml_model: bool = True,
                  model_path: str = "models/ieee_fraud_model_production.pkl",
-                 enable_cpp_acceleration: bool = True):
+                 enable_cpp_acceleration: bool = True,
+                 drift_check_interval: int = 1000):
         """
         Initialize fraud detection consumer.
         
@@ -146,6 +158,7 @@ class FraudDetector:
             use_ml_model: Whether to use ML model or rule-based scoring
             model_path: Path to the trained ML model
             enable_cpp_acceleration: Enable C++ accelerated inference (default: True)
+            drift_check_interval: Run PSI drift check every N transactions (default: 1000)
         """
         # Initialize Kafka configuration
         self.kafka_config = get_kafka_config()
@@ -163,6 +176,20 @@ class FraudDetector:
                 self.logger.info("Unified FeatureEngineer loaded for streaming enrichment")
             except Exception as e:
                 self.logger.warning(f"FeatureEngineer init failed, running without enriched features: {e}")
+
+        # Initialise live drift monitor (gracefully degrade if unavailable)
+        self.drift_monitor = None
+        if DRIFT_MONITOR_AVAILABLE:
+            try:
+                self.drift_monitor = LiveDriftMonitor({
+                    "check_interval": drift_check_interval,
+                })
+                self.logger.info(
+                    "LiveDriftMonitor loaded (check every %d transactions)",
+                    drift_check_interval,
+                )
+            except Exception as e:
+                self.logger.warning(f"LiveDriftMonitor init failed, running without drift checks: {e}")
 
         # Load ML model if enabled
         self.ml_model = None
@@ -898,6 +925,19 @@ class FraudDetector:
             # Extract features for fraud detection
             features = self.extract_features(transaction, user_profile)
             
+            # Feed fraud score to drift monitor (non-blocking)
+            if self.drift_monitor is not None:
+                try:
+                    drift_alert = self.drift_monitor.record_score(features.fraud_score)
+                    if drift_alert is not None:
+                        self.logger.warning(
+                            "Drift detected: PSI=%.4f severity=%s",
+                            drift_alert["psi_score"],
+                            drift_alert["severity"],
+                        )
+                except Exception as e:
+                    self.logger.debug(f"Drift monitor error (non-fatal): {e}")
+
             # Update user profile with new transaction
             user_profile.update_daily_stats(features.amount, transaction['generated_timestamp'])
             user_profile.update_transaction_stats(features.amount, transaction['generated_timestamp'])
