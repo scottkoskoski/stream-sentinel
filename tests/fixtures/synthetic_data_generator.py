@@ -59,11 +59,13 @@ class SyntheticDataGenerator:
         }
         
         # Time-based fraud patterns (hour of day -> fraud multiplier)
+        # Peak fraud hours: 2-4 AM (realistic for card-not-present fraud)
+        # Unified with src/producers/config.py TEMPORAL_FRAUD_MULTIPLIERS
         self.temporal_fraud_patterns = {
-            0: 1.5, 1: 1.8, 2: 2.0, 3: 2.2, 4: 1.9, 5: 1.6,  # Night hours
-            6: 1.2, 7: 1.3, 8: 2.3, 9: 1.4, 10: 1.1, 11: 1.0,  # Morning (8 AM peak)
-            12: 1.0, 13: 0.9, 14: 0.8, 15: 0.9, 16: 1.0, 17: 1.1,  # Afternoon
-            18: 1.2, 19: 1.3, 20: 1.4, 21: 1.5, 22: 1.6, 23: 1.4   # Evening
+            0: 1.6, 1: 1.9, 2: 2.2, 3: 2.4, 4: 2.1, 5: 1.7,    # Night (peak 2-4 AM)
+            6: 1.3, 7: 1.1, 8: 1.0, 9: 0.9, 10: 0.8, 11: 0.8,   # Morning
+            12: 0.8, 13: 0.7, 14: 0.7, 15: 0.8, 16: 0.9, 17: 1.0, # Afternoon
+            18: 1.1, 19: 1.2, 20: 1.3, 21: 1.4, 22: 1.5, 23: 1.6  # Evening
         }
         
         # User profiles for consistent behavior
@@ -81,6 +83,7 @@ class SyntheticDataGenerator:
             pass
         
         # Fallback to hardcoded patterns from analysis
+        # Peak fraud hour: 3 AM (2-4 AM window) -- unified with producer config
         return {
             "fraud_rate": 0.0271,
             "amount_distribution": {
@@ -90,8 +93,8 @@ class SyntheticDataGenerator:
                 "max": 5000.0
             },
             "temporal_patterns": {
-                "peak_fraud_hour": 8,
-                "peak_fraud_rate": 0.0616
+                "peak_fraud_hour": 3,
+                "peak_fraud_rate": 0.0650
             },
             "small_amount_threshold": 10.0,
             "small_amount_fraud_rate": 0.0508,

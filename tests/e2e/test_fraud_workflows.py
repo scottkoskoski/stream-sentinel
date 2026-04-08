@@ -388,7 +388,7 @@ class TestFraudDetectionWorkflows:
             "transaction_id": "integration_test_txn",
             "user_id": "integration_test_user",
             "amount": 2500.00,  # Large amount
-            "timestamp": datetime.now().replace(hour=8).isoformat(),  # Peak fraud hour
+            "timestamp": datetime.now().replace(hour=3).isoformat(),  # Peak fraud hour (2-4 AM)
             "merchant_category": "online",
             "card_type": "credit",
             "location": {"city": "Unknown", "state": "XX"}  # Suspicious location

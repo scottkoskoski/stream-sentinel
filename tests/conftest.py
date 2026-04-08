@@ -184,13 +184,14 @@ def synthetic_transactions() -> List[Dict[str, Any]]:
         amount = max(1.0, min(amount, 5000.0))  # Reasonable bounds
         
         # Temporal patterns - higher fraud rates at certain hours
+        # Peak fraud: 2-4 AM (unified with src/producers/config.py)
         hour = np.random.randint(0, 24)
-        is_peak_fraud_hour = hour == 8  # 8 AM peak from analysis
-        
+        is_peak_fraud_hour = hour in (2, 3, 4)
+
         # Fraud injection based on multiple factors
         fraud_probability = 0.027  # 2.7% baseline
         if is_peak_fraud_hour:
-            fraud_probability *= 2.3  # Peak fraud multiplier
+            fraud_probability *= 2.4  # Peak fraud multiplier (matches hour 3)
         if amount < 10:
             fraud_probability *= 1.9  # Small amount multiplier
         if i % 100 < 5:  # Velocity-based fraud
