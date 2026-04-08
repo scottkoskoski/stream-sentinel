@@ -11,12 +11,13 @@ import logging
 import signal
 import sys
 import time
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
 # Add src to path for imports
-sys.path.append('/home/scottyk/Documents/stream-sentinel/src')
+sys.path.append(str(Path(__file__).parent.parent))
 
 from persistence.database import get_persistence_layer, close_persistence_layer
 from persistence.schemas import FraudAlert, TransactionRecord, AlertSeverity, AlertStatus
