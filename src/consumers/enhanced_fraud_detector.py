@@ -32,6 +32,7 @@ from pathlib import Path
 # Import existing fraud detector components
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
+from utils.logging import get_logger, configure_logging, ContextLogger
 
 # Import online learning components -- graceful fallback if unavailable
 try:
@@ -138,8 +139,11 @@ class EnhancedFraudDetector:
     
     def __init__(self):
         # Setup logging
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
+        self.logger = ContextLogger(
+            get_logger(__name__),
+            consumer_group="enhanced-fraud-detection",
+            component="enhanced_fraud_detector",
+        )
 
         # Initialize configurations
         self.kafka_config = get_kafka_config()
@@ -860,6 +864,7 @@ class EnhancedFraudDetector:
 
 def main():
     """Main entry point."""
+    configure_logging()
     detector = EnhancedFraudDetector()
     detector.run()
 
