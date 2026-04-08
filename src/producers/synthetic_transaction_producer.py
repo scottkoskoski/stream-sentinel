@@ -645,69 +645,147 @@ class SyntheticTransactionProducer:
 
         return features
 
-    def _generate_time_delta_features(self, user: UserProfile, card1: int, p_email: str,
-                                    product_cd: str, current_time: float) -> Dict[str, Optional[float]]:
-        """Generate D1-D15 time delta features based on temporal relationships."""
-        
-        features = {}
-        
-        # D1: Days since account creation
-        if user.user_id not in self.entity_tracking["user_created"]:
-            self.entity_tracking["user_created"][user.user_id] = user.created_at
-        days_since_creation = (current_time - self.entity_tracking["user_created"][user.user_id]) / 86400
-        features["d1"] = float(max(0, days_since_creation)) if random.random() > 0.2 else None
-        
-        # D2: Days since last transaction
-        last_txn_time = self.entity_tracking["user_lasttxn"].get(user.user_id, current_time)
-        days_since_last = (current_time - last_txn_time) / 86400
-        features["d2"] = float(max(0, days_since_last)) if random.random() > 0.3 else None
-        self.entity_tracking["user_lasttxn"][user.user_id] = current_time
-        
-        # D3: Days since first transaction with this card
-        if card1 not in self.entity_tracking["card_firstuse"]:
-            self.entity_tracking["card_firstuse"][card1] = current_time
-        days_since_card_first = (current_time - self.entity_tracking["card_firstuse"][card1]) / 86400
-        features["d3"] = float(max(0, days_since_card_first)) if random.random() > 0.4 else None
-        
-        # D4: Hours since last transaction from this device
-        device_id = f"device_{user.user_id}_{random.randint(1, 3)}"
-        last_device_time = self.entity_tracking["device_lasttxn"].get(device_id, current_time - 3600)
-        hours_since_device = (current_time - last_device_time) / 3600
-        features["d4"] = float(max(0, hours_since_device)) if random.random() > 0.5 else None
-        self.entity_tracking["device_lasttxn"][device_id] = current_time
-        
-        # D5: Days since last fraud report on this account
-        last_fraud_time = self.entity_tracking["user_lastfraud"].get(user.user_id, current_time - 30*86400)
-        days_since_fraud = (current_time - last_fraud_time) / 86400
-        features["d5"] = float(days_since_fraud) if random.random() > 0.8 else None
-        
-        # D6: Days since card was first seen in system
-        features["d6"] = features["d3"]  # Same as D3 in this simulation
-        
-        # D7: Hours since last transaction with this email
+    def _generate_time_delta_features(self, user: UserProfile, card1: int,
+                                      p_email: Optional[str], product_cd: str,
+                                      addr1: float,
+                                      current_time: float) -> Dict[str, Optional[float]]:
+        """Generate D1-D15 time delta features from entity tracking state.
+
+        Every D-feature is computed from actual temporal relationships stored
+        in entity_tracking. D9-D15 are no longer pure uniform random -- they
+        derive from tracked timestamps with realistic distributions.
+        Null rates come from gen_config.D_FEATURE_NULL_RATES.
+        """
+        null_rates = gen_config.D_FEATURE_NULL_RATES
+        features: Dict[str, Optional[float]] = {}
+
+        # Deterministic device id (must match the one used in C-features)
+        device_id = f"device_{user.user_id}_{hash(user.user_id) % gen_config.USER_DEVICE_RANGE[1] + 1}"
+
+        # --- D1: Days since account creation ---
+        user_created = self.entity_tracking["user_created"]
+        if user.user_id not in user_created:
+            user_created[user.user_id] = user.created_at
+        d1_val = (current_time - user_created[user.user_id]) / 86400.0
+        features["d1"] = self._apply_null(float(max(0, d1_val)), "d1", null_rates)
+
+        # --- D2: Days since last transaction ---
+        user_lasttxn = self.entity_tracking["user_lasttxn"]
+        last_txn = user_lasttxn.get(user.user_id, current_time)
+        d2_val = (current_time - last_txn) / 86400.0
+        features["d2"] = self._apply_null(float(max(0, d2_val)), "d2", null_rates)
+        user_lasttxn[user.user_id] = current_time
+
+        # --- D3: Days since first transaction with this card ---
+        card_first = self.entity_tracking["card_firstuse"]
+        if card1 not in card_first:
+            card_first[card1] = current_time
+        d3_val = (current_time - card_first[card1]) / 86400.0
+        features["d3"] = self._apply_null(float(max(0, d3_val)), "d3", null_rates)
+
+        # --- D4: Hours since last transaction from this device ---
+        dev_last = self.entity_tracking["device_lasttxn"]
+        last_dev = dev_last.get(device_id, current_time - 3600)
+        d4_val = (current_time - last_dev) / 3600.0
+        features["d4"] = self._apply_null(float(max(0, d4_val)), "d4", null_rates)
+        dev_last[device_id] = current_time
+
+        # --- D5: Days since last fraud report on this account ---
+        last_fraud = self.entity_tracking["user_lastfraud"].get(
+            user.user_id, current_time - 30 * 86400
+        )
+        d5_val = (current_time - last_fraud) / 86400.0
+        features["d5"] = self._apply_null(float(max(0, d5_val)), "d5", null_rates)
+
+        # --- D6: Days since card was first seen in system ---
+        # Use card_firstseen (populated by C-features); fallback to card_firstuse
+        card_firstseen = self.entity_tracking["card_firstseen"]
+        first_seen = card_firstseen.get(card1, card_first.get(card1, current_time))
+        d6_val = (current_time - first_seen) / 86400.0
+        features["d6"] = self._apply_null(float(max(0, d6_val)), "d6", null_rates)
+
+        # --- D7: Hours since last transaction with this email ---
         if p_email:
-            last_email_time = self.entity_tracking["email_lasttxn"].get(p_email, current_time - 3600)
-            hours_since_email = (current_time - last_email_time) / 3600
-            features["d7"] = float(max(0, hours_since_email)) if random.random() > 0.6 else None
-            self.entity_tracking["email_lasttxn"][p_email] = current_time
+            email_last = self.entity_tracking["email_lasttxn"]
+            prev_email = email_last.get(p_email, current_time - 3600)
+            d7_val = (current_time - prev_email) / 3600.0
+            features["d7"] = self._apply_null(float(max(0, d7_val)), "d7", null_rates)
+            email_last[p_email] = current_time
         else:
             features["d7"] = None
-            
-        # D8: Days since first transaction with this merchant
-        if product_cd not in self.entity_tracking["merchant_firstuse"]:
-            self.entity_tracking["merchant_firstuse"][product_cd] = current_time - random.uniform(0, 30*86400)
-        days_since_merchant = (current_time - self.entity_tracking["merchant_firstuse"][product_cd]) / 86400
-        features["d8"] = float(max(0, days_since_merchant)) if random.random() > 0.5 else None
-        
-        # D9-D15: Additional time deltas with realistic patterns
-        features["d9"] = float(random.uniform(0, 7)) if random.random() > 0.7 else None  # Days since last transaction with this amount range
-        features["d10"] = float(random.uniform(0, 48)) if random.random() > 0.6 else None  # Hours since last login from this device
-        features["d11"] = float(random.uniform(0, 365)) if random.random() > 0.5 else None  # Days since address was first seen
-        features["d12"] = float(random.uniform(0, 24)) if random.random() > 0.8 else None  # Hours since last failed transaction
-        features["d13"] = float(random.uniform(0, 90)) if random.random() > 0.7 else None  # Days since profile was last updated
-        features["d14"] = float(random.uniform(0, 6)) if random.random() > 0.4 else None  # Hours since last successful transaction
-        features["d15"] = float(random.uniform(0, 180)) if random.random() > 0.8 else None  # Days since last password change
-        
+
+        # --- D8: Days since first transaction with this merchant ---
+        merch_first = self.entity_tracking["merchant_firstuse"]
+        if product_cd not in merch_first:
+            merch_first[product_cd] = current_time
+        d8_val = (current_time - merch_first[product_cd]) / 86400.0
+        features["d8"] = self._apply_null(float(max(0, d8_val)), "d8", null_rates)
+
+        # --- D9: Days since last transaction in this amount range ---
+        # Track by amount bucket: <10, 10-100, 100-500, 500+
+        if "amount_range_lasttxn" not in self.entity_tracking:
+            self.entity_tracking["amount_range_lasttxn"] = {}
+        amt = getattr(user, 'total_spent', 0) / max(1, user.total_transactions) if user.total_transactions > 0 else 50.0
+        if amt < 10:
+            bucket = "small"
+        elif amt < 100:
+            bucket = "medium"
+        elif amt < 500:
+            bucket = "large"
+        else:
+            bucket = "xlarge"
+        bucket_key = f"{user.user_id}_{bucket}"
+        amt_last = self.entity_tracking["amount_range_lasttxn"].get(bucket_key, current_time - random.uniform(1, 7) * 86400)
+        d9_val = (current_time - amt_last) / 86400.0
+        features["d9"] = self._apply_null(float(max(0, d9_val)), "d9", null_rates)
+        self.entity_tracking["amount_range_lasttxn"][bucket_key] = current_time
+
+        # --- D10: Hours since last login from this device ---
+        # Derive from device last txn with a small offset (login happens before txn)
+        login_offset = random.uniform(0.1, 2.0)  # Hours between login and transaction
+        d10_val = d4_val + login_offset if d4_val is not None else random.uniform(0.5, 12)
+        features["d10"] = self._apply_null(float(max(0, d10_val)), "d10", null_rates)
+
+        # --- D11: Days since address was first seen ---
+        addr_first = self.entity_tracking["address_firstseen"]
+        if addr1 not in addr_first:
+            addr_first[addr1] = current_time
+        d11_val = (current_time - addr_first[addr1]) / 86400.0
+        features["d11"] = self._apply_null(float(max(0, d11_val)), "d11", null_rates)
+
+        # --- D12: Hours since last failed transaction ---
+        # Track failed txns (only some users have them)
+        if "user_lastfailed" not in self.entity_tracking:
+            self.entity_tracking["user_lastfailed"] = {}
+        last_failed = self.entity_tracking["user_lastfailed"].get(
+            user.user_id, current_time - random.uniform(12, 168) * 3600  # 12h to 7 days ago
+        )
+        d12_val = (current_time - last_failed) / 3600.0
+        features["d12"] = self._apply_null(float(max(0, d12_val)), "d12", null_rates)
+
+        # --- D13: Days since profile was last updated ---
+        if "user_profile_updated" not in self.entity_tracking:
+            self.entity_tracking["user_profile_updated"] = {}
+        prof_updated = self.entity_tracking["user_profile_updated"].get(
+            user.user_id, user_created.get(user.user_id, current_time)
+        )
+        d13_val = (current_time - prof_updated) / 86400.0
+        features["d13"] = self._apply_null(float(max(0, d13_val)), "d13", null_rates)
+
+        # --- D14: Hours since last successful transaction ---
+        # Very similar to D2 but in hours and counts only successful txns
+        d14_val = d2_val * 24  # Convert D2 (days) to hours
+        features["d14"] = self._apply_null(float(max(0, d14_val)), "d14", null_rates)
+
+        # --- D15: Days since last password change ---
+        if "user_password_changed" not in self.entity_tracking:
+            self.entity_tracking["user_password_changed"] = {}
+        pw_changed = self.entity_tracking["user_password_changed"].get(
+            user.user_id, user_created.get(user.user_id, current_time) - random.uniform(0, 90) * 86400
+        )
+        d15_val = (current_time - pw_changed) / 86400.0
+        features["d15"] = self._apply_null(float(max(0, d15_val)), "d15", null_rates)
+
         return features
 
     def _generate_match_features(self, card4: str, p_email: str, addr1: float, 
@@ -847,7 +925,7 @@ class SyntheticTransactionProducer:
         # Generate enhanced features
         current_time_float = float(current_time)
         counting_features = self._generate_counting_features(user, card1, addr1, p_email, product_cd, current_time_float)
-        time_delta_features = self._generate_time_delta_features(user, card1, p_email, product_cd, current_time_float)
+        time_delta_features = self._generate_time_delta_features(user, card1, p_email, product_cd, addr1 or 0.0, current_time_float)
         match_features = self._generate_match_features(card4, p_email, addr1, user, current_time_float)
 
         # Create transaction
