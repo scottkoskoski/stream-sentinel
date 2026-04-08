@@ -34,6 +34,13 @@ sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
 from monitoring.metrics import get_metrics as get_prometheus_metrics
 
+# Schema Registry integration (optional -- falls back to plain JSON)
+try:
+    from kafka.schema_utils import get_schema_helper, deserialize_message
+    SCHEMA_UTILS_AVAILABLE = True
+except ImportError:
+    SCHEMA_UTILS_AVAILABLE = False
+
 
 class AlertSeverity(Enum):
     """Alert severity classification levels."""
@@ -137,16 +144,28 @@ class AlertProcessor:
             AlertSeverity.LOW: 300000        # 5 minutes
         }
         
+        # Schema Registry integration (optional)
+        self._schema_helper = None
+        if SCHEMA_UTILS_AVAILABLE:
+            try:
+                self._schema_helper = get_schema_helper()
+                if self._schema_helper.is_available:
+                    self.logger.info("Schema Registry available -- consuming Avro messages")
+                else:
+                    self.logger.info("Schema Registry not reachable -- consuming plain JSON")
+            except Exception as e:
+                self.logger.warning(f"Schema helper init failed: {e}")
+
         # Graceful shutdown
         self.running = True
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-        
+
         self.logger.info(
             f"AlertProcessor initialized - group: {consumer_group}, "
             f"notifications: {self.notification_email}"
         )
-    
+
     def _setup_logging(self) -> logging.Logger:
         """Setup logging for alert processing operations."""
         logger = logging.getLogger("stream_sentinel.alert_processor")
@@ -926,9 +945,21 @@ class AlertProcessor:
                         break
                 
                 try:
-                    # Parse alert from message
-                    alert = json.loads(msg.value().decode('utf-8'))
-                    
+                    # Parse alert from message (Avro if available, JSON fallback)
+                    if (
+                        self._schema_helper is not None
+                        and self._schema_helper.is_available
+                        and SCHEMA_UTILS_AVAILABLE
+                    ):
+                        alert = deserialize_message(
+                            self._schema_helper,
+                            "fraud_alert",
+                            msg.value(),
+                            self.input_topic,
+                        )
+                    else:
+                        alert = json.loads(msg.value().decode('utf-8'))
+
                     # Process alert through response pipeline
                     self.process_alert(alert)
                     

@@ -41,8 +41,16 @@ from confluent_kafka.admin import AdminClient, NewTopic
 import sys
 import os
 
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "kafka"))
 from config import get_kafka_config
+
+# Schema Registry integration (optional -- system works without it)
+try:
+    from kafka.schema_utils import get_schema_helper, serialize_message
+    SCHEMA_UTILS_AVAILABLE = True
+except ImportError:
+    SCHEMA_UTILS_AVAILABLE = False
 
 
 @dataclass
@@ -282,6 +290,26 @@ class SyntheticTransactionProducer:
             "production_rate": 0.0,
             "errors": 0,
         }
+
+        # Schema Registry integration (optional)
+        self._schema_helper = None
+        if SCHEMA_UTILS_AVAILABLE:
+            try:
+                self._schema_helper = get_schema_helper()
+                if self._schema_helper.is_available:
+                    self.logger.info(
+                        "Schema Registry available -- producing Avro-validated messages"
+                    )
+                else:
+                    self.logger.info(
+                        "Schema Registry not reachable -- producing plain JSON messages"
+                    )
+            except Exception as e:
+                self.logger.warning(f"Schema helper init failed: {e}")
+        else:
+            self.logger.info(
+                "schema_utils not importable -- producing plain JSON messages"
+            )
 
         self.logger.info("Synthetic Transaction Producer initialized")
 
@@ -901,12 +929,29 @@ class SyntheticTransactionProducer:
                 pass  # Skip stats update on parse error
 
     def produce_transaction(self, transaction: Transaction):
-        """Produce a single transaction to Kafka."""
+        """Produce a single transaction to Kafka.
+
+        When the Schema Registry is available the message is serialised
+        using Avro for schema validation; otherwise plain JSON is used.
+        """
         try:
-            # Convert transaction to JSON
             transaction_dict = asdict(transaction)
-            message_value = json.dumps(transaction_dict)
             message_key = transaction.transaction_id
+
+            # Use Avro serialization when Schema Registry is reachable
+            if (
+                self._schema_helper is not None
+                and self._schema_helper.is_available
+                and SCHEMA_UTILS_AVAILABLE
+            ):
+                message_value = serialize_message(
+                    self._schema_helper,
+                    "transaction",
+                    transaction_dict,
+                    self.topic_name,
+                )
+            else:
+                message_value = json.dumps(transaction_dict).encode("utf-8")
 
             # Produce to Kafka
             self.producer.produce(

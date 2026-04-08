@@ -36,6 +36,13 @@ from kafka.config import get_kafka_config
 from monitoring.metrics import get_metrics as get_prometheus_metrics
 from kafka.dlq import get_dlq_publisher
 
+# Schema Registry integration (optional -- falls back to plain JSON)
+try:
+    from kafka.schema_utils import get_schema_helper, deserialize_message
+    SCHEMA_UTILS_AVAILABLE = True
+except ImportError:
+    SCHEMA_UTILS_AVAILABLE = False
+
 # Import optional C++ accelerated inference
 try:
     from inference.fast_inference import FastInferenceEngine
@@ -166,12 +173,24 @@ class FraudDetector:
         self.processed_count = 0
         self.fraud_alerts_count = 0
         self.start_time = time.time()
-        
+
+        # Schema Registry integration (optional)
+        self._schema_helper = None
+        if SCHEMA_UTILS_AVAILABLE:
+            try:
+                self._schema_helper = get_schema_helper()
+                if self._schema_helper.is_available:
+                    self.logger.info("Schema Registry available -- consuming Avro messages")
+                else:
+                    self.logger.info("Schema Registry not reachable -- consuming plain JSON")
+            except Exception as e:
+                self.logger.warning(f"Schema helper init failed: {e}")
+
         # Graceful shutdown
         self.running = True
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-        
+
         self.logger.info(
             f"FraudDetector initialized - group: {consumer_group}, "
             f"threshold: {fraud_threshold}"
@@ -669,11 +688,27 @@ class FraudDetector:
                 "original_transaction": original_transaction
             }
             
+            # Serialize alert (Avro when Schema Registry is available, JSON otherwise)
+            if (
+                self._schema_helper is not None
+                and self._schema_helper.is_available
+                and SCHEMA_UTILS_AVAILABLE
+            ):
+                from kafka.schema_utils import serialize_message
+                alert_bytes = serialize_message(
+                    self._schema_helper,
+                    "fraud_alert",
+                    alert,
+                    self.output_topic,
+                )
+            else:
+                alert_bytes = json.dumps(alert).encode("utf-8")
+
             # Publish to fraud alerts topic
             self.producer.produce(
                 self.output_topic,
                 key=features.user_id,
-                value=json.dumps(alert),
+                value=alert_bytes,
                 callback=self._delivery_callback
             )
             
@@ -929,9 +964,21 @@ class FraudDetector:
                         break
                 
                 try:
-                    # Parse transaction from message
-                    transaction = json.loads(msg.value().decode('utf-8'))
-                    
+                    # Parse transaction from message (Avro if available, JSON fallback)
+                    if (
+                        self._schema_helper is not None
+                        and self._schema_helper.is_available
+                        and SCHEMA_UTILS_AVAILABLE
+                    ):
+                        transaction = deserialize_message(
+                            self._schema_helper,
+                            "transaction",
+                            msg.value(),
+                            self.input_topic,
+                        )
+                    else:
+                        transaction = json.loads(msg.value().decode('utf-8'))
+
                     # Process transaction for fraud detection
                     self.process_transaction(transaction)
                     
