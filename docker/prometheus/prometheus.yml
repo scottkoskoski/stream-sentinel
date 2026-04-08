@@ -1,0 +1,42 @@
+# Prometheus configuration for Stream-Sentinel fraud detection system
+#
+# Scrapes metrics from all consumer processes exposing Prometheus endpoints.
+# Each consumer runs a metrics HTTP server on a dedicated port.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  # Fraud Detector consumer -- primary fraud scoring pipeline
+  - job_name: "fraud-detector"
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          component: "fraud-detector"
+          service: "stream-sentinel"
+
+  # Alert Processor consumer -- downstream alert routing and response
+  - job_name: "alert-processor"
+    static_configs:
+      - targets: ["host.docker.internal:8001"]
+        labels:
+          component: "alert-processor"
+          service: "stream-sentinel"
+
+  # Persistence Consumer -- database write-behind layer
+  - job_name: "persistence-consumer"
+    static_configs:
+      - targets: ["host.docker.internal:8002"]
+        labels:
+          component: "persistence-consumer"
+          service: "stream-sentinel"
+
+  # Enhanced Fraud Detector consumer -- online learning variant
+  - job_name: "enhanced-fraud-detector"
+    static_configs:
+      - targets: ["host.docker.internal:8003"]
+        labels:
+          component: "enhanced-fraud-detector"
+          service: "stream-sentinel"

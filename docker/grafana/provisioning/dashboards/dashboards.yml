@@ -1,0 +1,15 @@
+# Grafana dashboard provisioning -- loads JSON dashboard definitions
+# from the /var/lib/grafana/dashboards volume mount at startup.
+
+apiVersion: 1
+
+providers:
+  - name: "Stream-Sentinel"
+    orgId: 1
+    folder: "Stream-Sentinel"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

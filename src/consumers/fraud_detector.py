@@ -34,6 +34,15 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
 from utils.logging import get_logger, configure_logging, ContextLogger
+from monitoring.metrics import get_metrics as get_prometheus_metrics
+from kafka.dlq import get_dlq_publisher
+
+# Schema Registry integration (optional -- falls back to plain JSON)
+try:
+    from kafka.schema_utils import get_schema_helper, deserialize_message
+    SCHEMA_UTILS_AVAILABLE = True
+except ImportError:
+    SCHEMA_UTILS_AVAILABLE = False
 
 # Import optional C++ accelerated inference
 try:
@@ -190,12 +199,24 @@ class FraudDetector:
         self.blocked_count = 0
         self.rules_fallback_count = 0
         self.start_time = time.time()
-        
+
+        # Schema Registry integration (optional)
+        self._schema_helper = None
+        if SCHEMA_UTILS_AVAILABLE:
+            try:
+                self._schema_helper = get_schema_helper()
+                if self._schema_helper.is_available:
+                    self.logger.info("Schema Registry available -- consuming Avro messages")
+                else:
+                    self.logger.info("Schema Registry not reachable -- consuming plain JSON")
+            except Exception as e:
+                self.logger.warning(f"Schema helper init failed: {e}")
+
         # Graceful shutdown
         self.running = True
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-        
+
         self.logger.info(
             f"FraudDetector initialized - group: {consumer_group}, "
             f"threshold: {fraud_threshold}"
@@ -800,11 +821,27 @@ class FraudDetector:
                 "original_transaction": original_transaction
             }
             
+            # Serialize alert (Avro when Schema Registry is available, JSON otherwise)
+            if (
+                self._schema_helper is not None
+                and self._schema_helper.is_available
+                and SCHEMA_UTILS_AVAILABLE
+            ):
+                from kafka.schema_utils import serialize_message
+                alert_bytes = serialize_message(
+                    self._schema_helper,
+                    "fraud_alert",
+                    alert,
+                    self.output_topic,
+                )
+            else:
+                alert_bytes = json.dumps(alert).encode("utf-8")
+
             # Publish to fraud alerts topic
             self.producer.produce(
                 self.output_topic,
                 key=features.user_id,
-                value=json.dumps(alert),
+                value=alert_bytes,
                 callback=self._delivery_callback
             )
             
@@ -1150,9 +1187,21 @@ class FraudDetector:
                         break
                 
                 try:
-                    # Parse transaction from message
-                    transaction = json.loads(msg.value().decode('utf-8'))
-                    
+                    # Parse transaction from message (Avro if available, JSON fallback)
+                    if (
+                        self._schema_helper is not None
+                        and self._schema_helper.is_available
+                        and SCHEMA_UTILS_AVAILABLE
+                    ):
+                        transaction = deserialize_message(
+                            self._schema_helper,
+                            "transaction",
+                            msg.value(),
+                            self.input_topic,
+                        )
+                    else:
+                        transaction = json.loads(msg.value().decode('utf-8'))
+
                     # Process transaction for fraud detection
                     self.process_transaction(transaction)
                     
@@ -1161,10 +1210,36 @@ class FraudDetector:
                     
                 except json.JSONDecodeError as e:
                     self.logger.error(f"Failed to parse transaction JSON: {e}")
+                    try:
+                        dlq = get_dlq_publisher()
+                        dlq.publish(
+                            failed_value=msg.value(),
+                            error=e,
+                            failure_reason="json_decode_error",
+                            source_topic=self.input_topic,
+                            consumer_group=self.consumer_group,
+                            partition=msg.partition(),
+                            offset=msg.offset(),
+                        )
+                    except Exception as dlq_err:
+                        self.logger.error(f"DLQ publish also failed: {dlq_err}")
                     self.consumer.commit(msg)  # Skip bad message
-                    
+
                 except Exception as e:
                     self.logger.error(f"Error processing message: {e}")
+                    try:
+                        dlq = get_dlq_publisher()
+                        dlq.publish(
+                            failed_value=msg.value(),
+                            error=e,
+                            failure_reason="processing_error",
+                            source_topic=self.input_topic,
+                            consumer_group=self.consumer_group,
+                            partition=msg.partition(),
+                            offset=msg.offset(),
+                        )
+                    except Exception as dlq_err:
+                        self.logger.error(f"DLQ publish also failed: {dlq_err}")
                     # Don't commit - will retry message
                     
         except KafkaException as e:
@@ -1215,6 +1290,18 @@ def main():
     logger = get_logger(__name__)
 
     try:
+        # Start Prometheus metrics server on port 8000 (daemon thread, non-blocking)
+        try:
+            metrics = get_prometheus_metrics(component_name="fraud-detector")
+            metrics.start_metrics_server(port=8000)
+            logging.getLogger("stream_sentinel.fraud_detector").info(
+                "Prometheus metrics server started on port 8000"
+            )
+        except Exception as e:
+            logging.getLogger("stream_sentinel.fraud_detector").warning(
+                f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
+            )
+
         # Create and run fraud detector
         detector = FraudDetector(
             consumer_group="fraud-detection-group",

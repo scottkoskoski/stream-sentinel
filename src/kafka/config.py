@@ -86,7 +86,16 @@ class KafkaConfig:
         return servers_map[self.environment]
 
     def _get_schema_registry_url(self) -> str:
-        """Get Schema Registry URL based on environment."""
+        """Get Schema Registry URL based on environment.
+
+        The ``SCHEMA_REGISTRY_URL`` environment variable takes precedence
+        over the per-environment defaults so that any component can
+        override the URL without knowing the current environment.
+        """
+        explicit = os.getenv("SCHEMA_REGISTRY_URL")
+        if explicit:
+            return explicit
+
         registry_map = {
             Environment.DEVELOPMENT: "http://localhost:8081",
             Environment.STAGING: os.getenv(
@@ -299,6 +308,18 @@ class KafkaConfig:
                 "min_insync_replicas": (
                     2 if self.environment == Environment.PRODUCTION else 1
                 ),
+            },
+            "dead_letter_queue": {
+                "num_partitions": 3,  # Lower volume expected
+                "replication_factor": (
+                    3 if self.environment == Environment.PRODUCTION else 1
+                ),
+                "retention_ms": 2592000000,  # 30 days retention for investigation
+                "segment_ms": 86400000,  # Daily segments
+                "min_insync_replicas": (
+                    2 if self.environment == Environment.PRODUCTION else 1
+                ),
+                "cleanup_policy": "delete",
             },
         }
 

@@ -1,0 +1,53 @@
+# Stream-Sentinel Monitoring Stack
+#
+# Provides Prometheus metric collection and Grafana visualization.
+# Run alongside the main infrastructure compose file:
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.monitoring.yml up -d
+#
+# Consumer metric endpoints (running on the host):
+#   fraud-detector:          http://localhost:8000/metrics
+#   alert-processor:         http://localhost:8001/metrics
+#   persistence-consumer:    http://localhost:8002/metrics
+#   enhanced-fraud-detector: http://localhost:8003/metrics
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: stream-sentinel-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: stream-sentinel-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: streamsent
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
