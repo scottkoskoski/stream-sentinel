@@ -281,7 +281,7 @@ class SyntheticTransactionProducer:
         }
 
         # Topic configuration
-        self.topic_name = "synthetic-transactions"
+        self.topic_name = gen_config.DEFAULT_TOPIC_NAME
 
         # Statistics tracking
         self.stats = {
@@ -333,25 +333,17 @@ class SyntheticTransactionProducer:
             return self._get_default_parameters()
 
     def _get_default_parameters(self) -> Dict[str, Any]:
-        """Provide default parameters if analysis results unavailable."""
-        self.logger.warning("Using default parameters - analysis results not available")
+        """Provide default parameters from gen_config if analysis results unavailable."""
+        self.logger.warning("Using default parameters from gen_config - analysis results not available")
 
-        self.fraud_rate = 0.027  # 2.7% fraud rate
-        self.transaction_patterns = {
-            "amount_distribution": {
-                "mean_log": 4.0,
-                "std_log": 1.2,
-                "min_amount": 1.0,
-                "max_amount": 1000.0,
-            },
-            "product_codes": {"W": 0.7, "C": 0.15, "R": 0.1, "H": 0.03, "S": 0.02},
-        }
-        self.fraud_patterns = {
-            "base_fraud_rate": 0.027,
-            "amount_patterns": {"high_amount_bias": 1.2},
-        }
+        defaults = gen_config.DEFAULT_IEEE_CIS_ANALYSIS
+        results = defaults["analysis_results"]
 
-        return {}
+        self.fraud_rate = results["schema"]["fraud_rate"]
+        self.transaction_patterns = results["synthetic_spec"]["transaction_patterns"]
+        self.fraud_patterns = results["synthetic_spec"]["fraud_patterns"]
+
+        return results
 
     def setup_topic(self) -> bool:
         """Create Kafka topic for synthetic transactions if it doesn't exist."""
@@ -451,24 +443,28 @@ class SyntheticTransactionProducer:
         Optional[float],
         Optional[str],
     ]:
-        """Generate card-related features."""
+        """Generate card-related features using config distributions."""
         # card1: Primary card identifier
         card1 = random.randint(1000, 20000)
 
-        # card2: Secondary identifier (sometimes missing)
-        card2 = random.randint(100, 600) if random.random() > 0.2 else None
+        # card2: Secondary identifier (sometimes missing per IEEE-CIS)
+        card2 = random.randint(100, 600) if random.random() > gen_config.CARD2_MISSING_RATE else None
 
-        # card3: Tertiary identifier
-        card3 = 150.0  # Most common value in dataset
+        # card3: Tertiary identifier -- dominant value in dataset
+        card3 = gen_config.CARD3_COMMON_VALUE
 
-        # card4: Card network
-        card4 = random.choice(["visa", "mastercard", "discover", "american express"])
+        # card4: Card network -- weighted by IEEE-CIS distribution
+        card4_names = list(gen_config.CARD4_DISTRIBUTION.keys())
+        card4_weights = list(gen_config.CARD4_DISTRIBUTION.values())
+        card4 = random.choices(card4_names, weights=card4_weights)[0]
 
         # card5: Card category
-        card5 = random.randint(100, 200)
+        card5 = random.randint(gen_config.CARD5_RANGE[0], gen_config.CARD5_RANGE[1])
 
-        # card6: Card type
-        card6 = random.choice(["debit", "credit"])
+        # card6: Card type -- weighted by IEEE-CIS distribution
+        card6_names = list(gen_config.CARD6_DISTRIBUTION.keys())
+        card6_weights = list(gen_config.CARD6_DISTRIBUTION.values())
+        card6 = random.choices(card6_names, weights=card6_weights)[0]
 
         return card1, card2, card3, card4, card5, card6
 
@@ -476,40 +472,43 @@ class SyntheticTransactionProducer:
         self, user: UserProfile
     ) -> Tuple[Optional[float], Optional[float]]:
         """Generate address-related features."""
-        # Use user's typical location with some variation
         base_addr = user.get_typical_location()
 
         addr1 = base_addr + random.randint(-20, 20)
-        addr2 = 87.0 + random.randint(-10, 10)  # Common value from dataset
+        addr2 = gen_config.ADDR2_BASE + random.randint(-gen_config.ADDR2_RANGE, gen_config.ADDR2_RANGE)
 
         return float(addr1), float(addr2)
 
     def _generate_distance_features(self) -> Tuple[Optional[float], Optional[float]]:
-        """Generate distance-related features."""
-        # Distance features are often missing in real data
-        if random.random() > 0.7:
-            dist1 = random.uniform(1, 1000)
-            dist2 = None  # Often missing when dist1 is present
-        else:
-            dist1 = None
-            dist2 = None
+        """Generate distance-related features using IEEE-CIS sparsity rates."""
+        dist1 = None
+        dist2 = None
+
+        if random.random() < gen_config.DIST1_PRESENT_RATE:
+            dist1 = random.uniform(*gen_config.DIST1_RANGE)
+
+        if random.random() < gen_config.DIST2_PRESENT_RATE:
+            dist2 = random.uniform(*gen_config.DIST2_RANGE)
 
         return dist1, dist2
 
     def _generate_email_domains(self) -> Tuple[Optional[str], Optional[str]]:
-        """Generate email domain features."""
-        common_domains = [
-            "gmail.com",
-            "yahoo.com",
-            "hotmail.com",
-            "outlook.com",
-            "aol.com",
-            "icloud.com",
-            None,  # None represents missing
-        ]
+        """Generate email domain features using IEEE-CIS distributions."""
+        # P_emaildomain: ~14% missing
+        if random.random() < gen_config.P_EMAIL_MISSING_RATE:
+            p_email = None
+        else:
+            names = list(gen_config.P_EMAIL_DOMAINS.keys())
+            weights = list(gen_config.P_EMAIL_DOMAINS.values())
+            p_email = random.choices(names, weights=weights)[0]
 
-        p_email = random.choice(common_domains)
-        r_email = random.choice(common_domains) if random.random() > 0.8 else None
+        # R_emaildomain: ~77% missing
+        if random.random() < gen_config.R_EMAIL_MISSING_RATE:
+            r_email = None
+        else:
+            names = list(gen_config.R_EMAIL_DOMAINS.keys())
+            weights = list(gen_config.R_EMAIL_DOMAINS.values())
+            r_email = random.choices(names, weights=weights)[0]
 
         return p_email, r_email
 
@@ -845,56 +844,103 @@ class SyntheticTransactionProducer:
     def _determine_if_fraud(
         self, user: UserProfile, amount: float, current_time: int
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Determine if transaction should be fraudulent based on patterns.
+        """Determine if transaction should be fraudulent.
+
+        Uses config-driven temporal multipliers (peak 2-4 AM), amount
+        thresholds, risk profile multipliers, and velocity checks.
 
         Returns:
-            Tuple of (is_fraud, fraud_reason)
+            (is_fraud, fraud_reason)  -- fraud_reason is None when not fraud.
         """
-        # Base fraud probability
         fraud_prob = self.fraud_rate
 
-        # Adjust based on amount (small amounts have higher fraud rate)
-        if amount < 10:
-            fraud_prob *= 1.8
-        elif amount > 500:
-            fraud_prob *= 0.8
+        # Amount-based adjustment
+        if amount < gen_config.SMALL_AMOUNT_THRESHOLD:
+            fraud_prob *= gen_config.SMALL_AMOUNT_FRAUD_MULTIPLIER
+        elif amount > gen_config.LARGE_AMOUNT_THRESHOLD:
+            fraud_prob *= gen_config.LARGE_AMOUNT_FRAUD_MULTIPLIER
 
-        # Adjust based on time (8 AM has highest fraud rate)
+        # Temporal adjustment -- use per-hour multiplier from config
         hour = (current_time // 3600) % 24
-        if hour == 8:
-            fraud_prob *= 2.3  # Peak fraud hour
-        elif 22 <= hour or hour <= 5:
-            fraud_prob *= 1.2  # Night hours slightly elevated
+        fraud_prob *= gen_config.TEMPORAL_FRAUD_MULTIPLIERS.get(hour, 1.0)
 
-        # Adjust based on user risk profile
-        if user.risk_profile == "high":
-            fraud_prob *= 2.0
-        elif user.risk_profile == "low":
-            fraud_prob *= 0.5
+        # Risk profile
+        fraud_prob *= gen_config.RISK_PROFILE_MULTIPLIERS.get(user.risk_profile, 1.0)
 
-        # Velocity-based fraud (too many transactions too quickly)
-        if user.total_transactions > 10:
+        # Velocity check
+        fraud_reason = None
+        if user.total_transactions > gen_config.VELOCITY_MIN_TRANSACTIONS:
             time_since_last = current_time - user.last_transaction_time
-            if time_since_last < 300:  # Less than 5 minutes
-                fraud_prob *= 3.0
+            if time_since_last < gen_config.VELOCITY_WINDOW_SECONDS:
+                fraud_prob *= gen_config.VELOCITY_FRAUD_MULTIPLIER
                 fraud_reason = "velocity_fraud"
-            else:
-                fraud_reason = (
-                    "pattern_fraud" if random.random() > 0.5 else "amount_fraud"
-                )
-        else:
-            fraud_reason = "new_user_fraud"
 
-        # Cap maximum fraud probability
-        fraud_prob = min(fraud_prob, 0.15)  # Max 15% fraud rate
+        # Cap
+        fraud_prob = min(fraud_prob, gen_config.MAX_FRAUD_PROBABILITY)
 
         is_fraud = random.random() < fraud_prob
 
+        if is_fraud and fraud_reason is None:
+            # Assign a reason
+            if hour in gen_config.PEAK_FRAUD_HOURS:
+                fraud_reason = "temporal_fraud"
+            elif amount < gen_config.SMALL_AMOUNT_THRESHOLD:
+                fraud_reason = "small_amount_fraud"
+            elif amount > gen_config.LARGE_AMOUNT_THRESHOLD:
+                fraud_reason = "large_amount_fraud"
+            elif user.total_transactions <= gen_config.VELOCITY_MIN_TRANSACTIONS:
+                fraud_reason = "new_user_fraud"
+            else:
+                fraud_reason = "pattern_fraud"
+
         return is_fraud, fraud_reason if is_fraud else None
 
+    def _apply_fraud_correlations(self, counting_features: Dict[str, Optional[float]],
+                                    time_delta_features: Dict[str, Optional[float]],
+                                    ) -> None:
+        """Apply correlated anomaly injection to C and D features for fraud.
+
+        When a transaction is fraudulent, its anomalies should be correlated:
+        higher velocity counts, shorter time deltas, etc.  This mutates the
+        feature dicts in place.
+        """
+        full_anomaly = random.random() < gen_config.FRAUD_FULL_ANOMALY_RATE
+
+        # Inflate a random subset of C-features (velocity indicators)
+        num_to_inflate = random.randint(
+            gen_config.FRAUD_C_INFLATION_MIN,
+            gen_config.FRAUD_C_INFLATION_MAX,
+        )
+        inflatable = [k for k in counting_features if counting_features[k] is not None]
+        targets = random.sample(inflatable, min(num_to_inflate, len(inflatable)))
+        for key in targets:
+            # Multiply the count by 2-5x to simulate velocity burst
+            counting_features[key] = counting_features[key] * random.uniform(2.0, 5.0)
+
+        if full_anomaly or random.random() < gen_config.FRAUD_VELOCITY_BOOST_RATE:
+            # Compress D2 (time since last txn) -- rapid succession
+            if time_delta_features.get("d2") is not None:
+                time_delta_features["d2"] = time_delta_features["d2"] * random.uniform(0.01, 0.1)
+            # Compress D4 (hours since last device txn)
+            if time_delta_features.get("d4") is not None:
+                time_delta_features["d4"] = time_delta_features["d4"] * random.uniform(0.01, 0.2)
+            # Compress D14 (hours since last successful txn)
+            if time_delta_features.get("d14") is not None:
+                time_delta_features["d14"] = time_delta_features["d14"] * random.uniform(0.01, 0.15)
+
+        # New accounts used for fraud should have small D1
+        if random.random() < 0.30:
+            if time_delta_features.get("d1") is not None:
+                time_delta_features["d1"] = random.uniform(0, 2)  # 0-2 days old
+
     def _generate_transaction(self, user_id: Optional[str] = None) -> Transaction:
-        """Generate a single realistic transaction."""
+        """Generate a single realistic transaction.
+
+        For fraudulent transactions, correlated anomalies are injected:
+        - Amount, hour, and velocity anomalies fire together (not independently)
+        - C-features get inflated counts, D-features get compressed deltas
+        - M-features use the fraud weight table (handled in _generate_match_features)
+        """
         # Get or create user profile
         user = self._get_or_create_user(user_id)
 
@@ -910,9 +956,15 @@ class SyntheticTransactionProducer:
         # Determine if this should be fraud
         is_fraud, fraud_reason = self._determine_if_fraud(user, amount, current_time)
 
-        # Regenerate amount if fraud (apply fraud patterns)
+        # For fraud: apply correlated anomaly bundle
         if is_fraud:
             amount = self._generate_transaction_amount(is_fraud=True)
+            # Optionally shift to peak fraud hours for correlated temporal anomaly
+            if random.random() < gen_config.FRAUD_UNUSUAL_HOUR_RATE:
+                fraud_hour = random.choice(gen_config.PEAK_FRAUD_HOURS)
+                # Adjust current_time to reflect the fraud hour (for D/M feature calc)
+                day_start = current_time - (current_time % 86400)
+                current_time = day_start + fraud_hour * 3600 + random.randint(0, 3599)
 
         # Generate other features
         product_cd = self._generate_product_code()
@@ -920,12 +972,16 @@ class SyntheticTransactionProducer:
         addr1, addr2 = self._generate_address_features(user)
         dist1, dist2 = self._generate_distance_features()
         p_email, r_email = self._generate_email_domains()
-        
+
         # Generate enhanced features
         current_time_float = float(current_time)
         counting_features = self._generate_counting_features(user, card1, addr1, p_email, product_cd, current_time_float)
         time_delta_features = self._generate_time_delta_features(user, card1, p_email, product_cd, addr1 or 0.0, current_time_float)
         match_features = self._generate_match_features(card4, p_email, addr1, user, current_time_float, is_fraud=is_fraud)
+
+        # Apply correlated anomalies for fraud transactions
+        if is_fraud:
+            self._apply_fraud_correlations(counting_features, time_delta_features)
 
         # Create transaction
         transaction = Transaction(
@@ -1159,16 +1215,11 @@ def main():
     """Main function for running the synthetic producer."""
     producer = SyntheticTransactionProducer()
 
-    # Configuration
-    TARGET_TPS = 2000  # Transactions per second
-    DURATION_SECONDS = 180  # 3 minutes for initial test
-    USER_COUNT = 500  # Simulated users
-
     try:
         producer.run_production(
-            target_tps=TARGET_TPS,
-            duration_seconds=DURATION_SECONDS,
-            user_count=USER_COUNT,
+            target_tps=gen_config.DEFAULT_TARGET_TPS,
+            duration_seconds=gen_config.DEFAULT_DURATION_SECONDS,
+            user_count=gen_config.DEFAULT_USER_COUNT,
         )
     except Exception as e:
         producer.logger.error(f"Production failed: {e}")
