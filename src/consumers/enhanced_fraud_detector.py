@@ -203,7 +203,7 @@ class EnhancedFraudDetector:
         try:
             # Consumer configuration
             consumer_config = self.kafka_config.get_consumer_config(
-                group_id='enhanced-fraud-detection',
+                consumer_group='enhanced-fraud-detection',
                 consumer_type='fraud_detector',
             )
             consumer_config['auto.offset.reset'] = 'latest'

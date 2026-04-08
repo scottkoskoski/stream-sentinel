@@ -71,7 +71,7 @@ class PersistenceConsumer:
             # Get Kafka configuration
             kafka_cfg = get_kafka_config()
             consumer_config = kafka_cfg.get_consumer_config(
-                group_id='stream-sentinel-persistence',
+                consumer_group='stream-sentinel-persistence',
                 consumer_type='persistence',
             )
             consumer_config.update({
