@@ -32,6 +32,7 @@ from pathlib import Path
 # Import our configuration system
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
+from monitoring.metrics import get_metrics as get_prometheus_metrics
 
 
 class AlertSeverity(Enum):
@@ -981,11 +982,23 @@ class AlertProcessor:
 def main():
     """Main entry point for alert response processor."""
     try:
+        # Start Prometheus metrics server on port 8001 (daemon thread, non-blocking)
+        try:
+            metrics = get_prometheus_metrics(component_name="alert-processor")
+            metrics.start_metrics_server(port=8001)
+            logging.getLogger("stream_sentinel.alert_processor").info(
+                "Prometheus metrics server started on port 8001"
+            )
+        except Exception as e:
+            logging.getLogger("stream_sentinel.alert_processor").warning(
+                f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
+            )
+
         processor = AlertProcessor(
             consumer_group="alert-response-group",
             notification_email="fraud-team@company.com"
         )
-        
+
         processor.run()
         
     except KeyboardInterrupt:

@@ -22,6 +22,12 @@ from persistence.database import get_persistence_layer, close_persistence_layer
 from persistence.schemas import FraudAlert, TransactionRecord, AlertSeverity, AlertStatus
 from kafka.config import get_kafka_config
 
+try:
+    from monitoring.metrics import get_metrics as get_prometheus_metrics
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+
 
 class PersistenceConsumer:
     """Kafka consumer for database persistence operations."""
@@ -433,10 +439,23 @@ def main():
             logging.FileHandler('/tmp/persistence_consumer.log')
         ]
     )
-    
+
     logger = logging.getLogger(__name__)
     logger.info("Starting Stream-Sentinel Persistence Consumer")
-    
+
+    # Start Prometheus metrics server on port 8002 (daemon thread, non-blocking)
+    if METRICS_AVAILABLE:
+        try:
+            metrics = get_prometheus_metrics(component_name="persistence-consumer")
+            metrics.start_metrics_server(port=8002)
+            logger.info("Prometheus metrics server started on port 8002")
+        except Exception as e:
+            logger.warning(
+                f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
+            )
+    else:
+        logger.info("Prometheus metrics not available, skipping metrics server")
+
     try:
         consumer = PersistenceConsumer()
         consumer.start()

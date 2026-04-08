@@ -80,6 +80,8 @@ data/processed/
 data/synthetic/
 *.csv
 *.json
+!docker/**/*.json
+!schemas/*.json
 *.parquet
 models/trained/
 checkpoints/

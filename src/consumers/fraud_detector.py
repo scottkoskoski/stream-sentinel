@@ -33,6 +33,7 @@ from pathlib import Path
 # Import our configuration system
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
+from monitoring.metrics import get_metrics as get_prometheus_metrics
 
 # Import optional C++ accelerated inference
 try:
@@ -983,12 +984,24 @@ class FraudDetector:
 def main():
     """Main entry point for fraud detection consumer."""
     try:
+        # Start Prometheus metrics server on port 8000 (daemon thread, non-blocking)
+        try:
+            metrics = get_prometheus_metrics(component_name="fraud-detector")
+            metrics.start_metrics_server(port=8000)
+            logging.getLogger("stream_sentinel.fraud_detector").info(
+                "Prometheus metrics server started on port 8000"
+            )
+        except Exception as e:
+            logging.getLogger("stream_sentinel.fraud_detector").warning(
+                f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
+            )
+
         # Create and run fraud detector
         detector = FraudDetector(
             consumer_group="fraud-detection-group",
             fraud_threshold=0.3  # Lower threshold for testing
         )
-        
+
         detector.run()
         
     except KeyboardInterrupt:

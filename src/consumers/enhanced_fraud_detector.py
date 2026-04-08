@@ -32,6 +32,7 @@ from pathlib import Path
 # Import existing fraud detector components
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
+from monitoring.metrics import get_metrics as get_prometheus_metrics
 
 # Import online learning components
 from ml.online_learning import (
@@ -801,6 +802,18 @@ class EnhancedFraudDetector:
 
 def main():
     """Main entry point."""
+    # Start Prometheus metrics server on port 8003 (daemon thread, non-blocking)
+    try:
+        metrics = get_prometheus_metrics(component_name="enhanced-fraud-detector")
+        metrics.start_metrics_server(port=8003)
+        logging.getLogger(__name__).info(
+            "Prometheus metrics server started on port 8003"
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
+        )
+
     detector = EnhancedFraudDetector()
     detector.run()
 
