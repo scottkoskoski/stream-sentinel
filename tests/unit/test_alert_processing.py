@@ -185,10 +185,13 @@ class TestAlertProcessing:
         )
         
         response = self.alert_processor.execute_response_action(alert_context, ResponseAction.IMMEDIATE_BLOCK)
-        
+
         assert isinstance(response, AlertResponse)
         assert response.action == ResponseAction.IMMEDIATE_BLOCK
-        assert "user_blocked" in response.details  # Key should be user_blocked, not just block
+        assert response.status == "completed"
+        assert response.details.get("success") is True
+        # The _execute_immediate_block method returns "user_blocked" key
+        assert "user_blocked" in response.details
 
     def test_update_user_risk_profile(self):
         """Test user risk profile update after alert response."""

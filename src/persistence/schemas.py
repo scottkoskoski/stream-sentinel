@@ -52,15 +52,16 @@ class PostgreSQLSchemas:
         investigated_at TIMESTAMP WITH TIME ZONE,
         resolved_at TIMESTAMP WITH TIME ZONE,
         investigator_id VARCHAR(255),
-        resolution_notes TEXT,
-        
-        -- Indexes for common queries
-        INDEX idx_fraud_alerts_user_id (user_id),
-        INDEX idx_fraud_alerts_status (status),
-        INDEX idx_fraud_alerts_severity (severity),
-        INDEX idx_fraud_alerts_created_at (created_at),
-        INDEX idx_fraud_alerts_transaction_id (transaction_id)
+        resolution_notes TEXT
     );
+    """
+
+    FRAUD_ALERTS_INDEXES = """
+    CREATE INDEX IF NOT EXISTS idx_fraud_alerts_user_id ON fraud_alerts (user_id);
+    CREATE INDEX IF NOT EXISTS idx_fraud_alerts_status ON fraud_alerts (status);
+    CREATE INDEX IF NOT EXISTS idx_fraud_alerts_severity ON fraud_alerts (severity);
+    CREATE INDEX IF NOT EXISTS idx_fraud_alerts_created_at ON fraud_alerts (created_at);
+    CREATE INDEX IF NOT EXISTS idx_fraud_alerts_transaction_id ON fraud_alerts (transaction_id);
     """
     
     USER_ACCOUNTS = """
@@ -73,13 +74,14 @@ class PostgreSQLSchemas:
         blocked_at TIMESTAMP WITH TIME ZONE,
         blocked_reason TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        
-        -- Indexes for user management queries
-        INDEX idx_user_accounts_status (status),
-        INDEX idx_user_accounts_last_alert (last_alert_at),
-        INDEX idx_user_accounts_blocked_at (blocked_at)
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+    """
+
+    USER_ACCOUNTS_INDEXES = """
+    CREATE INDEX IF NOT EXISTS idx_user_accounts_status ON user_accounts (status);
+    CREATE INDEX IF NOT EXISTS idx_user_accounts_last_alert ON user_accounts (last_alert_at);
+    CREATE INDEX IF NOT EXISTS idx_user_accounts_blocked_at ON user_accounts (blocked_at);
     """
     
     MODEL_PERFORMANCE = """
@@ -92,12 +94,13 @@ class PostgreSQLSchemas:
         data_period_start TIMESTAMP WITH TIME ZONE NOT NULL,
         data_period_end TIMESTAMP WITH TIME ZONE NOT NULL,
         sample_size INTEGER NOT NULL,
-        metadata JSONB,
-        
-        -- Composite index for time-series queries
-        INDEX idx_model_performance_version_date (model_version, evaluation_date),
-        INDEX idx_model_performance_metric (metric_name, evaluation_date)
+        metadata JSONB
     );
+    """
+
+    MODEL_PERFORMANCE_INDEXES = """
+    CREATE INDEX IF NOT EXISTS idx_model_performance_version_date ON model_performance (model_version, evaluation_date);
+    CREATE INDEX IF NOT EXISTS idx_model_performance_metric ON model_performance (metric_name, evaluation_date);
     """
     
     SYSTEM_AUDIT_LOG = """
@@ -111,14 +114,15 @@ class PostgreSQLSchemas:
         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         details JSONB,
         ip_address INET,
-        user_agent TEXT,
-        
-        -- Indexes for audit queries
-        INDEX idx_audit_log_timestamp (timestamp),
-        INDEX idx_audit_log_entity (entity_type, entity_id),
-        INDEX idx_audit_log_event_type (event_type),
-        INDEX idx_audit_log_actor (actor_id)
+        user_agent TEXT
     );
+    """
+
+    SYSTEM_AUDIT_LOG_INDEXES = """
+    CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON system_audit_log (timestamp);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON system_audit_log (entity_type, entity_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON system_audit_log (event_type);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON system_audit_log (actor_id);
     """
     
     # Trigger for updating timestamps
@@ -240,9 +244,13 @@ class SchemaManager:
         """Get all PostgreSQL table creation statements."""
         return {
             'fraud_alerts': PostgreSQLSchemas.FRAUD_ALERTS,
+            'fraud_alerts_indexes': PostgreSQLSchemas.FRAUD_ALERTS_INDEXES,
             'user_accounts': PostgreSQLSchemas.USER_ACCOUNTS,
+            'user_accounts_indexes': PostgreSQLSchemas.USER_ACCOUNTS_INDEXES,
             'model_performance': PostgreSQLSchemas.MODEL_PERFORMANCE,
+            'model_performance_indexes': PostgreSQLSchemas.MODEL_PERFORMANCE_INDEXES,
             'system_audit_log': PostgreSQLSchemas.SYSTEM_AUDIT_LOG,
+            'system_audit_log_indexes': PostgreSQLSchemas.SYSTEM_AUDIT_LOG_INDEXES,
             'update_timestamp_function': PostgreSQLSchemas.UPDATE_TIMESTAMP_TRIGGER,
             'fraud_alerts_trigger': PostgreSQLSchemas.FRAUD_ALERTS_TRIGGER,
             'user_accounts_trigger': PostgreSQLSchemas.USER_ACCOUNTS_TRIGGER

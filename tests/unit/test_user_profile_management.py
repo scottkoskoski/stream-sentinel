@@ -172,14 +172,20 @@ class TestUserProfileManagement:
         }
         
         self.mock_redis.hgetall.return_value = corrupted_profile
-        
-        # Should handle corrupted data gracefully
+
+        # Should handle corrupted data gracefully -- the get_user_profile
+        # method catches exceptions during type conversion and returns a
+        # default UserProfile when parsing fails.
         profile = self.fraud_detector.get_user_profile(user_id)
-        
-        # Should create clean profile with defaults for corrupted data
+
+        # Must always return a valid UserProfile (never crash)
+        assert isinstance(profile, UserProfile)
         assert profile.user_id == user_id
-        # The implementation should handle conversion errors gracefully
-        # and return default values when conversion fails
+        # When conversion of "invalid_number" to int fails, the except block
+        # returns a fresh default profile
+        assert profile.total_transactions == 0 or isinstance(profile.total_transactions, int)
+        assert isinstance(profile.total_amount, float)
+        assert isinstance(profile.avg_transaction_amount, float)
 
     def test_save_user_profile_with_none_values(self):
         """Test saving user profile with None values (should be filtered out)."""
