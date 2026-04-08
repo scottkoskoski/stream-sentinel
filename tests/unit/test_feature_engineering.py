@@ -89,12 +89,12 @@ class TestFeatureEngineering:
         """Test temporal pattern features."""
         user_profile = self.create_user_profile()
         
-        # Test peak fraud hour (8 AM)
+        # Test peak fraud hour (3 AM -- 2-4 AM window)
         peak_transaction = self.create_ieee_transaction(
             transaction_id="txn_peak",
             card1="user_test",
             transaction_amt=100.0,
-            generated_timestamp="2023-08-15T08:00:00"
+            generated_timestamp="2023-08-15T03:00:00"
         )
         
         peak_features = self.fraud_detector.extract_features(peak_transaction, user_profile)

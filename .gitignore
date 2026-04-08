@@ -77,6 +77,8 @@ config/prod.env
 # Data files and datasets
 data/raw/
 data/processed/
+# Exception: default analysis parameters (not raw data, just statistics)
+!data/processed/ieee_cis_analysis.json
 data/synthetic/
 *.csv
 *.json
