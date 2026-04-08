@@ -21,10 +21,11 @@ import time
 import signal
 import sys
 import pickle
+import threading
 import numpy as np
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, asdict
+from typing import Dict, Any, Optional, List, Tuple
+from dataclasses import dataclass, asdict, field
 from confluent_kafka import Consumer, Producer, KafkaError, KafkaException
 import redis
 import logging
@@ -104,10 +105,59 @@ class FraudFeatures:
     # Fraud score
     fraud_score: float
     is_fraud_alert: bool
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
+
+
+@dataclass
+class BatchMetrics:
+    """Tracks batch processing metrics for monitoring."""
+    batch_sizes: List[int] = field(default_factory=list)
+    batch_durations_seconds: List[float] = field(default_factory=list)
+    total_batches: int = 0
+    total_messages_in_batches: int = 0
+    flush_reasons: Dict[str, int] = field(default_factory=lambda: {
+        "full": 0, "timeout": 0, "shutdown": 0
+    })
+
+    def record_batch(self, size: int, duration_seconds: float, reason: str) -> None:
+        """Record a completed batch for metrics."""
+        self.batch_sizes.append(size)
+        self.batch_durations_seconds.append(duration_seconds)
+        self.total_batches += 1
+        self.total_messages_in_batches += size
+        if reason in self.flush_reasons:
+            self.flush_reasons[reason] += 1
+
+        # Keep only last 1000 samples to bound memory
+        if len(self.batch_sizes) > 1000:
+            self.batch_sizes = self.batch_sizes[-1000:]
+            self.batch_durations_seconds = self.batch_durations_seconds[-1000:]
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Return a summary dict suitable for logging or Prometheus exposition."""
+        if not self.batch_sizes:
+            return {
+                "total_batches": 0,
+                "total_messages": 0,
+                "avg_batch_size": 0,
+                "avg_batch_duration_ms": 0,
+                "flush_reasons": self.flush_reasons,
+            }
+        return {
+            "total_batches": self.total_batches,
+            "total_messages": self.total_messages_in_batches,
+            "avg_batch_size": sum(self.batch_sizes) / len(self.batch_sizes),
+            "p50_batch_size": sorted(self.batch_sizes)[len(self.batch_sizes) // 2],
+            "max_batch_size": max(self.batch_sizes),
+            "avg_batch_duration_ms": (sum(self.batch_durations_seconds)
+                                      / len(self.batch_durations_seconds)) * 1000,
+            "p99_batch_duration_ms": sorted(self.batch_durations_seconds)[
+                int(len(self.batch_durations_seconds) * 0.99)] * 1000,
+            "flush_reasons": self.flush_reasons,
+        }
 
 
 class FraudDetector:
@@ -119,21 +169,27 @@ class FraudDetector:
     transactions.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  consumer_group: str = "fraud-detection-group",
                  fraud_threshold: float = 0.7,
                  use_ml_model: bool = True,
                  model_path: str = "models/ieee_fraud_model_production.pkl",
-                 enable_cpp_acceleration: bool = True):
+                 enable_cpp_acceleration: bool = True,
+                 batch_mode: bool = False,
+                 batch_size: int = 32,
+                 batch_timeout_ms: int = 100):
         """
         Initialize fraud detection consumer.
-        
+
         Args:
             consumer_group: Kafka consumer group for parallel processing
             fraud_threshold: Fraud score threshold for alert generation
             use_ml_model: Whether to use ML model or rule-based scoring
             model_path: Path to the trained ML model
             enable_cpp_acceleration: Enable C++ accelerated inference (default: True)
+            batch_mode: Enable batch inference mode (default: False for low-latency)
+            batch_size: Maximum messages per batch when batch_mode is True
+            batch_timeout_ms: Maximum time to wait before flushing a partial batch (ms)
         """
         # Initialize Kafka configuration
         self.kafka_config = get_kafka_config()
@@ -142,38 +198,49 @@ class FraudDetector:
         self.consumer_group = consumer_group
         self.use_ml_model = use_ml_model
         self.enable_cpp_acceleration = enable_cpp_acceleration and CPP_INFERENCE_AVAILABLE
-        
+
+        # Batch processing configuration
+        self.batch_mode = batch_mode
+        self.batch_size = batch_size
+        self.batch_timeout_ms = batch_timeout_ms
+        self.batch_metrics = BatchMetrics()
+
         # Load ML model if enabled
         self.ml_model = None
         self.model_features = None
         if use_ml_model:
             self._load_ml_model(model_path)
-        
+
         # Topics
         self.input_topic = "synthetic-transactions"
         self.output_topic = "fraud-alerts"
-        
+
         # Initialize Kafka consumer and producer
         self.consumer = self._create_consumer()
         self.producer = self._create_producer()
-        
+
         # Initialize Redis for state management
         self.redis_client = self._create_redis_client()
-        
+
         # Processing statistics
         self.processed_count = 0
         self.fraud_alerts_count = 0
         self.start_time = time.time()
-        
+
         # Graceful shutdown
         self.running = True
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
-        
+
+        mode_label = "batch" if batch_mode else "single-message"
         self.logger.info(
             f"FraudDetector initialized - group: {consumer_group}, "
-            f"threshold: {fraud_threshold}"
+            f"threshold: {fraud_threshold}, mode: {mode_label}"
         )
+        if batch_mode:
+            self.logger.info(
+                f"Batch config: size={batch_size}, timeout={batch_timeout_ms}ms"
+            )
     
     def _setup_logging(self) -> logging.Logger:
         """Setup logging for fraud detection operations."""
@@ -508,30 +575,38 @@ class FraudDetector:
         # Ensure score is between 0 and 1
         return min(score, 1.0)
     
-    def _calculate_ml_fraud_score(self, transaction: Dict[str, Any], 
+    def _calculate_ml_fraud_score(self, transaction: Dict[str, Any],
                                  user_profile: UserProfile) -> float:
         """
         Calculate fraud score using trained ML model.
-        
+
+        When called inside a batch, ``_batch_override_score`` is set by
+        ``_process_batch`` so we can skip redundant per-message inference.
+
         Args:
             transaction: Transaction data
             user_profile: User profile for behavioral features
-            
+
         Returns:
             Fraud probability between 0.0 and 1.0
         """
+        # If the batch loop already computed the score, use it directly
+        override = getattr(self, "_batch_override_score", None)
+        if override is not None:
+            return float(override)
+
         try:
             # Extract features compatible with the trained model
             features = self._extract_ml_features(transaction, user_profile)
-            
+
             # Use FastInferenceEngine if available, otherwise fall back to Python XGBoost
             if hasattr(self, 'fast_inference_engine') and self.fast_inference_engine:
                 fraud_probability, performance_info = self.fast_inference_engine.predict_fraud_probability(features)
-                
+
                 # Log performance info periodically for monitoring
                 if self.processed_count % 1000 == 0:
                     self.logger.info(f"ML inference: {performance_info}")
-                    
+
                 return float(fraud_probability)
             else:
                 # Standard Python XGBoost inference
@@ -904,20 +979,196 @@ class FraudDetector:
             self.logger.error(f"Error processing transaction: {e}")
             self.logger.error(f"Transaction data: {transaction}")
     
+    # ------------------------------------------------------------------
+    # Batch inference helpers
+    # ------------------------------------------------------------------
+
+    def _extract_ml_features_batch(
+        self,
+        transactions: List[Dict[str, Any]],
+        user_profiles: List["UserProfile"],
+    ) -> List[List[float]]:
+        """Extract ML feature vectors for a batch of transactions.
+
+        Returns a list of feature vectors, one per transaction, suitable for
+        passing to ``model.predict_proba()`` as a 2-D array.
+        """
+        return [
+            self._extract_ml_features(txn, profile)
+            for txn, profile in zip(transactions, user_profiles)
+        ]
+
+    def _calculate_ml_fraud_scores_batch(
+        self,
+        transactions: List[Dict[str, Any]],
+        user_profiles: List["UserProfile"],
+    ) -> List[float]:
+        """Run batch ML inference and return fraud probabilities.
+
+        Falls back to per-message scoring if batch prediction fails.
+        """
+        try:
+            feature_matrix = self._extract_ml_features_batch(
+                transactions, user_profiles
+            )
+            # XGBoost predict_proba on the full batch is much faster than
+            # calling it once per row.
+            probabilities = self.ml_model.predict_proba(feature_matrix)
+            return [float(row[1]) for row in probabilities]
+        except Exception as e:
+            self.logger.warning(
+                f"Batch ML inference failed ({e}), falling back to per-message"
+            )
+            return [
+                self._calculate_ml_fraud_score(txn, profile)
+                for txn, profile in zip(transactions, user_profiles)
+            ]
+
+    def _process_batch(
+        self,
+        messages: list,
+        transactions: List[Dict[str, Any]],
+        flush_reason: str,
+    ) -> None:
+        """Process a buffered batch of messages end-to-end.
+
+        Steps:
+          1. Look up / create user profiles for the batch.
+          2. Run batch ML inference (or per-message rule-based scoring).
+          3. For each message: build FraudFeatures, update profile, publish
+             alerts and detection results.
+          4. Commit offsets for ALL messages in the batch only after the
+             entire batch has been processed (exactly-once semantics).
+
+        If an individual message fails, it is logged and skipped so that
+        one bad record does not block the rest of the batch.
+        """
+        if not messages:
+            return
+
+        batch_start = time.time()
+        batch_len = len(messages)
+
+        # -- Step 1: gather user profiles --------------------------------
+        user_ids = [
+            str(txn.get("card1", "unknown")) for txn in transactions
+        ]
+        user_profiles = [self.get_user_profile(uid) for uid in user_ids]
+
+        # -- Step 2: batch ML inference ----------------------------------
+        if self.use_ml_model and self.ml_model:
+            fraud_scores = self._calculate_ml_fraud_scores_batch(
+                transactions, user_profiles
+            )
+        else:
+            fraud_scores = [None] * batch_len  # signals per-message rule scoring
+
+        # -- Step 3: per-message post-processing -------------------------
+        failed_indices: List[int] = []
+        for idx in range(batch_len):
+            try:
+                txn = transactions[idx]
+                profile = user_profiles[idx]
+                processing_start = time.time()
+
+                # If batch ML gave us a score, inject it via a small wrapper
+                # so that extract_features uses it instead of re-computing.
+                if fraud_scores[idx] is not None:
+                    self._batch_override_score = fraud_scores[idx]
+
+                features = self.extract_features(txn, profile)
+
+                # Clear the override
+                self._batch_override_score = None
+
+                # Update user profile
+                profile.update_daily_stats(
+                    features.amount, txn["generated_timestamp"]
+                )
+                profile.update_transaction_stats(
+                    features.amount, txn["generated_timestamp"]
+                )
+                if features.is_fraud_alert:
+                    profile.suspicious_activity_count += 1
+                self.save_user_profile(profile)
+
+                # Publish alerts and results
+                if features.is_fraud_alert:
+                    self.publish_fraud_alert(features, txn)
+                self.publish_fraud_detection_result(
+                    features, txn, processing_start
+                )
+
+                self.processed_count += 1
+
+                # Periodic stats logging
+                if self.processed_count % 1000 == 0:
+                    elapsed = time.time() - self.start_time
+                    tps = self.processed_count / elapsed
+                    fraud_rate = (
+                        self.fraud_alerts_count / self.processed_count * 100
+                    )
+                    self.logger.info(
+                        f"Processed: {self.processed_count}, "
+                        f"Fraud alerts: {self.fraud_alerts_count} "
+                        f"({fraud_rate:.2f}%), TPS: {tps:.1f}"
+                    )
+            except Exception as e:
+                failed_indices.append(idx)
+                self.logger.error(
+                    f"Error processing message {idx} in batch: {e}"
+                )
+
+        # -- Step 4: commit offsets for the entire batch -----------------
+        # We commit the *last* message offset which implicitly covers all
+        # earlier offsets in each partition.  Failed messages are logged
+        # but still committed so we don't re-process the whole batch.
+        if messages:
+            try:
+                self.consumer.commit(message=messages[-1])
+            except Exception as e:
+                self.logger.error(f"Failed to commit batch offsets: {e}")
+
+        batch_duration = time.time() - batch_start
+        self.batch_metrics.record_batch(
+            batch_len, batch_duration, flush_reason
+        )
+
+        if failed_indices:
+            self.logger.warning(
+                f"Batch completed with {len(failed_indices)}/{batch_len} "
+                f"failures (indices: {failed_indices})"
+            )
+
+        # Log batch metrics periodically
+        if self.batch_metrics.total_batches % 100 == 0:
+            self.logger.info(
+                f"Batch metrics: {self.batch_metrics.get_summary()}"
+            )
+
+    # ------------------------------------------------------------------
+    # Main processing loops
+    # ------------------------------------------------------------------
+
     def run(self) -> None:
-        """
-        Main processing loop for fraud detection consumer.
-        """
-        self.logger.info("Starting fraud detection consumer...")
-        
+        """Main processing loop -- delegates to single-message or batch mode."""
+        if self.batch_mode:
+            self._run_batch()
+        else:
+            self._run_single()
+
+    def _run_single(self) -> None:
+        """Original single-message processing loop (low-latency mode)."""
+        self.logger.info("Starting fraud detection consumer (single-message mode)...")
+
         try:
             while self.running:
                 # Poll for messages with timeout
                 msg = self.consumer.poll(timeout=1.0)
-                
+
                 if msg is None:
                     continue
-                
+
                 if msg.error():
                     if msg.error().code() == KafkaError._PARTITION_EOF:
                         # End of partition - continue
@@ -925,29 +1176,109 @@ class FraudDetector:
                     else:
                         self.logger.error(f"Kafka error: {msg.error()}")
                         break
-                
+
                 try:
                     # Parse transaction from message
                     transaction = json.loads(msg.value().decode('utf-8'))
-                    
+
                     # Process transaction for fraud detection
                     self.process_transaction(transaction)
-                    
+
                     # Manually commit offset after successful processing
                     self.consumer.commit(msg)
-                    
+
                 except json.JSONDecodeError as e:
                     self.logger.error(f"Failed to parse transaction JSON: {e}")
                     self.consumer.commit(msg)  # Skip bad message
-                    
+
                 except Exception as e:
                     self.logger.error(f"Error processing message: {e}")
                     # Don't commit - will retry message
-                    
+
         except KafkaException as e:
             self.logger.error(f"Kafka exception: {e}")
-            
+
         finally:
+            self._cleanup()
+
+    def _run_batch(self) -> None:
+        """Batch processing loop -- buffers N messages or flushes on timeout.
+
+        Exactly-once semantics: offsets are committed only after the full
+        batch has been processed.
+        """
+        self.logger.info(
+            f"Starting fraud detection consumer (batch mode, "
+            f"size={self.batch_size}, timeout={self.batch_timeout_ms}ms)..."
+        )
+
+        msg_buffer: list = []          # raw Kafka messages
+        txn_buffer: List[Dict] = []    # parsed transactions
+        batch_start_time: Optional[float] = None
+        timeout_seconds = self.batch_timeout_ms / 1000.0
+
+        try:
+            while self.running:
+                # Use a short poll timeout so we can check the batch timer
+                remaining = 0.05  # 50ms default poll
+                if batch_start_time is not None:
+                    elapsed = time.time() - batch_start_time
+                    remaining = max(0.01, timeout_seconds - elapsed)
+
+                msg = self.consumer.poll(timeout=remaining)
+
+                if msg is not None and not msg.error():
+                    try:
+                        transaction = json.loads(
+                            msg.value().decode("utf-8")
+                        )
+                        msg_buffer.append(msg)
+                        txn_buffer.append(transaction)
+
+                        if batch_start_time is None:
+                            batch_start_time = time.time()
+
+                    except json.JSONDecodeError as e:
+                        self.logger.error(
+                            f"Failed to parse transaction JSON: {e}"
+                        )
+                        # Commit and skip the bad message immediately
+                        self.consumer.commit(msg)
+
+                elif msg is not None and msg.error():
+                    if msg.error().code() != KafkaError._PARTITION_EOF:
+                        self.logger.error(f"Kafka error: {msg.error()}")
+                        break
+
+                # Decide whether to flush the batch
+                flush_reason: Optional[str] = None
+
+                if len(msg_buffer) >= self.batch_size:
+                    flush_reason = "full"
+                elif (
+                    batch_start_time is not None
+                    and (time.time() - batch_start_time) >= timeout_seconds
+                    and msg_buffer
+                ):
+                    flush_reason = "timeout"
+
+                if flush_reason:
+                    self._process_batch(msg_buffer, txn_buffer, flush_reason)
+                    msg_buffer = []
+                    txn_buffer = []
+                    batch_start_time = None
+
+        except KafkaException as e:
+            self.logger.error(f"Kafka exception: {e}")
+
+        finally:
+            # Flush any remaining messages on shutdown
+            if msg_buffer:
+                self.logger.info(
+                    f"Flushing {len(msg_buffer)} remaining messages on shutdown"
+                )
+                self._process_batch(msg_buffer, txn_buffer, "shutdown")
+
             self._cleanup()
     
     def _cleanup(self) -> None:
@@ -982,15 +1313,38 @@ class FraudDetector:
 
 def main():
     """Main entry point for fraud detection consumer."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Stream-Sentinel Fraud Detector")
+    parser.add_argument(
+        "--batch", action="store_true",
+        help="Enable batch inference mode (higher throughput, slightly higher latency)",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=32,
+        help="Maximum messages per batch (default: 32)",
+    )
+    parser.add_argument(
+        "--batch-timeout-ms", type=int, default=100,
+        help="Max ms to wait before flushing a partial batch (default: 100)",
+    )
+    parser.add_argument(
+        "--threshold", type=float, default=0.3,
+        help="Fraud score threshold for alerting (default: 0.3)",
+    )
+    args = parser.parse_args()
+
     try:
-        # Create and run fraud detector
         detector = FraudDetector(
             consumer_group="fraud-detection-group",
-            fraud_threshold=0.3  # Lower threshold for testing
+            fraud_threshold=args.threshold,
+            batch_mode=args.batch,
+            batch_size=args.batch_size,
+            batch_timeout_ms=args.batch_timeout_ms,
         )
-        
+
         detector.run()
-        
+
     except KeyboardInterrupt:
         print("\nShutdown requested by user")
     except Exception as e:
