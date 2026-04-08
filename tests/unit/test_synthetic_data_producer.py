@@ -247,17 +247,17 @@ class TestSyntheticDataProducer:
     def test_enhanced_card_features(self):
         """Test that card4 and card6 contain realistic values."""
         transaction = self.producer._generate_transaction()
-        
-        # card4: Card company/issuer
+
+        # card4: Card company/issuer (matches IEEE-CIS values)
         assert hasattr(transaction, 'card4')
         if transaction.card4 is not None:
-            expected_companies = ['visa', 'mastercard', 'amex', 'discover']
+            expected_companies = ['visa', 'mastercard', 'american express', 'discover']
             assert transaction.card4.lower() in expected_companies
-            
-        # card6: Card type (debit/credit)
-        assert hasattr(transaction, 'card6')  
+
+        # card6: Card type (matches IEEE-CIS values)
+        assert hasattr(transaction, 'card6')
         if transaction.card6 is not None:
-            expected_types = ['debit', 'credit']
+            expected_types = ['debit', 'credit', 'debit or credit', 'charge card']
             assert transaction.card6.lower() in expected_types
 
     def test_counting_features_increase_with_user_activity(self):
