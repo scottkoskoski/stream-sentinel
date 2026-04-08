@@ -41,6 +41,18 @@ try:
 except ImportError:
     CPP_INFERENCE_AVAILABLE = False
 
+# Import unified feature engineering module
+try:
+    from ml.features.feature_engineer import FeatureEngineer
+    FEATURE_ENGINEER_AVAILABLE = True
+except ImportError:
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from ml.features.feature_engineer import FeatureEngineer
+        FEATURE_ENGINEER_AVAILABLE = True
+    except ImportError:
+        FEATURE_ENGINEER_AVAILABLE = False
+
 
 @dataclass
 class UserProfile:
@@ -143,6 +155,15 @@ class FraudDetector:
         self.use_ml_model = use_ml_model
         self.enable_cpp_acceleration = enable_cpp_acceleration and CPP_INFERENCE_AVAILABLE
         
+        # Initialise unified feature engineer (gracefully degrade if unavailable)
+        self.feature_engineer = None
+        if FEATURE_ENGINEER_AVAILABLE:
+            try:
+                self.feature_engineer = FeatureEngineer()
+                self.logger.info("Unified FeatureEngineer loaded for streaming enrichment")
+            except Exception as e:
+                self.logger.warning(f"FeatureEngineer init failed, running without enriched features: {e}")
+
         # Load ML model if enabled
         self.ml_model = None
         self.model_features = None
@@ -606,11 +627,32 @@ class FraudDetector:
         amount = available_features['TransactionAmt']
         available_features['TransactionAmt_log'] = np.log1p(amount) if amount > 0 else 0.0
         available_features['TransactionAmt_decimal'] = amount - int(amount) if amount > 0 else 0.0
-        
+
         # Add behavioral features from user profile
         available_features['user_avg_amount'] = user_profile.avg_transaction_amount
         available_features['user_total_transactions'] = float(user_profile.total_transactions)
         available_features['user_daily_count'] = float(user_profile.daily_transaction_count)
+
+        # Add enriched features from unified FeatureEngineer
+        if self.feature_engineer is not None:
+            try:
+                profile_dict = {
+                    "total_transactions": user_profile.total_transactions,
+                    "total_amount": user_profile.total_amount,
+                    "avg_transaction_amount": user_profile.avg_transaction_amount,
+                    "last_transaction_time": user_profile.last_transaction_time,
+                    "daily_transaction_count": user_profile.daily_transaction_count,
+                    "daily_amount": user_profile.daily_amount,
+                }
+                enriched = self.feature_engineer.compute_streaming_features(
+                    transaction, profile_dict
+                )
+                # Merge into available_features with "feat_" prefix for
+                # compatibility with batch-trained models
+                for key, value in enriched.items():
+                    available_features[f"feat_{key}"] = value
+            except Exception as e:
+                self.logger.debug(f"Enriched feature computation failed: {e}")
         
         # For each expected feature, use available value or sensible default
         for feature_name in self.model_features:
