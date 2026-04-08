@@ -34,6 +34,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
 from monitoring.metrics import get_metrics as get_prometheus_metrics
+from kafka.dlq import get_dlq_publisher
 
 # Import optional C++ accelerated inference
 try:
@@ -939,10 +940,36 @@ class FraudDetector:
                     
                 except json.JSONDecodeError as e:
                     self.logger.error(f"Failed to parse transaction JSON: {e}")
+                    try:
+                        dlq = get_dlq_publisher()
+                        dlq.publish(
+                            failed_value=msg.value(),
+                            error=e,
+                            failure_reason="json_decode_error",
+                            source_topic=self.input_topic,
+                            consumer_group=self.consumer_group,
+                            partition=msg.partition(),
+                            offset=msg.offset(),
+                        )
+                    except Exception as dlq_err:
+                        self.logger.error(f"DLQ publish also failed: {dlq_err}")
                     self.consumer.commit(msg)  # Skip bad message
-                    
+
                 except Exception as e:
                     self.logger.error(f"Error processing message: {e}")
+                    try:
+                        dlq = get_dlq_publisher()
+                        dlq.publish(
+                            failed_value=msg.value(),
+                            error=e,
+                            failure_reason="processing_error",
+                            source_topic=self.input_topic,
+                            consumer_group=self.consumer_group,
+                            partition=msg.partition(),
+                            offset=msg.offset(),
+                        )
+                    except Exception as dlq_err:
+                        self.logger.error(f"DLQ publish also failed: {dlq_err}")
                     # Don't commit - will retry message
                     
         except KafkaException as e:

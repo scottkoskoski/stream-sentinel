@@ -28,6 +28,12 @@ try:
 except ImportError:
     METRICS_AVAILABLE = False
 
+try:
+    from kafka.dlq import get_dlq_publisher
+    DLQ_AVAILABLE = True
+except ImportError:
+    DLQ_AVAILABLE = False
+
 
 class PersistenceConsumer:
     """Kafka consumer for database persistence operations."""
@@ -176,9 +182,35 @@ class PersistenceConsumer:
         except json.JSONDecodeError as e:
             self.logger.error(f"Failed to decode message JSON: {e}")
             self.processing_errors += 1
+            if DLQ_AVAILABLE:
+                try:
+                    get_dlq_publisher().publish(
+                        failed_value=msg.value(),
+                        error=e,
+                        failure_reason="json_decode_error",
+                        source_topic=msg.topic(),
+                        consumer_group="stream-sentinel-persistence",
+                        partition=msg.partition(),
+                        offset=msg.offset(),
+                    )
+                except Exception as dlq_err:
+                    self.logger.error(f"DLQ publish failed: {dlq_err}")
         except Exception as e:
             self.logger.error(f"Error handling message: {e}")
             self.processing_errors += 1
+            if DLQ_AVAILABLE:
+                try:
+                    get_dlq_publisher().publish(
+                        failed_value=msg.value(),
+                        error=e,
+                        failure_reason="persistence_handling_error",
+                        source_topic=msg.topic(),
+                        consumer_group="stream-sentinel-persistence",
+                        partition=msg.partition(),
+                        offset=msg.offset(),
+                    )
+                except Exception as dlq_err:
+                    self.logger.error(f"DLQ publish failed: {dlq_err}")
     
     def _check_batch_timeout(self):
         """Check if batch should be processed due to timeout."""
@@ -285,7 +317,20 @@ class PersistenceConsumer:
             except Exception as e:
                 self.logger.error(f"Error processing fraud detection message: {e}")
                 self.processing_errors += 1
-    
+                if DLQ_AVAILABLE:
+                    try:
+                        get_dlq_publisher().publish(
+                            failed_value=json.dumps(msg_data.get('value', {})),
+                            error=e,
+                            failure_reason="persistence_failure",
+                            source_topic="fraud-detection-results",
+                            consumer_group="stream-sentinel-persistence",
+                            partition=msg_data.get('partition'),
+                            offset=msg_data.get('offset'),
+                        )
+                    except Exception as dlq_err:
+                        self.logger.error(f"DLQ publish failed: {dlq_err}")
+
     def _process_transaction_records_batch(self, messages: List[Dict[str, Any]]):
         """Process batch of transaction records for ClickHouse."""
         transactions = []

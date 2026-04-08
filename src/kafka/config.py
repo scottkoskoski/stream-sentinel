@@ -289,6 +289,18 @@ class KafkaConfig:
                 ),
                 "cleanup_policy": "compact",  # Keep latest alert per key
             },
+            "dead_letter_queue": {
+                "num_partitions": 3,  # Lower volume expected
+                "replication_factor": (
+                    3 if self.environment == Environment.PRODUCTION else 1
+                ),
+                "retention_ms": 2592000000,  # 30 days retention for investigation
+                "segment_ms": 86400000,  # Daily segments
+                "min_insync_replicas": (
+                    2 if self.environment == Environment.PRODUCTION else 1
+                ),
+                "cleanup_policy": "delete",
+            },
         }
 
         # Merge configurations
