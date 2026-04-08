@@ -976,68 +976,148 @@ class FraudDetector:
         except Exception as e:
             self.logger.error(f"Error publishing performance metrics: {e}")
     
+    def _is_user_blocked(self, user_id: str) -> bool:
+        """
+        Check whether a user is on the blocked_users set in Redis.
+
+        Uses a single SISMEMBER call for speed.  If Redis is unreachable
+        the check returns False so that fraud scoring can still proceed
+        (fail-open for the blocking check only -- we prefer to score a
+        transaction rather than silently drop it).
+
+        Args:
+            user_id: User identifier (card1)
+
+        Returns:
+            True if the user is blocked, False otherwise (including on
+            Redis errors).
+        """
+        try:
+            return bool(self.redis_client.sismember("blocked_users", str(user_id)))
+        except Exception as e:
+            self.logger.warning(
+                f"Redis blocked_users check failed for user {user_id}: {e} "
+                "-- proceeding with normal scoring (fail-open)"
+            )
+            return False
+
+    def _publish_blocked_transaction(
+        self, transaction: Dict[str, Any], user_id: str
+    ) -> None:
+        """
+        Emit a blocked transaction to the blocked-transactions Kafka topic.
+
+        Args:
+            transaction: Original transaction data
+            user_id: The blocked user identifier
+        """
+        try:
+            blocked_event = {
+                "timestamp": datetime.now().isoformat(),
+                "user_id": str(user_id),
+                "transaction_id": transaction.get("transaction_id", "unknown"),
+                "amount": float(transaction.get("transaction_amt", 0)),
+                "reason": "user_on_blocked_list",
+                "original_transaction": transaction,
+            }
+
+            self.producer.produce(
+                self.blocked_topic,
+                key=str(user_id),
+                value=json.dumps(blocked_event),
+                callback=self._delivery_callback,
+            )
+            self.producer.poll(0)
+
+        except Exception as e:
+            self.logger.error(
+                f"Failed to publish blocked transaction for user {user_id}: {e}"
+            )
+
     def process_transaction(self, transaction: Dict[str, Any]) -> None:
         """
         Process a single transaction for fraud detection.
-        
+
+        The processing pipeline is:
+        1. Check if the user is blocked (Redis SISMEMBER) -- skip scoring
+           if blocked and emit to blocked-transactions topic instead.
+        2. Retrieve/create user profile from Redis.
+        3. Extract features and score via ML model (primary) or rules
+           (fallback).
+        4. Publish alerts and detection results.
+
         Args:
             transaction: Transaction data from Kafka message
         """
         processing_start_time = time.time()
-        
+
         try:
             user_id = transaction['card1']  # Using card1 as user identifier
-            
+
+            # ---- Blocking enforcement (P1.2) ----
+            # Check *before* scoring to save compute on known-blocked users.
+            if self._is_user_blocked(user_id):
+                self.blocked_count += 1
+                self.logger.info(
+                    f"BLOCKED: transaction from user {user_id} rejected "
+                    f"(user is on blocked_users list, "
+                    f"total_blocked={self.blocked_count})"
+                )
+                self._publish_blocked_transaction(transaction, user_id)
+                self.processed_count += 1
+                return  # Skip scoring entirely
+
             # Get current user profile
             user_profile = self.get_user_profile(user_id)
-            
+
             # Extract features for fraud detection
             features = self.extract_features(transaction, user_profile)
-            
+
             # Update user profile with new transaction
             user_profile.update_daily_stats(features.amount, transaction['generated_timestamp'])
             user_profile.update_transaction_stats(features.amount, transaction['generated_timestamp'])
-            
+
             # Update suspicious activity count if fraud detected
             if features.is_fraud_alert:
                 user_profile.suspicious_activity_count += 1
-            
+
             # Save updated profile
             self.save_user_profile(user_profile)
-            
+
             # Publish fraud alert if threshold exceeded
             if features.is_fraud_alert:
                 self.publish_fraud_alert(features, transaction)
-            
+
             # Publish complete fraud detection result for persistence
             self.publish_fraud_detection_result(features, transaction, processing_start_time)
-            
+
             # Publish performance metrics periodically
             if self.processed_count % 100 == 0:  # Every 100 transactions
                 processing_time_ms = (time.time() - processing_start_time) * 1000
                 self.publish_performance_metrics(processing_time_ms)
-                
+
             # Debug logging for high fraud scores (even if not alerting)
             if features.fraud_score > 0.2:
                 self.logger.debug(
                     f"High fraud score: {features.fraud_score:.3f} for user {user_id}, "
                     f"amount: ${features.amount:.2f}, threshold: {self.fraud_threshold}"
                 )
-            
+
             self.processed_count += 1
-            
+
             # Log processing statistics every 1000 transactions
             if self.processed_count % 1000 == 0:
                 elapsed = time.time() - self.start_time
                 tps = self.processed_count / elapsed
                 fraud_rate = self.fraud_alerts_count / self.processed_count * 100
-                
+
                 self.logger.info(
                     f"Processed: {self.processed_count}, "
                     f"Fraud alerts: {self.fraud_alerts_count} ({fraud_rate:.2f}%), "
+                    f"Blocked: {self.blocked_count}, "
                     f"TPS: {tps:.1f}"
                 )
-            
+
         except Exception as e:
             self.logger.error(f"Error processing transaction: {e}")
             self.logger.error(f"Transaction data: {transaction}")

@@ -289,6 +289,17 @@ class KafkaConfig:
                 ),
                 "cleanup_policy": "compact",  # Keep latest alert per key
             },
+            "blocked_transactions": {
+                "num_partitions": 6,  # Match alerts parallelism
+                "replication_factor": (
+                    3 if self.environment == Environment.PRODUCTION else 1
+                ),
+                "retention_ms": 2592000000,  # 30 days retention (audit/compliance)
+                "segment_ms": 86400000,  # Daily segments
+                "min_insync_replicas": (
+                    2 if self.environment == Environment.PRODUCTION else 1
+                ),
+            },
         }
 
         # Merge configurations
