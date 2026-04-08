@@ -42,9 +42,8 @@ import sys
 import os
 import importlib.util
 
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "kafka"))
-from config import get_kafka_config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from kafka.config import get_kafka_config
 
 # Import generation config -- lives alongside this file in src/producers/
 # We use importlib to avoid name collision with the kafka config module

@@ -212,19 +212,17 @@ class KafkaConfig:
         consumer_configs = {
             "fraud_detector": {
                 "auto.offset.reset": "latest",
-                "max.poll.records": 500,       # balanced throughput / latency
+                # Note: max.poll.records is not a librdkafka property;
+                # batch sizing is handled application-side in fraud_detector.py
             },
             "feature_extractor": {
                 "auto.offset.reset": "latest",
-                "max.poll.records": 500,
             },
             "analytics": {
                 "auto.offset.reset": "earliest",
-                "max.poll.records": 1000,      # high throughput
             },
             "persistence": {
                 "auto.offset.reset": "earliest",
-                "max.poll.records": 1000,      # batch-oriented writes
             },
         }
 
