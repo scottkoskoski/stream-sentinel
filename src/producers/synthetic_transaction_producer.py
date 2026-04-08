@@ -879,7 +879,7 @@ class SyntheticTransactionProducer:
         Returns:
             (is_fraud, fraud_reason)  -- fraud_reason is None when not fraud.
         """
-        fraud_prob = self.fraud_rate
+        fraud_prob = self.fraud_rate * gen_config.FRAUD_RATE_NORMALIZATION
 
         # Amount-based adjustment
         if amount < gen_config.SMALL_AMOUNT_THRESHOLD:

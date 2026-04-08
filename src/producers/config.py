@@ -26,58 +26,65 @@ from typing import Dict, List, Tuple, Optional, Any
 # Peak fraud hours: 2-4 AM (realistic for card-not-present fraud).
 # The multiplier scales the base fraud rate for each hour of the day.
 TEMPORAL_FRAUD_MULTIPLIERS: Dict[int, float] = {
-    0: 1.6,
-    1: 1.9,
-    2: 2.2,   # Peak window start
-    3: 2.4,   # Peak
-    4: 2.1,   # Peak window end
-    5: 1.7,
-    6: 1.3,
-    7: 1.1,
-    8: 1.0,
-    9: 0.9,
-    10: 0.8,
-    11: 0.8,
-    12: 0.8,
-    13: 0.7,
-    14: 0.7,
-    15: 0.8,
-    16: 0.9,
-    17: 1.0,
-    18: 1.1,
-    19: 1.2,
-    20: 1.3,
-    21: 1.4,
-    22: 1.5,
-    23: 1.6,
+    # Derived from IEEE-CIS hourly fraud rates divided by base rate (2.71%).
+    # Average multiplier ~1.05 to avoid inflating overall fraud rate.
+    0: 1.30,
+    1: 1.50,
+    2: 1.76,   # Peak window start
+    3: 2.02,   # Peak
+    4: 1.82,   # Peak window end
+    5: 1.39,
+    6: 1.08,
+    7: 0.93,
+    8: 0.84,
+    9: 0.76,
+    10: 0.70,
+    11: 0.68,
+    12: 0.69,
+    13: 0.67,
+    14: 0.68,
+    15: 0.71,
+    16: 0.76,
+    17: 0.80,
+    18: 0.85,
+    19: 0.90,
+    20: 0.97,
+    21: 1.03,
+    22: 1.10,
+    23: 1.17,
 }
 
-PEAK_FRAUD_HOURS: List[int] = [2, 3, 4]
+PEAK_FRAUD_HOURS: List[int] = [0, 1, 2, 3, 4, 5]  # IEEE-CIS high-risk hours (was [2,3,4])
 
 
 # ---------------------------------------------------------------------------
 # Fraud rate
 # ---------------------------------------------------------------------------
 BASE_FRAUD_RATE: float = 0.0271  # 2.71% -- matches IEEE-CIS dataset
+
+# Normalization factor to compensate for multiplicative compounding of
+# temporal (avg 1.05x), risk (avg 0.88x), amount (avg ~1.05x), and
+# velocity (avg ~1.2x) multipliers. Without this, effective rate is ~4%.
+FRAUD_RATE_NORMALIZATION: float = 0.65  # Calibrated empirically to yield ~2.7% effective rate
 MAX_FRAUD_PROBABILITY: float = 0.15  # Hard cap per-transaction
 
 # Amount-based fraud multipliers
 SMALL_AMOUNT_THRESHOLD: float = 10.0
-SMALL_AMOUNT_FRAUD_MULTIPLIER: float = 1.9
+SMALL_AMOUNT_FRAUD_MULTIPLIER: float = 1.5  # Reduced from 1.9 -- compounding with temporal/risk/velocity inflated overall rate
 LARGE_AMOUNT_THRESHOLD: float = 500.0
-LARGE_AMOUNT_FRAUD_MULTIPLIER: float = 0.8
+LARGE_AMOUNT_FRAUD_MULTIPLIER: float = 0.97  # IEEE shows ~2.63% for $500-1k vs 2.71% base (was 0.8)
 
 # Risk profile multipliers
 RISK_PROFILE_MULTIPLIERS: Dict[str, float] = {
-    "low": 0.5,
+    "low": 0.7,    # Weighted avg with distribution (60/30/10) = 0.7*0.6+1.0*0.3+1.6*0.1 = 0.88
     "medium": 1.0,
-    "high": 2.0,
+    "high": 1.6,   # Reduced from 2.0 to limit compounding
 }
 
 # Velocity fraud: if time since last txn < this many seconds, multiply
-VELOCITY_WINDOW_SECONDS: int = 300
-VELOCITY_FRAUD_MULTIPLIER: float = 3.0
-VELOCITY_MIN_TRANSACTIONS: int = 10  # Need this many txns before velocity check
+VELOCITY_WINDOW_SECONDS: int = 60   # Narrowed from 300s -- only rapid-fire triggers velocity
+VELOCITY_FRAUD_MULTIPLIER: float = 1.5  # Reduced from 3.0 -- multiplicative compounding inflated rate
+VELOCITY_MIN_TRANSACTIONS: int = 30  # Increased from 10 to reduce velocity trigger frequency
 
 
 # ---------------------------------------------------------------------------
@@ -86,12 +93,12 @@ VELOCITY_MIN_TRANSACTIONS: int = 10  # Need this many txns before velocity check
 AMOUNT_DISTRIBUTION = {
     "mean_log": 4.0,
     "std_log": 1.2,
-    "min_amount": 1.0,
-    "max_amount": 1000.0,
+    "min_amount": 0.25,   # Aligned with IEEE-CIS spec (was 1.0)
+    "max_amount": 1500.0,  # Aligned with IEEE-CIS spec (was 1000.0)
 }
 
 # Fraud amount bias: mean_log is multiplied by this for fraud transactions
-FRAUD_AMOUNT_BIAS: float = 1.2
+FRAUD_AMOUNT_BIAS: float = 1.34  # Aligned with IEEE-CIS spec (was 1.2)
 
 
 # ---------------------------------------------------------------------------
@@ -182,20 +189,20 @@ DIST2_RANGE: Tuple[float, float] = (0.0, 500.0)
 #   C12-C14: variable (~10-35%)
 # ---------------------------------------------------------------------------
 C_FEATURE_NULL_RATES: Dict[str, float] = {
-    "c1": 0.02,
-    "c2": 0.02,
-    "c3": 0.20,
-    "c4": 0.08,
-    "c5": 0.25,
-    "c6": 0.30,
-    "c7": 0.35,
-    "c8": 0.40,
-    "c9": 0.15,
-    "c10": 0.30,
-    "c11": 0.35,
-    "c12": 0.10,
-    "c13": 0.20,
-    "c14": 0.25,
+    "c1": 0.00,   # IEEE-CIS: 0% null (was 0.02)
+    "c2": 0.00,   # IEEE-CIS: 0% null (was 0.02)
+    "c3": 0.00,   # IEEE-CIS: 0% null (was 0.20)
+    "c4": 0.00,   # IEEE-CIS: 0% null (was 0.08)
+    "c5": 0.00,   # IEEE-CIS: 0% null (was 0.25)
+    "c6": 0.15,   # IEEE-CIS: 15% null (was 0.30)
+    "c7": 0.15,   # IEEE-CIS: 15% null (was 0.35)
+    "c8": 0.15,   # IEEE-CIS: 15% null (was 0.40)
+    "c9": 0.00,   # IEEE-CIS: 0% null (was 0.15)
+    "c10": 0.15,  # IEEE-CIS: 15% null (was 0.30)
+    "c11": 0.15,  # IEEE-CIS: 15% null (was 0.35)
+    "c12": 0.00,  # IEEE-CIS: 0% null (was 0.10)
+    "c13": 0.00,  # IEEE-CIS: 0% null (was 0.20)
+    "c14": 0.00,  # IEEE-CIS: 0% null (was 0.25)
 }
 
 
@@ -405,5 +412,5 @@ DEFAULT_IEEE_CIS_ANALYSIS: Dict[str, Any] = {
 # ---------------------------------------------------------------------------
 DEFAULT_TARGET_TPS: int = 2000
 DEFAULT_DURATION_SECONDS: int = 180
-DEFAULT_USER_COUNT: int = 500
+DEFAULT_USER_COUNT: int = 5000  # Increased for realistic per-user frequency at 2000 TPS (was 500)
 DEFAULT_TOPIC_NAME: str = "synthetic-transactions"
