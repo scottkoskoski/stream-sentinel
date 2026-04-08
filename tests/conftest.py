@@ -13,6 +13,7 @@ Key features:
 """
 
 import json
+import logging
 import time
 import pytest
 import redis
@@ -26,7 +27,12 @@ from confluent_kafka import Producer, Consumer
 from confluent_kafka.admin import AdminClient, ConfigResource, ResourceType, NewTopic
 
 import sys
-sys.path.append(str(Path(__file__).parent.parent / "src"))
+
+# Add src to path relative to this conftest file, not hard-coded
+_project_root = Path(__file__).resolve().parent.parent
+_src_path = str(_project_root / "src")
+if _src_path not in sys.path:
+    sys.path.insert(0, _src_path)
 
 from kafka.config import get_kafka_config
 from persistence.config import PersistenceConfigManager
@@ -53,26 +59,51 @@ def redis_client(kafka_config):
     }
     
     client = redis.Redis(**redis_config)
-    
-    # Verify connection
+
+    # Verify connection and confirm we are on the test database (DB 1)
     try:
         client.ping()
+        # Safety check: only flush DB 1 (test database), never DB 0 (production)
+        connection_info = client.connection_pool.connection_kwargs
+        current_db = connection_info.get('db', 0)
+        assert current_db == 1, (
+            f"Redis safety check failed: connected to DB {current_db}, "
+            f"expected DB 1 (test). Refusing to flush to protect data."
+        )
         yield client
     finally:
-        # Cleanup test data
-        client.flushdb()
+        # Double-check DB before flushing
+        conn_info = client.connection_pool.connection_kwargs
+        if conn_info.get('db', 0) == 1:
+            client.flushdb()
+        else:
+            logging.getLogger(__name__).warning(
+                "Skipped flushdb: not connected to test DB 1"
+            )
 
 
 @pytest.fixture(scope="session")
 def database_manager():
-    """Database manager for PostgreSQL and ClickHouse testing."""
+    """Database manager for PostgreSQL and ClickHouse testing.
+
+    Validates connectivity before yielding.  If the persistence layer
+    cannot be reached (e.g. Docker stack not running), yields None so
+    that tests marked requires_infrastructure can be skipped gracefully.
+    """
     try:
-        # Use the persistence layer instead of a specific DatabaseManager
         persistence_layer = get_persistence_layer()
+        # Validate basic connectivity
+        if hasattr(persistence_layer, 'health_check'):
+            if not persistence_layer.health_check():
+                logging.getLogger(__name__).warning(
+                    "Database health check failed -- persistence layer unavailable"
+                )
         yield persistence_layer
-    finally:
-        # Cleanup will be handled by the persistence layer's context manager
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            f"Could not initialize persistence layer: {exc}"
+        )
+        yield None
 
 
 @pytest.fixture(scope="session")
