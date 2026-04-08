@@ -1,0 +1,53 @@
+{
+  "export": {
+    "max_diff": 0.0,
+    "mean_diff": 0.0,
+    "match_pct": 100.0,
+    "num_features": 200,
+    "json_path": "/home/scottyk/dev/stream-sentinel/.claude/worktrees/agent-a3dc2d84/models/ieee_fraud_model_production_cpp.json"
+  },
+  "single_latency": {
+    "p50_us": 20941.775001119822,
+    "p95_us": 34923.12601883896,
+    "p99_us": 40187.53199488856,
+    "throughput": 44.05635603290076
+  },
+  "batch_latency": {
+    "32": {
+      "p50_us": 6022.001995006576,
+      "p95_us": 11990.922997938469,
+      "throughput": 4552.691430167854
+    },
+    "64": {
+      "p50_us": 6020.939006702974,
+      "p95_us": 12014.648003969342,
+      "throughput": 8603.479075658608
+    },
+    "128": {
+      "p50_us": 6013.555976096541,
+      "p95_us": 12992.770003620535,
+      "throughput": 16979.314704694927
+    }
+  },
+  "wrapper": {
+    "wrapper_p50_us": 20022.53200043924,
+    "direct_p50_us": 20933.49801725708,
+    "overhead_pct": -4.3517142527582315,
+    "prediction_diff": 0.0,
+    "fallback_works": false
+  },
+  "cpp_build": {
+    "c_api_header": true,
+    "dependencies": {
+      "g++": true,
+      "pybind11": true,
+      "libxgboost.so": true
+    },
+    "build_success": true,
+    "build_output_tail": "p \\\n\t/home/scottyk/dev/stream-sentinel/.claude/worktrees/agent-a3dc2d84/venv/lib/python3.14/site-packages/xgboost/lib/libxgboost.so \\\n\t-o simple_xgboost_cpp.cpython-314-x86_64-linux-gnu.so\nmake: Leaving directory '/home/scottyk/dev/stream-sentinel/.claude/worktrees/agent-a3dc2d84/src/inference/cpp'\n"
+  },
+  "cpp_benchmark": {
+    "cpp_p50_us": 20992.261997889727,
+    "speedup": 0.9972006837262913
+  }
+}
