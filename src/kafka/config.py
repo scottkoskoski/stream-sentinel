@@ -196,16 +196,26 @@ class KafkaConfig:
             "enable.auto.commit": False,
         }
 
-        # Consumer-specific optimizations (basic for confluent-kafka)
+        # Consumer-specific optimizations.
+        # max.poll.records controls how many records are returned in a single
+        # poll() call, which bounds the work done between heartbeats and
+        # provides a natural backpressure lever.
         consumer_configs = {
             "fraud_detector": {
                 "auto.offset.reset": "latest",
+                "max.poll.records": 500,       # balanced throughput / latency
             },
             "feature_extractor": {
                 "auto.offset.reset": "latest",
+                "max.poll.records": 500,
             },
             "analytics": {
                 "auto.offset.reset": "earliest",
+                "max.poll.records": 1000,      # high throughput
+            },
+            "persistence": {
+                "auto.offset.reset": "earliest",
+                "max.poll.records": 1000,      # batch-oriented writes
             },
         }
 

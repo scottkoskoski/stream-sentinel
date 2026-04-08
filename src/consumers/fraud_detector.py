@@ -34,6 +34,7 @@ from pathlib import Path
 # Import our configuration system
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
+from kafka.lag_monitor import FlowController
 
 # Import optional C++ accelerated inference
 try:
@@ -204,6 +205,10 @@ class FraudDetector:
         self.batch_size = batch_size
         self.batch_timeout_ms = batch_timeout_ms
         self.batch_metrics = BatchMetrics()
+        self.flow_controller = FlowController(
+            max_poll_interval_ms=60_000,     # matches dev config
+            slow_message_threshold_ms=500.0,
+        )
 
         # Load ML model if enabled
         self.ml_model = None
@@ -962,19 +967,27 @@ class FraudDetector:
                 )
             
             self.processed_count += 1
-            
+
+            # Record processing time for flow control
+            processing_elapsed = time.time() - processing_start_time
+            self.flow_controller.record_processing_time(processing_elapsed)
+
             # Log processing statistics every 1000 transactions
             if self.processed_count % 1000 == 0:
                 elapsed = time.time() - self.start_time
                 tps = self.processed_count / elapsed
                 fraud_rate = self.fraud_alerts_count / self.processed_count * 100
-                
+
                 self.logger.info(
                     f"Processed: {self.processed_count}, "
                     f"Fraud alerts: {self.fraud_alerts_count} ({fraud_rate:.2f}%), "
                     f"TPS: {tps:.1f}"
                 )
-            
+                # Log flow control stats periodically
+                fc_stats = self.flow_controller.get_stats()
+                if fc_stats["avg_processing_ms"] > 0:
+                    self.logger.info(f"Flow control: {fc_stats}")
+
         except Exception as e:
             self.logger.error(f"Error processing transaction: {e}")
             self.logger.error(f"Transaction data: {transaction}")
@@ -1101,6 +1114,10 @@ class FraudDetector:
 
                 self.processed_count += 1
 
+                # Record per-message time for flow control
+                msg_elapsed = time.time() - processing_start
+                self.flow_controller.record_processing_time(msg_elapsed)
+
                 # Periodic stats logging
                 if self.processed_count % 1000 == 0:
                     elapsed = time.time() - self.start_time
@@ -1113,6 +1130,9 @@ class FraudDetector:
                         f"Fraud alerts: {self.fraud_alerts_count} "
                         f"({fraud_rate:.2f}%), TPS: {tps:.1f}"
                     )
+                    fc_stats = self.flow_controller.get_stats()
+                    if fc_stats["avg_processing_ms"] > 0:
+                        self.logger.info(f"Flow control: {fc_stats}")
             except Exception as e:
                 failed_indices.append(idx)
                 self.logger.error(
@@ -1250,10 +1270,15 @@ class FraudDetector:
                         self.logger.error(f"Kafka error: {msg.error()}")
                         break
 
-                # Decide whether to flush the batch
+                # Decide whether to flush the batch.
+                # The flow controller may reduce the effective batch size
+                # if per-message processing is slow, providing backpressure.
                 flush_reason: Optional[str] = None
+                effective_size = self.flow_controller.effective_batch_size(
+                    self.batch_size
+                )
 
-                if len(msg_buffer) >= self.batch_size:
+                if len(msg_buffer) >= effective_size:
                     flush_reason = "full"
                 elif (
                     batch_start_time is not None
