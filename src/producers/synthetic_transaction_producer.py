@@ -40,9 +40,18 @@ from confluent_kafka.admin import AdminClient, NewTopic
 # Import our configuration system
 import sys
 import os
+import importlib.util
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "kafka"))
 from config import get_kafka_config
+
+# Import generation config -- lives alongside this file in src/producers/
+# We use importlib to avoid name collision with the kafka config module
+# that was just loaded via sys.path manipulation.
+_gen_config_path = os.path.join(os.path.dirname(__file__), "config.py")
+_spec = importlib.util.spec_from_file_location("gen_config", _gen_config_path)
+gen_config = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gen_config)
 
 
 @dataclass
@@ -504,102 +513,136 @@ class SyntheticTransactionProducer:
 
         return p_email, r_email
 
-    def _generate_counting_features(self, user: UserProfile, card1: int, addr1: float, 
-                                  p_email: str, product_cd: str, current_time: float) -> Dict[str, Optional[float]]:
-        """Generate C1-C14 counting features based on entity relationships."""
-        
-        # Simulate device ID for this transaction
-        device_id = f"device_{user.user_id}_{random.randint(1, 3)}"  # Users have 1-3 devices
-        
-        # Current time for filtering (today's transactions)
-        current_day = int(current_time // 86400)  # Days since epoch
-        
-        features = {}
-        
-        # C1: Cards associated with this address
-        if addr1 not in self.entity_tracking["address_cards"]:
-            self.entity_tracking["address_cards"][addr1] = set()
-        self.entity_tracking["address_cards"][addr1].add(card1)
-        features["c1"] = float(len(self.entity_tracking["address_cards"][addr1])) if random.random() > 0.3 else None
-        
-        # C2: Addresses associated with this card
-        if card1 not in self.entity_tracking["card_addresses"]:
-            self.entity_tracking["card_addresses"][card1] = set()
-        self.entity_tracking["card_addresses"][card1].add(addr1)
-        features["c2"] = float(len(self.entity_tracking["card_addresses"][card1])) if random.random() > 0.3 else None
-        
-        # C3: Transactions with this email domain today (if email exists)
+    def _apply_null(self, value: float, feature_name: str, null_rates: Dict[str, float]) -> Optional[float]:
+        """Apply configured null rate to a feature value.
+
+        Args:
+            value: The computed feature value.
+            feature_name: Key into the null_rates dict (e.g. "c1").
+            null_rates: Mapping of feature name -> probability of being null.
+
+        Returns:
+            The original value or None.
+        """
+        rate = null_rates.get(feature_name, 0.0)
+        if random.random() < rate:
+            return None
+        return value
+
+    def _generate_counting_features(self, user: UserProfile, card1: int, addr1: float,
+                                    p_email: Optional[str], product_cd: str,
+                                    current_time: float) -> Dict[str, Optional[float]]:
+        """Generate C1-C14 counting features from entity tracking state.
+
+        Every C-feature is derived from actual entity relationship dictionaries
+        that accumulate state across transactions. Null rates come from
+        gen_config.C_FEATURE_NULL_RATES which mirror the IEEE-CIS dataset.
+        """
+        null_rates = gen_config.C_FEATURE_NULL_RATES
+
+        # Deterministic device id for this user (stable across calls for same user)
+        device_id = f"device_{user.user_id}_{hash(user.user_id) % gen_config.USER_DEVICE_RANGE[1] + 1}"
+
+        current_day = int(current_time // 86400)
+
+        features: Dict[str, Optional[float]] = {}
+
+        # --- C1: Cards associated with this address ---
+        addr_cards = self.entity_tracking["address_cards"]
+        if addr1 not in addr_cards:
+            addr_cards[addr1] = set()
+        addr_cards[addr1].add(card1)
+        features["c1"] = self._apply_null(float(len(addr_cards[addr1])), "c1", null_rates)
+
+        # --- C2: Addresses associated with this card ---
+        card_addrs = self.entity_tracking["card_addresses"]
+        if card1 not in card_addrs:
+            card_addrs[card1] = set()
+        card_addrs[card1].add(addr1)
+        features["c2"] = self._apply_null(float(len(card_addrs[card1])), "c2", null_rates)
+
+        # --- C3: Transactions with this email domain today ---
         if p_email:
-            if p_email not in self.entity_tracking["email_transactions"]:
-                self.entity_tracking["email_transactions"][p_email] = []
-            self.entity_tracking["email_transactions"][p_email].append(current_time)
-            # Count transactions today
-            today_txns = sum(1 for t in self.entity_tracking["email_transactions"][p_email] 
-                           if int(t // 86400) == current_day)
-            features["c3"] = float(today_txns) if random.random() > 0.4 else None
+            email_txns = self.entity_tracking["email_transactions"]
+            if p_email not in email_txns:
+                email_txns[p_email] = []
+            email_txns[p_email].append(current_time)
+            today_count = sum(1 for t in email_txns[p_email] if int(t // 86400) == current_day)
+            features["c3"] = self._apply_null(float(today_count), "c3", null_rates)
         else:
             features["c3"] = None
-            
-        # C4: Unique merchants for this user this month
-        if user.user_id not in self.entity_tracking["user_merchants"]:
-            self.entity_tracking["user_merchants"][user.user_id] = set()
-        self.entity_tracking["user_merchants"][user.user_id].add(product_cd)
-        features["c4"] = float(len(self.entity_tracking["user_merchants"][user.user_id])) if random.random() > 0.2 else None
-        
-        # C5: Cards associated with this email domain
+
+        # --- C4: Unique merchants (product codes) for this user ---
+        user_merchants = self.entity_tracking["user_merchants"]
+        if user.user_id not in user_merchants:
+            user_merchants[user.user_id] = set()
+        user_merchants[user.user_id].add(product_cd)
+        features["c4"] = self._apply_null(float(len(user_merchants[user.user_id])), "c4", null_rates)
+
+        # --- C5: Unique email domains associated with this card ---
+        card_emails = self.entity_tracking["card_emails"]
+        if card1 not in card_emails:
+            card_emails[card1] = set()
         if p_email:
-            if p_email not in self.entity_tracking["email_addresses"]:
-                self.entity_tracking["email_addresses"][p_email] = set()
-            if card1 not in self.entity_tracking["card_emails"]:
-                self.entity_tracking["card_emails"][card1] = set()
-            self.entity_tracking["card_emails"][card1].add(p_email)
-            features["c5"] = float(len(self.entity_tracking["card_emails"].get(card1, set()))) if random.random() > 0.5 else None
-        else:
-            features["c5"] = None
-            
-        # C6: Addresses associated with this email domain
+            card_emails[card1].add(p_email)
+        features["c5"] = self._apply_null(float(len(card_emails[card1])), "c5", null_rates)
+
+        # --- C6: Addresses associated with this email domain ---
         if p_email:
-            self.entity_tracking["email_addresses"][p_email].add(addr1)
-            features["c6"] = float(len(self.entity_tracking["email_addresses"][p_email])) if random.random() > 0.5 else None
+            email_addrs = self.entity_tracking["email_addresses"]
+            if p_email not in email_addrs:
+                email_addrs[p_email] = set()
+            email_addrs[p_email].add(addr1)
+            features["c6"] = self._apply_null(float(len(email_addrs[p_email])), "c6", null_rates)
         else:
             features["c6"] = None
-            
-        # C7: Transactions from this device today
-        if device_id not in self.entity_tracking["device_transactions"]:
-            self.entity_tracking["device_transactions"][device_id] = []
-        self.entity_tracking["device_transactions"][device_id].append(current_time)
-        today_device_txns = sum(1 for t in self.entity_tracking["device_transactions"][device_id] 
-                               if int(t // 86400) == current_day)
-        features["c7"] = float(today_device_txns) if random.random() > 0.6 else None
-        
-        # C8: Unique email domains for this card
-        features["c8"] = float(len(self.entity_tracking["card_emails"].get(card1, set()))) if random.random() > 0.7 else None
-        
-        # C9: Transactions with this card today
-        # Simplified: use user transaction count as proxy
-        features["c9"] = float(user.total_transactions + 1) if random.random() > 0.4 else None
-        
-        # C10: Unique addresses for this card
-        features["c10"] = float(len(self.entity_tracking["card_addresses"].get(card1, set()))) if random.random() > 0.6 else None
-        
-        # C11: Transactions from this IP today (simulated)
-        features["c11"] = float(random.randint(1, 20)) if random.random() > 0.7 else None
-        
-        # C12: Unique cards for this user
-        if user.user_id not in self.entity_tracking["user_cards"]:
-            self.entity_tracking["user_cards"][user.user_id] = set()
-        self.entity_tracking["user_cards"][user.user_id].add(card1)
-        features["c12"] = float(len(self.entity_tracking["user_cards"][user.user_id])) if random.random() > 0.3 else None
-        
-        # C13: Transactions with this product code today (simulated)
-        features["c13"] = float(random.randint(1, 100)) if random.random() > 0.5 else None
-        
-        # C14: Days since first transaction with this card (this is actually a time delta, but included in C features)
-        if card1 not in self.entity_tracking["card_firstseen"]:
-            self.entity_tracking["card_firstseen"][card1] = current_time
-        days_since_first = (current_time - self.entity_tracking["card_firstseen"][card1]) / 86400
-        features["c14"] = float(max(0, days_since_first)) if random.random() > 0.4 else None
-        
+
+        # --- C7: Transactions from this device today ---
+        dev_txns = self.entity_tracking["device_transactions"]
+        if device_id not in dev_txns:
+            dev_txns[device_id] = []
+        dev_txns[device_id].append(current_time)
+        today_device = sum(1 for t in dev_txns[device_id] if int(t // 86400) == current_day)
+        features["c7"] = self._apply_null(float(today_device), "c7", null_rates)
+
+        # --- C8: Unique email domains for this card (same set as C5) ---
+        features["c8"] = self._apply_null(float(len(card_emails.get(card1, set()))), "c8", null_rates)
+
+        # --- C9: Total transactions for this card (proxy: user txn count) ---
+        features["c9"] = self._apply_null(float(user.total_transactions + 1), "c9", null_rates)
+
+        # --- C10: Unique addresses for this card ---
+        features["c10"] = self._apply_null(float(len(card_addrs.get(card1, set()))), "c10", null_rates)
+
+        # --- C11: Transactions from this IP today ---
+        # IP is not explicitly tracked; use device-day count as proxy with
+        # slight random scaling (multiple IPs per device, NAT, etc.)
+        ip_proxy = today_device + random.randint(0, 3)
+        features["c11"] = self._apply_null(float(ip_proxy), "c11", null_rates)
+
+        # --- C12: Unique cards for this user ---
+        user_cards = self.entity_tracking["user_cards"]
+        if user.user_id not in user_cards:
+            user_cards[user.user_id] = set()
+        user_cards[user.user_id].add(card1)
+        features["c12"] = self._apply_null(float(len(user_cards[user.user_id])), "c12", null_rates)
+
+        # --- C13: Transactions with this product code today ---
+        # Track per-product-code daily counts
+        pc_key = f"{product_cd}_{current_day}"
+        if "product_daily_counts" not in self.entity_tracking:
+            self.entity_tracking["product_daily_counts"] = {}
+        pc_counts = self.entity_tracking["product_daily_counts"]
+        pc_counts[pc_key] = pc_counts.get(pc_key, 0) + 1
+        features["c13"] = self._apply_null(float(pc_counts[pc_key]), "c13", null_rates)
+
+        # --- C14: Days since first transaction with this card ---
+        card_first = self.entity_tracking["card_firstseen"]
+        if card1 not in card_first:
+            card_first[card1] = current_time
+        days_since = (current_time - card_first[card1]) / 86400.0
+        features["c14"] = self._apply_null(float(max(0, days_since)), "c14", null_rates)
+
         return features
 
     def _generate_time_delta_features(self, user: UserProfile, card1: int, p_email: str,
