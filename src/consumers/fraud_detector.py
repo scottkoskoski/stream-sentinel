@@ -142,16 +142,35 @@ class FraudDetector:
         self.consumer_group = consumer_group
         self.use_ml_model = use_ml_model
         self.enable_cpp_acceleration = enable_cpp_acceleration and CPP_INFERENCE_AVAILABLE
-        
+
+        # Model scoring status tracks the current scoring path:
+        #   "loading"        - startup, model load in progress
+        #   "ml_primary"     - ML model loaded and is the primary scorer
+        #   "rules_fallback" - ML model unavailable, using rule-based scoring
+        self.model_status = "loading"
+
         # Load ML model if enabled
         self.ml_model = None
         self.model_features = None
+        self.fast_inference_engine = None
         if use_ml_model:
             self._load_ml_model(model_path)
-        
+
+        # Set model_status based on load result
+        if self.ml_model is not None:
+            self.model_status = "ml_primary"
+            self.logger.info("Model status: ml_primary - ML model is the primary scorer")
+        else:
+            self.model_status = "rules_fallback"
+            self.logger.warning(
+                "Model status: rules_fallback - ML model unavailable, "
+                "using rule-based scoring (DEGRADED MODE)"
+            )
+
         # Topics
         self.input_topic = "synthetic-transactions"
         self.output_topic = "fraud-alerts"
+        self.blocked_topic = "blocked-transactions"
         
         # Initialize Kafka consumer and producer
         self.consumer = self._create_consumer()
@@ -163,6 +182,8 @@ class FraudDetector:
         # Processing statistics
         self.processed_count = 0
         self.fraud_alerts_count = 0
+        self.blocked_count = 0
+        self.rules_fallback_count = 0
         self.start_time = time.time()
         
         # Graceful shutdown
@@ -232,75 +253,166 @@ class FraudDetector:
             self.logger.error(f"Failed to connect to Redis: {e}")
             raise
     
+    def _resolve_model_path(self, model_path: str) -> Optional[Path]:
+        """
+        Resolve the model file path, trying multiple locations relative
+        to the project root.
+
+        Args:
+            model_path: Caller-supplied path (may be relative)
+
+        Returns:
+            Resolved Path if found, None otherwise
+        """
+        candidates = [
+            Path(model_path),
+            # Relative to project root (two levels up from src/consumers/)
+            Path(__file__).parent.parent.parent / model_path,
+            # Absolute fallback
+            Path(__file__).parent.parent.parent / "models" / Path(model_path).name,
+        ]
+
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved.is_file():
+                self.logger.info(f"Resolved model path: {resolved}")
+                return resolved
+
+        self.logger.error(
+            f"Model file not found. Tried: {[str(c.resolve()) for c in candidates]}"
+        )
+        return None
+
     def _load_ml_model(self, model_path: str) -> None:
-        """Load the trained ML model for fraud detection."""
+        """
+        Load the trained ML model for fraud detection.
+
+        Attempts to load the model from the given path (trying several
+        project-relative locations). On success the model becomes the
+        primary scorer; on failure the detector degrades gracefully to
+        rule-based scoring.
+        """
+        resolved_path = self._resolve_model_path(model_path)
+        if resolved_path is None:
+            self.logger.error(
+                f"ML model not found at {model_path} -- "
+                "will use rule-based scoring (DEGRADED)"
+            )
+            self.use_ml_model = False
+            return
+
+        model_path_str = str(resolved_path)
+
         try:
-            # Check if C++ acceleration is enabled
+            # Attempt C++ accelerated inference first
             if self.enable_cpp_acceleration:
                 try:
-                    self.fast_inference_engine = FastInferenceEngine(model_path, enable_cpp=True)
+                    self.fast_inference_engine = FastInferenceEngine(
+                        model_path_str, enable_cpp=True
+                    )
                     status = self.fast_inference_engine.get_status()
-                    
+
                     if status['using_cpp']:
-                        self.logger.info("Successfully loaded C++ accelerated inference engine")
+                        self.logger.info(
+                            "C++ accelerated inference engine loaded successfully"
+                        )
                     else:
-                        self.logger.info("C++ inference not available, using Python fallback in FastInferenceEngine")
-                    
-                    # Still need to load Python model for compatibility with feature extraction
-                    with open(model_path, 'rb') as f:
-                        model_data = pickle.load(f)
-                        
+                        self.logger.info(
+                            "C++ inference not available, using Python fallback "
+                            "in FastInferenceEngine"
+                        )
                 except Exception as e:
-                    self.logger.warning(f"Failed to initialize FastInferenceEngine: {e}")
-                    self.logger.warning("Falling back to standard Python XGBoost")
+                    self.logger.warning(
+                        f"Failed to initialize FastInferenceEngine: {e} -- "
+                        "falling back to standard Python XGBoost"
+                    )
                     self.fast_inference_engine = None
-                    
-                    # Load standard Python model
-                    with open(model_path, 'rb') as f:
-                        model_data = pickle.load(f)
-            else:
-                self.fast_inference_engine = None
-                # Load standard Python model  
-                with open(model_path, 'rb') as f:
-                    model_data = pickle.load(f)
-                
-            # Extract the actual model and preprocessing components
+
+            # Load Python model (always needed for feature extraction
+            # compatibility and as the standard inference path)
+            with open(model_path_str, 'rb') as f:
+                model_data = pickle.load(f)
+
+            # Extract model and preprocessing components
             if isinstance(model_data, dict):
                 self.ml_model = model_data.get('model')
                 self.scaler = model_data.get('scaler')
                 self.model_features = model_data.get('feature_names', [])
-                self.logger.info(f"Loaded model components: {list(model_data.keys())}")
+                self.logger.info(
+                    f"Loaded model components: {list(model_data.keys())}"
+                )
             else:
-                # Fallback for simple model pickle
+                # Simple model pickle (no metadata dict wrapper)
                 self.ml_model = model_data
-            
-            # Load model metadata
-            metadata_path = model_path.replace('.pkl', '_metadata.json')
+
+            # Attempt to read feature_names_in_ directly from the model
+            # object (scikit-learn / XGBoost convention) for validation
+            if hasattr(self.ml_model, 'feature_names_in_'):
+                model_native_features = list(self.ml_model.feature_names_in_)
+                if self.model_features and model_native_features != self.model_features:
+                    self.logger.warning(
+                        "Feature name mismatch between pickle metadata and "
+                        "model.feature_names_in_. Using model.feature_names_in_ "
+                        "as the authoritative source."
+                    )
+                self.model_features = model_native_features
+            elif hasattr(self.ml_model, 'get_booster'):
+                # XGBoost Booster-level feature names
+                try:
+                    booster = self.ml_model.get_booster()
+                    booster_features = booster.feature_names
+                    if booster_features and not self.model_features:
+                        self.model_features = list(booster_features)
+                except Exception:
+                    pass  # Not critical -- fall through to metadata
+
+            # Load model metadata for supplementary info
+            metadata_path = model_path_str.replace('.pkl', '_metadata.json')
             if not Path(metadata_path).exists():
-                # Try alternative path (metadata might be in same directory)
-                metadata_path = 'models/ieee_fraud_model_metadata.json'
-            
+                metadata_path = str(
+                    resolved_path.parent / 'ieee_fraud_model_metadata.json'
+                )
+
             if Path(metadata_path).exists():
                 with open(metadata_path, 'r') as f:
                     metadata = json.load(f)
-                    # Only use metadata features if not already loaded from pickle
+                    # Only use metadata features if not already loaded
                     if not self.model_features:
                         self.model_features = metadata.get('feature_names', [])
                     model_metrics = metadata.get('model_metrics', {})
-                    self.logger.info(f"Loaded ML model: {metadata.get('model_type', 'unknown')}")
+                    model_type = metadata.get('model_type', 'unknown')
+                    model_version = metadata.get('version', 'unknown')
+                    self.logger.info(
+                        f"Loaded ML model: type={model_type}, "
+                        f"version={model_version}, path={resolved_path}"
+                    )
                     val_auc = model_metrics.get('val_auc')
                     if val_auc is not None and isinstance(val_auc, (int, float)):
-                        self.logger.info(f"Model AUC: {val_auc:.4f}")
+                        self.logger.info(f"Model validation AUC: {val_auc:.4f}")
                     else:
-                        self.logger.info("Model AUC: unknown")
+                        self.logger.info("Model validation AUC: unknown")
             else:
-                self.logger.warning("Model metadata not found, using pickle feature names")
-                
-            self.logger.info(f"Expected features: {len(self.model_features) if self.model_features else 0}")
-                
+                self.logger.warning(
+                    "Model metadata not found, using pickle feature names"
+                )
+
+            feature_count = len(self.model_features) if self.model_features else 0
+            self.logger.info(f"Model expects {feature_count} features")
+
+            if feature_count == 0:
+                self.logger.warning(
+                    "No feature names found -- feature validation at inference "
+                    "time will be skipped"
+                )
+
         except Exception as e:
-            self.logger.error(f"Failed to load ML model from {model_path}: {e}")
-            self.logger.info("Falling back to rule-based fraud detection")
+            self.logger.error(
+                f"Failed to load ML model from {resolved_path}: {e}"
+            )
+            self.logger.warning(
+                "Falling back to rule-based fraud detection (DEGRADED MODE)"
+            )
+            self.ml_model = None
             self.use_ml_model = False
     
     def _signal_handler(self, signum: int, frame) -> None:
@@ -418,10 +530,21 @@ class FraudDetector:
             if user_profile.daily_transaction_count > 0 else 0.0
         )
         
-        # Calculate fraud score using ML model or rule-based approach
-        if self.use_ml_model and self.ml_model:
+        # ---- Scoring path selection ----
+        # Primary: ML model.  Fallback: rule-based scoring.
+        # The rule-based path only activates when the model is genuinely
+        # unavailable (failed to load, or a transient inference error).
+        if self.model_status == "ml_primary" and self.ml_model is not None:
             fraud_score = self._calculate_ml_fraud_score(transaction, user_profile)
         else:
+            # Explicit degraded-mode fallback
+            self.rules_fallback_count += 1
+            if self.rules_fallback_count <= 5 or self.rules_fallback_count % 1000 == 0:
+                self.logger.warning(
+                    "DEGRADED MODE: scoring transaction with rule-based fallback "
+                    f"(model_status={self.model_status}, "
+                    f"fallback_count={self.rules_fallback_count})"
+                )
             fraud_score = self._calculate_fraud_score(
                 amount_vs_avg_ratio,
                 is_high_amount,
@@ -539,27 +662,33 @@ class FraudDetector:
                 return float(fraud_probability)
             
         except Exception as e:
-            self.logger.warning(f"ML fraud scoring failed: {e}, falling back to rule-based")
-            # Fallback to rule-based scoring
+            self.logger.error(
+                f"ML inference failed: {e} -- switching to rules_fallback mode"
+            )
+            # Transition to degraded mode so subsequent transactions use
+            # the rules path directly (avoids repeated inference failures).
+            self.model_status = "rules_fallback"
+
+            # Compute rule-based score for this transaction
             amount = float(transaction['transaction_amt'])
             timestamp = transaction['generated_timestamp']
             dt = datetime.fromisoformat(timestamp)
-            
+
             amount_vs_avg_ratio = (
-                amount / user_profile.avg_transaction_amount 
+                amount / user_profile.avg_transaction_amount
                 if user_profile.avg_transaction_amount > 0 else 1.0
             )
             is_high_amount = amount > 1000.0
             is_unusual_hour = dt.hour < 6 or dt.hour > 22
-            
+
             time_since_last = 0.0
             if user_profile.last_transaction_time:
                 last_dt = datetime.fromisoformat(user_profile.last_transaction_time)
                 time_since_last = (dt - last_dt).total_seconds()
             is_rapid_transaction = time_since_last < 300
-            
+
             velocity_score = user_profile.daily_transaction_count / 24.0
-            
+
             return self._calculate_fraud_score(
                 amount_vs_avg_ratio, is_high_amount, is_unusual_hour,
                 is_rapid_transaction, velocity_score, user_profile.daily_transaction_count
@@ -632,7 +761,16 @@ class FraudDetector:
                     features.append(0.0)  # Email features default to 0
                 else:
                     features.append(0.0)  # All other features default to 0
-        
+
+        # Validate feature vector length matches model expectations
+        expected_len = len(self.model_features)
+        actual_len = len(features)
+        if expected_len > 0 and actual_len != expected_len:
+            raise ValueError(
+                f"Feature vector length mismatch: model expects {expected_len} "
+                f"features but got {actual_len}"
+            )
+
         return features
     
     def publish_fraud_alert(self, features: FraudFeatures, 
@@ -953,15 +1091,21 @@ class FraudDetector:
     def _cleanup(self) -> None:
         """Cleanup resources during shutdown."""
         self.logger.info("Shutting down fraud detection consumer...")
-        
+
         # Final statistics
         elapsed = time.time() - self.start_time
         tps = self.processed_count / elapsed if elapsed > 0 else 0
-        fraud_rate = self.fraud_alerts_count / self.processed_count * 100 if self.processed_count > 0 else 0
-        
+        fraud_rate = (
+            self.fraud_alerts_count / self.processed_count * 100
+            if self.processed_count > 0 else 0
+        )
+
         self.logger.info(
             f"Final statistics - Processed: {self.processed_count}, "
             f"Fraud alerts: {self.fraud_alerts_count} ({fraud_rate:.2f}%), "
+            f"Blocked: {self.blocked_count}, "
+            f"Rules fallback uses: {self.rules_fallback_count}, "
+            f"Model status: {self.model_status}, "
             f"Average TPS: {tps:.1f}"
         )
         

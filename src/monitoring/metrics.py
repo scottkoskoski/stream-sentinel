@@ -207,7 +207,7 @@ class StreamSentinelMetrics:
     
     def _init_model_metrics(self):
         """Initialize ML model performance metrics"""
-        
+
         # Model loading and updates
         self.model_loads = Counter(
             'model_loads_total',
@@ -215,7 +215,7 @@ class StreamSentinelMetrics:
             ['model_name', 'version', 'status'],
             registry=self.registry
         )
-        
+
         self.model_update_latency = Histogram(
             'model_update_duration_seconds',
             'Time to load/update ML model',
@@ -223,7 +223,7 @@ class StreamSentinelMetrics:
             buckets=[0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 120.0],
             registry=self.registry
         )
-        
+
         # Current model info
         self.current_model_info = Gauge(
             'current_model_version',
@@ -231,7 +231,17 @@ class StreamSentinelMetrics:
             ['model_name', 'version', 'algorithm'],
             registry=self.registry
         )
-        
+
+        # Model scoring status: tracks whether ML model or rule-based fallback is active.
+        # Values: 1.0 = active for the given status label, 0.0 = inactive.
+        # status label is one of: "ml_primary", "rules_fallback", "loading"
+        self.model_status_info = Gauge(
+            'model_status_info',
+            'Current model scoring status (1=active for given status)',
+            ['status'],
+            registry=self.registry
+        )
+
         # Online learning metrics
         self.drift_detection_runs = Counter(
             'drift_detection_runs_total',
@@ -239,7 +249,7 @@ class StreamSentinelMetrics:
             ['detector_type', 'result'],
             registry=self.registry
         )
-        
+
         self.model_retraining_runs = Counter(
             'model_retraining_runs_total',
             'Total model retraining operations',
@@ -280,7 +290,16 @@ class StreamSentinelMetrics:
             ['reason', 'severity'],
             registry=self.registry
         )
-        
+
+        # Transaction blocking enforcement: counts transactions rejected
+        # because the user was already on the blocked_users set in Redis.
+        self.transactions_blocked_total = Counter(
+            'transactions_blocked_total',
+            'Total transactions blocked for users on the blocked list',
+            ['reason'],
+            registry=self.registry
+        )
+
         self.false_positive_rate = Gauge(
             'false_positive_rate',
             'Current false positive rate from fraud detection',
