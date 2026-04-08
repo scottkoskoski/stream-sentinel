@@ -64,6 +64,17 @@ except ImportError:
     except ImportError:
         DRIFT_MONITOR_AVAILABLE = False
 
+# Import model registry for optional registry-based model loading
+try:
+    from ml.online_learning.model_registry import ModelRegistry
+    MODEL_REGISTRY_AVAILABLE = True
+except ImportError:
+    try:
+        from src.ml.online_learning.model_registry import ModelRegistry
+        MODEL_REGISTRY_AVAILABLE = True
+    except ImportError:
+        MODEL_REGISTRY_AVAILABLE = False
+
 
 @dataclass
 class UserProfile:
@@ -281,7 +292,34 @@ class FraudDetector:
             raise
     
     def _load_ml_model(self, model_path: str) -> None:
-        """Load the trained ML model for fraud detection."""
+        """Load the trained ML model for fraud detection.
+
+        Loading order:
+        1. Try ModelRegistry (if available) -- gets latest production model
+        2. Fall back to filesystem path
+        Logs which source was used.
+        """
+        model_source = "unknown"
+
+        # --- Attempt 1: ModelRegistry ---
+        if MODEL_REGISTRY_AVAILABLE:
+            try:
+                registry = ModelRegistry()
+                registry_model = registry.get_active_model("production")
+                if registry_model is not None:
+                    model_data = registry_model
+                    model_source = "registry"
+                    self.logger.info("Loaded model from ModelRegistry (production)")
+                    # Jump to model unpacking below
+                    self._unpack_model_data(model_data, model_source)
+                    return
+                else:
+                    self.logger.info("No active model in registry; falling back to filesystem")
+            except Exception as e:
+                self.logger.info(f"ModelRegistry unavailable ({e}); falling back to filesystem")
+
+        # --- Attempt 2: Filesystem ---
+        model_source = "filesystem"
         try:
             # Check if C++ acceleration is enabled
             if self.enable_cpp_acceleration:
@@ -344,13 +382,35 @@ class FraudDetector:
             else:
                 self.logger.warning("Model metadata not found, using pickle feature names")
                 
-            self.logger.info(f"Expected features: {len(self.model_features) if self.model_features else 0}")
-                
+            self.logger.info(
+                "Model loaded from %s: %d features expected",
+                model_source,
+                len(self.model_features) if self.model_features else 0,
+            )
+
         except Exception as e:
             self.logger.error(f"Failed to load ML model from {model_path}: {e}")
             self.logger.info("Falling back to rule-based fraud detection")
             self.use_ml_model = False
-    
+
+    def _unpack_model_data(self, model_data: Any, source: str) -> None:
+        """Unpack model data dict loaded from registry or filesystem.
+
+        Sets self.ml_model, self.scaler, and self.model_features.
+        """
+        if isinstance(model_data, dict):
+            self.ml_model = model_data.get('model')
+            self.scaler = model_data.get('scaler')
+            self.model_features = model_data.get('feature_names', [])
+            self.logger.info(
+                "Unpacked model from %s: keys=%s, features=%d",
+                source, list(model_data.keys()), len(self.model_features),
+            )
+        else:
+            self.ml_model = model_data
+            self.model_features = []
+            self.logger.info("Loaded raw model object from %s", source)
+
     def _signal_handler(self, signum: int, frame) -> None:
         """Handle graceful shutdown signals."""
         self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
