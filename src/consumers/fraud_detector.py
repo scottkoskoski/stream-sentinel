@@ -216,7 +216,7 @@ class FraudDetector:
     
     def __init__(self,
                  consumer_group: str = "fraud-detection-group",
-                 fraud_threshold: float = 0.7,
+                 fraud_threshold: float = 0.3,
                  use_ml_model: bool = True,
                  model_path: str = "models/ieee_fraud_model_production.pkl",
                  enable_cpp_acceleration: bool = True,

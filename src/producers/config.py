@@ -94,7 +94,7 @@ AMOUNT_DISTRIBUTION = {
     "mean_log": 4.0,
     "std_log": 1.2,
     "min_amount": 0.25,   # Aligned with IEEE-CIS spec (was 1.0)
-    "max_amount": 1500.0,  # Aligned with IEEE-CIS spec (was 1000.0)
+    "max_amount": 5000.0,  # Raised to capture high-value fraud patterns (IEEE-CIS max: $31,937)
 }
 
 # Fraud amount bias: mean_log is multiplied by this for fraud transactions
