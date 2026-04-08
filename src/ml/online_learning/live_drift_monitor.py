@@ -328,16 +328,17 @@ class LiveDriftMonitor:
     # Prometheus metric (optional)
     # ------------------------------------------------------------------
 
+    _psi_gauge = None  # class-level cached Prometheus Gauge
+
     def _emit_metric(self, psi: float) -> None:
         """Set a Prometheus gauge if prometheus_client is installed."""
         try:
-            from prometheus_client import Gauge
-
-            gauge = Gauge(
-                "fraud_model_drift_psi",
-                "Population Stability Index for fraud score distribution",
-                registry=None,  # use default registry
-            )
-            gauge.set(psi)
+            if LiveDriftMonitor._psi_gauge is None:
+                from prometheus_client import Gauge
+                LiveDriftMonitor._psi_gauge = Gauge(
+                    "fraud_model_drift_psi",
+                    "Population Stability Index for fraud score distribution",
+                )
+            LiveDriftMonitor._psi_gauge.set(psi)
         except Exception:
-            pass  # prometheus_client not installed or metric already registered
+            pass  # prometheus_client not installed

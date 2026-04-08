@@ -202,22 +202,20 @@ class EnhancedFraudDetector:
         """Initialize Kafka connections."""
         try:
             # Consumer configuration
-            consumer_config = self.kafka_config.copy()
-            consumer_config.update({
-                'group.id': 'enhanced-fraud-detection',
-                'auto.offset.reset': 'latest'
-            })
-            
+            consumer_config = self.kafka_config.get_consumer_config(
+                group_id='enhanced-fraud-detection',
+                consumer_type='fraud_detector',
+            )
+            consumer_config['auto.offset.reset'] = 'latest'
+
             self.consumer = Consumer(consumer_config)
             self.consumer.subscribe(['synthetic-transactions'])
-            
+
             # Producer for fraud alerts and feedback
-            producer_config = self.kafka_config.copy()
-            producer_config.update({
-                'linger.ms': 5,
-                'compression.type': 'lz4'
-            })
-            
+            producer_config = self.kafka_config.get_producer_config('transaction')
+            producer_config['linger.ms'] = 5
+            producer_config['compression.type'] = 'lz4'
+
             self.producer = Producer(producer_config)
             
         except Exception as e:

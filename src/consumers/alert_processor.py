@@ -405,9 +405,14 @@ class AlertProcessor:
             
         try:
             alert_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-            cutoff = datetime.now() - timedelta(hours=hours)
+            # Use timezone-aware cutoff if alert_time is timezone-aware
+            if alert_time.tzinfo is not None:
+                from datetime import timezone
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            else:
+                cutoff = datetime.now() - timedelta(hours=hours)
             return alert_time >= cutoff
-        except:
+        except (ValueError, TypeError, AttributeError):
             return False
     
     def _recommend_action(self, alert: Dict[str, Any], 

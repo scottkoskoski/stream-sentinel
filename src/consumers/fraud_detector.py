@@ -249,6 +249,7 @@ class FraudDetector:
         self.consumer_group = consumer_group
         self.use_ml_model = use_ml_model
         self.enable_cpp_acceleration = enable_cpp_acceleration and CPP_INFERENCE_AVAILABLE
+        self.scaler = None  # Feature scaler from training pipeline (applied if present)
 
         # Model scoring status tracks the current scoring path:
         #   "loading"        - startup, model load in progress
@@ -296,7 +297,7 @@ class FraudDetector:
         if use_ml_model:
             self._load_ml_model(model_path)
 
-        # Set model_status based on load result
+        # Set model_status based on load result and update Prometheus gauge
         if self.ml_model is not None:
             self.model_status = "ml_primary"
             self.logger.info("Model status: ml_primary - ML model is the primary scorer")
@@ -306,6 +307,11 @@ class FraudDetector:
                 "Model status: rules_fallback - ML model unavailable, "
                 "using rule-based scoring (DEGRADED MODE)"
             )
+        try:
+            prom = get_prometheus_metrics("fraud-detector")
+            prom.model_status_info.labels(status=self.model_status).set(1.0)
+        except Exception:
+            pass  # Prometheus not available
 
         # Topics
         self.input_topic = "synthetic-transactions"
@@ -990,6 +996,13 @@ class FraudDetector:
                 f"features but got {actual_len}"
             )
 
+        # Apply feature scaler if one was loaded with the model
+        if self.scaler is not None:
+            try:
+                features = self.scaler.transform([features])[0].tolist()
+            except Exception as e:
+                self.logger.debug(f"Scaler transform failed, using raw features: {e}")
+
         return features
     
     def publish_fraud_alert(self, features: FraudFeatures, 
@@ -1298,6 +1311,11 @@ class FraudDetector:
             # Check *before* scoring to save compute on known-blocked users.
             if self._is_user_blocked(user_id):
                 self.blocked_count += 1
+                try:
+                    prom = get_prometheus_metrics("fraud-detector")
+                    prom.transactions_blocked_total.labels(reason="user_on_blocked_list").inc()
+                except Exception:
+                    pass
                 self.logger.info(
                     f"BLOCKED: transaction from user {user_id} rejected "
                     f"(user is on blocked_users list, "
@@ -1482,13 +1500,14 @@ class FraudDetector:
 
                 # If batch ML gave us a score, inject it via a small wrapper
                 # so that extract_features uses it instead of re-computing.
-                if fraud_scores[idx] is not None:
-                    self._batch_override_score = fraud_scores[idx]
+                try:
+                    if fraud_scores[idx] is not None:
+                        self._batch_override_score = fraud_scores[idx]
 
-                features = self.extract_features(txn, profile)
-
-                # Clear the override
-                self._batch_override_score = None
+                    features = self.extract_features(txn, profile)
+                finally:
+                    # Always clear the override to prevent leaking to next message
+                    self._batch_override_score = None
 
                 # Update user profile
                 profile.update_daily_stats(
@@ -1696,7 +1715,18 @@ class FraudDetector:
                         self.logger.error(
                             f"Failed to parse transaction JSON: {e}"
                         )
-                        # Commit and skip the bad message immediately
+                        # Publish to DLQ before committing the bad message
+                        if self._dlq_publisher is not None:
+                            try:
+                                self._dlq_publisher.publish(
+                                    original_message=msg.value(),
+                                    error=e,
+                                    source_topic=msg.topic(),
+                                    partition=msg.partition(),
+                                    offset=msg.offset(),
+                                )
+                            except Exception:
+                                pass
                         self.consumer.commit(msg)
 
                 elif msg is not None and msg.error():

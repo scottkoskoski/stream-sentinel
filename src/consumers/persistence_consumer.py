@@ -69,19 +69,21 @@ class PersistenceConsumer:
         """Initialize Kafka consumer and persistence layer."""
         try:
             # Get Kafka configuration
-            kafka_config = get_kafka_config('persistence-consumer')
-            kafka_config.update({
-                'group.id': 'stream-sentinel-persistence',
+            kafka_cfg = get_kafka_config()
+            consumer_config = kafka_cfg.get_consumer_config(
+                group_id='stream-sentinel-persistence',
+                consumer_type='persistence',
+            )
+            consumer_config.update({
                 'auto.offset.reset': 'earliest',
                 'enable.auto.commit': True,
                 'auto.commit.interval.ms': 1000,
                 'max.poll.interval.ms': 300000,  # 5 minutes
                 'session.timeout.ms': 30000,
                 'heartbeat.interval.ms': 3000,
-                'max.poll.records': self.batch_size
             })
-            
-            self.consumer = Consumer(kafka_config)
+
+            self.consumer = Consumer(consumer_config)
             
             # Subscribe to persistence topics
             topics = [
