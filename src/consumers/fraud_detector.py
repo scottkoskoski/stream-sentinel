@@ -51,6 +51,40 @@ try:
 except ImportError:
     CPP_INFERENCE_AVAILABLE = False
 
+# Import unified feature engineering module
+try:
+    from ml.features.feature_engineer import FeatureEngineer
+    FEATURE_ENGINEER_AVAILABLE = True
+except ImportError:
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from ml.features.feature_engineer import FeatureEngineer
+        FEATURE_ENGINEER_AVAILABLE = True
+    except ImportError:
+        FEATURE_ENGINEER_AVAILABLE = False
+
+# Import live drift monitor
+try:
+    from ml.online_learning.live_drift_monitor import LiveDriftMonitor
+    DRIFT_MONITOR_AVAILABLE = True
+except ImportError:
+    try:
+        from src.ml.online_learning.live_drift_monitor import LiveDriftMonitor
+        DRIFT_MONITOR_AVAILABLE = True
+    except ImportError:
+        DRIFT_MONITOR_AVAILABLE = False
+
+# Import model registry for optional registry-based model loading
+try:
+    from ml.online_learning.model_registry import ModelRegistry
+    MODEL_REGISTRY_AVAILABLE = True
+except ImportError:
+    try:
+        from src.ml.online_learning.model_registry import ModelRegistry
+        MODEL_REGISTRY_AVAILABLE = True
+    except ImportError:
+        MODEL_REGISTRY_AVAILABLE = False
+
 
 @dataclass
 class UserProfile:
@@ -129,12 +163,13 @@ class FraudDetector:
     transactions.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  consumer_group: str = "fraud-detection-group",
                  fraud_threshold: float = 0.7,
                  use_ml_model: bool = True,
                  model_path: str = "models/ieee_fraud_model_production.pkl",
-                 enable_cpp_acceleration: bool = True):
+                 enable_cpp_acceleration: bool = True,
+                 drift_check_interval: int = 1000):
         """
         Initialize fraud detection consumer.
         
@@ -144,6 +179,7 @@ class FraudDetector:
             use_ml_model: Whether to use ML model or rule-based scoring
             model_path: Path to the trained ML model
             enable_cpp_acceleration: Enable C++ accelerated inference (default: True)
+            drift_check_interval: Run PSI drift check every N transactions (default: 1000)
         """
         # Initialize Kafka configuration
         self.kafka_config = get_kafka_config()
@@ -162,6 +198,29 @@ class FraudDetector:
         #   "ml_primary"     - ML model loaded and is the primary scorer
         #   "rules_fallback" - ML model unavailable, using rule-based scoring
         self.model_status = "loading"
+
+        # Initialise unified feature engineer (gracefully degrade if unavailable)
+        self.feature_engineer = None
+        if FEATURE_ENGINEER_AVAILABLE:
+            try:
+                self.feature_engineer = FeatureEngineer()
+                self.logger.info("Unified FeatureEngineer loaded for streaming enrichment")
+            except Exception as e:
+                self.logger.warning(f"FeatureEngineer init failed, running without enriched features: {e}")
+
+        # Initialise live drift monitor (gracefully degrade if unavailable)
+        self.drift_monitor = None
+        if DRIFT_MONITOR_AVAILABLE:
+            try:
+                self.drift_monitor = LiveDriftMonitor({
+                    "check_interval": drift_check_interval,
+                })
+                self.logger.info(
+                    "LiveDriftMonitor loaded (check every %d transactions)",
+                    drift_check_interval,
+                )
+            except Exception as e:
+                self.logger.warning(f"LiveDriftMonitor init failed, running without drift checks: {e}")
 
         # Load ML model if enabled
         self.ml_model = None
@@ -300,14 +359,35 @@ class FraudDetector:
         return None
 
     def _load_ml_model(self, model_path: str) -> None:
-        """
-        Load the trained ML model for fraud detection.
+        """Load the trained ML model for fraud detection.
 
-        Attempts to load the model from the given path (trying several
-        project-relative locations). On success the model becomes the
-        primary scorer; on failure the detector degrades gracefully to
-        rule-based scoring.
+        Loading order:
+        1. Try ModelRegistry (if available) -- gets latest production model
+        2. Fall back to filesystem path (trying several project-relative locations)
+        On success the model becomes the primary scorer; on failure the detector
+        degrades gracefully to rule-based scoring.
+        Logs which source was used.
         """
+        model_source = "unknown"
+
+        # --- Attempt 1: ModelRegistry ---
+        if MODEL_REGISTRY_AVAILABLE:
+            try:
+                registry = ModelRegistry()
+                registry_model = registry.get_active_model("production")
+                if registry_model is not None:
+                    model_data = registry_model
+                    model_source = "registry"
+                    self.logger.info("Loaded model from ModelRegistry (production)")
+                    self._unpack_model_data(model_data, model_source)
+                    return
+                else:
+                    self.logger.info("No active model in registry; falling back to filesystem")
+            except Exception as e:
+                self.logger.info(f"ModelRegistry unavailable ({e}); falling back to filesystem")
+
+        # --- Attempt 2: Filesystem ---
+        model_source = "filesystem"
         resolved_path = self._resolve_model_path(model_path)
         if resolved_path is None:
             self.logger.error(
@@ -413,7 +493,11 @@ class FraudDetector:
                 )
 
             feature_count = len(self.model_features) if self.model_features else 0
-            self.logger.info(f"Model expects {feature_count} features")
+            self.logger.info(
+                "Model loaded from %s: %d features expected",
+                model_source,
+                feature_count,
+            )
 
             if feature_count == 0:
                 self.logger.warning(
@@ -430,7 +514,25 @@ class FraudDetector:
             )
             self.ml_model = None
             self.use_ml_model = False
-    
+
+    def _unpack_model_data(self, model_data: Any, source: str) -> None:
+        """Unpack model data dict loaded from registry or filesystem.
+
+        Sets self.ml_model, self.scaler, and self.model_features.
+        """
+        if isinstance(model_data, dict):
+            self.ml_model = model_data.get('model')
+            self.scaler = model_data.get('scaler')
+            self.model_features = model_data.get('feature_names', [])
+            self.logger.info(
+                "Unpacked model from %s: keys=%s, features=%d",
+                source, list(model_data.keys()), len(self.model_features),
+            )
+        else:
+            self.ml_model = model_data
+            self.model_features = []
+            self.logger.info("Loaded raw model object from %s", source)
+
     def _signal_handler(self, signum: int, frame) -> None:
         """Handle graceful shutdown signals."""
         self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
@@ -751,11 +853,32 @@ class FraudDetector:
         amount = available_features['TransactionAmt']
         available_features['TransactionAmt_log'] = np.log1p(amount) if amount > 0 else 0.0
         available_features['TransactionAmt_decimal'] = amount - int(amount) if amount > 0 else 0.0
-        
+
         # Add behavioral features from user profile
         available_features['user_avg_amount'] = user_profile.avg_transaction_amount
         available_features['user_total_transactions'] = float(user_profile.total_transactions)
         available_features['user_daily_count'] = float(user_profile.daily_transaction_count)
+
+        # Add enriched features from unified FeatureEngineer
+        if self.feature_engineer is not None:
+            try:
+                profile_dict = {
+                    "total_transactions": user_profile.total_transactions,
+                    "total_amount": user_profile.total_amount,
+                    "avg_transaction_amount": user_profile.avg_transaction_amount,
+                    "last_transaction_time": user_profile.last_transaction_time,
+                    "daily_transaction_count": user_profile.daily_transaction_count,
+                    "daily_amount": user_profile.daily_amount,
+                }
+                enriched = self.feature_engineer.compute_streaming_features(
+                    transaction, profile_dict
+                )
+                # Merge into available_features with "feat_" prefix for
+                # compatibility with batch-trained models
+                for key, value in enriched.items():
+                    available_features[f"feat_{key}"] = value
+            except Exception as e:
+                self.logger.debug(f"Enriched feature computation failed: {e}")
         
         # For each expected feature, use available value or sensible default
         for feature_name in self.model_features:
@@ -1109,6 +1232,19 @@ class FraudDetector:
 
             # Extract features for fraud detection
             features = self.extract_features(transaction, user_profile)
+
+            # Feed fraud score to drift monitor (non-blocking)
+            if self.drift_monitor is not None:
+                try:
+                    drift_alert = self.drift_monitor.record_score(features.fraud_score)
+                    if drift_alert is not None:
+                        self.logger.warning(
+                            "Drift detected: PSI=%.4f severity=%s",
+                            drift_alert["psi_score"],
+                            drift_alert["severity"],
+                        )
+                except Exception as e:
+                    self.logger.debug(f"Drift monitor error (non-fatal): {e}")
 
             # Update user profile with new transaction
             user_profile.update_daily_stats(features.amount, transaction['generated_timestamp'])

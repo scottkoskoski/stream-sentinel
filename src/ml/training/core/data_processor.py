@@ -39,6 +39,20 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.model_selection import train_test_split
 
+# Import unified feature engineering module
+try:
+    from ml.features.feature_engineer import FeatureEngineer
+    _FEATURE_ENGINEER_AVAILABLE = True
+except ImportError:
+    try:
+        # Fallback for different import contexts
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+        from src.ml.features.feature_engineer import FeatureEngineer
+        _FEATURE_ENGINEER_AVAILABLE = True
+    except ImportError:
+        _FEATURE_ENGINEER_AVAILABLE = False
+
 
 @dataclass
 class ValidationResult:
@@ -558,25 +572,47 @@ class DataProcessor:
         }
     
     def _engineer_features(self, X: pd.DataFrame) -> pd.DataFrame:
-        """Apply feature engineering transformations."""
+        """Apply feature engineering transformations.
+
+        Runs the original hand-crafted transforms (log-amount, decimal,
+        amount bins, hour-of-day) and then delegates to the unified
+        FeatureEngineer for velocity, merchant risk, amount anomaly,
+        temporal, and interaction features.
+        """
         if 'TransactionAmt' in X.columns:
             # Log transform for transaction amount
             X['TransactionAmt_log'] = np.log1p(X['TransactionAmt'])
-            
+
             # Decimal component
             X['TransactionAmt_decimal'] = X['TransactionAmt'] % 1
-            
+
             # Amount bins
-            X['TransactionAmt_bin'] = pd.cut(X['TransactionAmt'], 
-                                           bins=[0, 10, 50, 200, 1000, float('inf')], 
+            X['TransactionAmt_bin'] = pd.cut(X['TransactionAmt'],
+                                           bins=[0, 10, 50, 200, 1000, float('inf')],
                                            labels=[0, 1, 2, 3, 4])
-        
+
         # Hour of day if timestamp available
         if any(col.startswith('TransactionDT') for col in X.columns):
             dt_cols = [col for col in X.columns if col.startswith('TransactionDT')]
             for col in dt_cols:
                 X[f'{col}_hour'] = (X[col] / 3600) % 24
-        
+
+        # --- Unified feature engineer (velocity, merchant risk, z-score, etc.) ---
+        if _FEATURE_ENGINEER_AVAILABLE:
+            try:
+                fe = FeatureEngineer()
+                X = fe.compute_batch_features(X)
+                self.logger.info("feature_engineer.batch_features_added", extra={
+                    "new_columns": [c for c in X.columns if c.startswith("feat_")]
+                })
+            except Exception as exc:
+                self.logger.warning(
+                    "feature_engineer.batch_features_failed",
+                    extra={"error": str(exc)},
+                )
+        else:
+            self.logger.info("feature_engineer.not_available; skipping enriched features")
+
         return X
     
     def _select_features(self, X: pd.DataFrame, y: pd.Series) -> Tuple[pd.DataFrame, List[str]]:
