@@ -788,59 +788,58 @@ class SyntheticTransactionProducer:
 
         return features
 
-    def _generate_match_features(self, card4: str, p_email: str, addr1: float, 
-                               user: UserProfile, current_time: float) -> Dict[str, Optional[str]]:
-        """Generate M1-M9 match features for identity verification."""
-        
-        features = {}
+    def _generate_match_features(self, card4: Optional[str], p_email: Optional[str],
+                                  addr1: float, user: UserProfile,
+                                  current_time: float,
+                                  is_fraud: bool = False) -> Dict[str, Optional[str]]:
+        """Generate M1-M9 match features using config-driven weight tables.
+
+        Legitimate and fraudulent transactions use separate weight tables
+        (gen_config.M_LEGITIMATE_WEIGHTS vs gen_config.M_FRAUD_WEIGHTS)
+        so that fraud exhibits correlated identity mismatches rather than
+        each M-feature being independently random.
+
+        Null rates come from gen_config.M_FEATURE_NULL_RATES.
+        """
+        null_rates = gen_config.M_FEATURE_NULL_RATES
         match_options = ["T", "F", "NotFound"]
-        
-        # M1: Name on card matches billing address name
-        # Higher match probability for legitimate users
-        if user.risk_profile == "low":
-            features["m1"] = random.choices(match_options, weights=[0.8, 0.15, 0.05])[0] if random.random() > 0.3 else None
+
+        # Select weight table based on fraud status
+        if is_fraud:
+            weight_table = gen_config.M_FRAUD_WEIGHTS
         else:
-            features["m1"] = random.choices(match_options, weights=[0.4, 0.4, 0.2])[0] if random.random() > 0.3 else None
-            
-        # M2: Email domain matches card issuer domain
-        if p_email and card4:
-            # Some card companies have email partnerships
-            if card4 == "visa" and p_email in ["gmail.com", "yahoo.com"]:
-                features["m2"] = "T" if random.random() > 0.3 else "F"
-            else:
-                features["m2"] = random.choice(match_options) if random.random() > 0.5 else None
-        else:
-            features["m2"] = None
-            
-        # M3: Phone area code matches billing address area code
-        features["m3"] = random.choices(match_options, weights=[0.7, 0.2, 0.1])[0] if random.random() > 0.4 else None
-        
-        # M4: Device timezone matches billing address timezone
-        features["m4"] = random.choices(match_options, weights=[0.85, 0.1, 0.05])[0] if random.random() > 0.3 else None
-        
-        # M5: Previous transaction patterns match current behavior
-        # More likely to match for established users
-        if user.total_transactions > 5:
-            features["m5"] = random.choices(match_options, weights=[0.9, 0.08, 0.02])[0] if random.random() > 0.4 else None
-        else:
-            features["m5"] = random.choice(match_options) if random.random() > 0.6 else None
-            
-        # M6: IP geolocation matches billing address
-        features["m6"] = random.choices(match_options, weights=[0.75, 0.2, 0.05])[0] if random.random() > 0.4 else None
-        
-        # M7: Card usage pattern matches historical behavior
-        features["m7"] = random.choices(match_options, weights=[0.8, 0.15, 0.05])[0] if random.random() > 0.5 else None
-        
-        # M8: Email domain matches merchant domain
-        features["m8"] = random.choices(match_options, weights=[0.3, 0.5, 0.2])[0] if random.random() > 0.7 else None
-        
-        # M9: Transaction time matches user's typical pattern
-        hour = int((current_time % 86400) // 3600)
-        if user.risk_profile == "low" and 9 <= hour <= 21:  # Business hours
-            features["m9"] = "T" if random.random() > 0.2 else "F"
-        else:
-            features["m9"] = random.choice(match_options) if random.random() > 0.5 else None
-        
+            weight_table = gen_config.M_LEGITIMATE_WEIGHTS
+
+        features: Dict[str, Optional[str]] = {}
+
+        for feat_name in [f"m{i}" for i in range(1, 10)]:
+            # Skip if null by configured rate
+            if random.random() < null_rates.get(feat_name, 0.5):
+                features[feat_name] = None
+                continue
+
+            weights = weight_table[feat_name]
+
+            # Special handling for features that depend on entity availability
+            if feat_name == "m2" and (not p_email or not card4):
+                features[feat_name] = None
+                continue
+            if feat_name == "m8" and not p_email:
+                features[feat_name] = None
+                continue
+
+            # For established users on legitimate txns, boost M5 and M7
+            # (behavior/pattern match improves with history)
+            if not is_fraud and user.total_transactions > 5 and feat_name in ("m5", "m7"):
+                # Increase T weight by 5%, reduce F weight
+                t_w, f_w, nf_w = weights
+                t_w = min(0.98, t_w + 0.05)
+                f_w = max(0.01, f_w - 0.04)
+                nf_w = max(0.01, nf_w - 0.01)
+                weights = (t_w, f_w, nf_w)
+
+            features[feat_name] = random.choices(match_options, weights=list(weights))[0]
+
         return features
 
     def _determine_if_fraud(
@@ -926,7 +925,7 @@ class SyntheticTransactionProducer:
         current_time_float = float(current_time)
         counting_features = self._generate_counting_features(user, card1, addr1, p_email, product_cd, current_time_float)
         time_delta_features = self._generate_time_delta_features(user, card1, p_email, product_cd, addr1 or 0.0, current_time_float)
-        match_features = self._generate_match_features(card4, p_email, addr1, user, current_time_float)
+        match_features = self._generate_match_features(card4, p_email, addr1, user, current_time_float, is_fraud=is_fraud)
 
         # Create transaction
         transaction = Transaction(
