@@ -84,6 +84,7 @@ data/synthetic/
 *.json
 !docker/**/*.json
 !schemas/*.json
+!models/*.json
 *.parquet
 models/trained/
 checkpoints/
