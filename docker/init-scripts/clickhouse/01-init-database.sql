@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS transaction_records (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (user_id, timestamp)
-TTL timestamp + INTERVAL 2 YEAR
+TTL toDateTime(timestamp) + INTERVAL 2 YEAR
 SETTINGS index_granularity = 8192;
 
 -- Fraud features table - stores real-time engineered features
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS fraud_features (
 ) ENGINE = MergeTree()
 PARTITION BY (toYYYYMM(timestamp), feature_category)
 ORDER BY (user_id, timestamp, feature_name)
-TTL timestamp + INTERVAL 1 YEAR
+TTL toDateTime(timestamp) + INTERVAL 1 YEAR
 SETTINGS index_granularity = 8192;
 
 -- Detection results table - stores ML model predictions and business rule outcomes
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS detection_results (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (timestamp, user_id)
-TTL timestamp + INTERVAL 2 YEAR
+TTL toDateTime(timestamp) + INTERVAL 2 YEAR
 SETTINGS index_granularity = 8192;
 
 -- Performance metrics table - stores system performance data
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS performance_metrics (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (metric_name, timestamp)
-TTL timestamp + INTERVAL 6 MONTH
+TTL toDateTime(timestamp) + INTERVAL 6 MONTH
 SETTINGS index_granularity = 8192;
 
 -- Create materialized views for common analytics queries

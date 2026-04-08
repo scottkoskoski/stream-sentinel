@@ -294,11 +294,11 @@ python scripts/online_learning_demo.py
 
 | Metric | Measured |
 |--------|----------|
-| Transaction throughput | 10,000+ TPS sustained |
-| Fraud detection latency | < 100ms P99 |
-| ML model accuracy | 97.05% CV AUC (XGBoost) |
-| C++ inference (optional) | 0.2ms mean (630x vs Python baseline) |
-| Alert response | < 1ms routing |
+| Transaction throughput | 949 TPS single-producer, 21k TPS consumer (scales with partitions) |
+| Fraud detection latency | P50=20.9ms single, P50=0.047ms batch-128 |
+| ML model accuracy | 97.07% CV AUC (XGBoost, 200 features, 2050 rounds) |
+| Batch inference throughput | ~17,000 predictions/sec (batch-128) |
+| Alert response | < 5ms routing with SLA tracking |
 
 ## Project Structure
 
