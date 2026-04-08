@@ -21,22 +21,22 @@ SimpleXGBoostWrapper::~SimpleXGBoostWrapper() {
 
 bool SimpleXGBoostWrapper::load_model(const std::string& model_path) {
     cleanup(); // Clean up any existing model
-    
-    // Convert .pkl path to .json path for native format
+
+    // Accept the model path as-is.  The caller (fast_inference.py) is
+    // responsible for computing the correct _cpp.json path.  If the
+    // caller passes a .pkl path by mistake, try the _cpp.json variant
+    // as a convenience fallback.
     std::string native_model_path = model_path;
     size_t pkl_pos = native_model_path.find(".pkl");
     if (pkl_pos != std::string::npos) {
         native_model_path.replace(pkl_pos, 4, "_cpp.json");
-    } else {
-        // Assume it's already a native format path
-        native_model_path = model_path;
     }
-    
-    // Check if native format file exists
+
+    // Check if the model file exists
     std::ifstream file(native_model_path);
     if (!file.good()) {
-        return set_error("Native model file not found: " + native_model_path + 
-                        " (Run export_model_for_cpp.py first)");
+        return set_error("Native model file not found: " + native_model_path +
+                        " (Run: python src/inference/export_model.py)");
     }
     file.close();
     

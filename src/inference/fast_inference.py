@@ -71,20 +71,31 @@ class FastInferenceEngine:
             try:
                 import os
                 import sys
-                
-                # Set up environment for C++ wrapper
+
+                # Set up environment for C++ wrapper using paths relative
+                # to this file so the project is relocatable.
                 cpp_dir = Path(__file__).parent / "cpp"
-                xgboost_lib_dir = "/home/scottyk/Documents/stream-sentinel/venv/lib/python3.13/site-packages/xgboost/lib"
-                
+
+                # Derive xgboost shared-library dir from the installed
+                # xgboost package rather than hard-coding an absolute path.
+                try:
+                    import xgboost as _xgb
+                    xgboost_lib_dir = str(
+                        Path(_xgb.__file__).parent / "lib"
+                    )
+                except ImportError:
+                    xgboost_lib_dir = ""
+
                 # Add C++ extension to Python path
                 if str(cpp_dir) not in sys.path:
                     sys.path.insert(0, str(cpp_dir))
-                
+
                 # Set LD_LIBRARY_PATH for XGBoost shared library
-                current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
-                if xgboost_lib_dir not in current_ld_path:
-                    os.environ['LD_LIBRARY_PATH'] = f"{xgboost_lib_dir}:{current_ld_path}"
-                
+                if xgboost_lib_dir:
+                    current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
+                    if xgboost_lib_dir not in current_ld_path:
+                        os.environ['LD_LIBRARY_PATH'] = f"{xgboost_lib_dir}:{current_ld_path}"
+
                 import simple_xgboost_cpp
                 self.cpp_wrapper = simple_xgboost_cpp.SimpleXGBoostWrapper()
                 
