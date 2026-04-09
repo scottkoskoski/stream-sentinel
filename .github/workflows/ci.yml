@@ -1,0 +1,363 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-lint-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-lint-
+            ${{ runner.os }}-pip-
+
+      - name: Install linting tools
+        run: pip install black==25.1.0 isort==6.0.1 flake8==7.3.0
+
+      - name: Run black (formatting check)
+        run: black --check src/ tests/
+
+      - name: Run isort (import sorting check)
+        run: isort --check src/ tests/
+
+      - name: Run flake8 (linting)
+        run: flake8 src/ tests/
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: pytest tests/unit/ -m unit -v --tb=short --junitxml=reports/unit-results.xml
+        continue-on-error: false
+
+      - name: Upload unit test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: reports/unit-results.xml
+          retention-days: 30
+
+  contract-tests:
+    name: Contract Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run contract tests
+        run: pytest tests/contract/ -v --tb=short --junitxml=reports/contract-results.xml
+        continue-on-error: false
+
+      - name: Upload contract test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: contract-test-results
+          path: reports/contract-results.xml
+          retention-days: 30
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Start infrastructure services
+        run: docker compose -f docker/docker-compose.yml up -d
+        env:
+          REDIS_PASSWORD: ""
+          POSTGRES_DB: stream_sentinel
+          POSTGRES_USER: stream_sentinel_user
+          POSTGRES_PASSWORD: ci-test-postgres-password-not-production
+          CLICKHOUSE_DB: stream_sentinel
+          CLICKHOUSE_USER: stream_sentinel_user
+          CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for Kafka..."
+          for i in $(seq 1 60); do
+            if docker exec stream-sentinel-kafka kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1; then
+              echo "Kafka is ready"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "Kafka failed to start"
+              docker compose -f docker/docker-compose.yml logs kafka
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for Redis..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-redis redis-cli ping | grep -q PONG; then
+              echo "Redis is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Redis failed to start"
+              docker compose -f docker/docker-compose.yml logs redis
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for PostgreSQL..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-postgres pg_isready -U stream_sentinel_user -d stream_sentinel > /dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "PostgreSQL failed to start"
+              docker compose -f docker/docker-compose.yml logs postgres
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for ClickHouse..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-clickhouse wget --quiet --tries=1 --spider http://localhost:8123/ping 2>/dev/null; then
+              echo "ClickHouse is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "ClickHouse failed to start"
+              docker compose -f docker/docker-compose.yml logs clickhouse
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "All services are healthy"
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -m integration -v --tb=short --junitxml=reports/integration-results.xml
+        continue-on-error: false
+        env:
+          REDIS_PASSWORD: ""
+          POSTGRES_DB: stream_sentinel
+          POSTGRES_USER: stream_sentinel_user
+          POSTGRES_PASSWORD: ci-test-postgres-password-not-production
+          CLICKHOUSE_DB: stream_sentinel
+          CLICKHOUSE_USER: stream_sentinel_user
+          CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: reports/integration-results.xml
+          retention-days: 30
+
+      - name: Tear down services
+        if: always()
+        run: docker compose -f docker/docker-compose.yml down -v
+
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [integration-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Start full stack
+        run: docker compose -f docker/docker-compose.yml up -d
+        env:
+          REDIS_PASSWORD: ""
+          POSTGRES_DB: stream_sentinel
+          POSTGRES_USER: stream_sentinel_user
+          POSTGRES_PASSWORD: ci-test-postgres-password-not-production
+          CLICKHOUSE_DB: stream_sentinel
+          CLICKHOUSE_USER: stream_sentinel_user
+          CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for Kafka..."
+          for i in $(seq 1 60); do
+            if docker exec stream-sentinel-kafka kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1; then
+              echo "Kafka is ready"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "Kafka failed to start"
+              docker compose -f docker/docker-compose.yml logs kafka
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for Redis..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-redis redis-cli ping | grep -q PONG; then
+              echo "Redis is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Redis failed to start"
+              docker compose -f docker/docker-compose.yml logs redis
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for PostgreSQL..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-postgres pg_isready -U stream_sentinel_user -d stream_sentinel > /dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "PostgreSQL failed to start"
+              docker compose -f docker/docker-compose.yml logs postgres
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for ClickHouse..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-clickhouse wget --quiet --tries=1 --spider http://localhost:8123/ping 2>/dev/null; then
+              echo "ClickHouse is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "ClickHouse failed to start"
+              docker compose -f docker/docker-compose.yml logs clickhouse
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "All services are healthy"
+
+      - name: Run end-to-end tests
+        run: pytest tests/e2e/ -m e2e -v --tb=short --junitxml=reports/e2e-results.xml
+        continue-on-error: false
+        env:
+          REDIS_PASSWORD: ""
+          POSTGRES_DB: stream_sentinel
+          POSTGRES_USER: stream_sentinel_user
+          POSTGRES_PASSWORD: ci-test-postgres-password-not-production
+          CLICKHOUSE_DB: stream_sentinel
+          CLICKHOUSE_USER: stream_sentinel_user
+          CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
+
+      - name: Upload e2e test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-test-results
+          path: reports/e2e-results.xml
+          retention-days: 30
+
+      - name: Tear down services
+        if: always()
+        run: docker compose -f docker/docker-compose.yml down -v

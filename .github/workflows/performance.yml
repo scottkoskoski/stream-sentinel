@@ -1,0 +1,164 @@
+name: Performance Regression Testing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  performance-tests:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Start infrastructure services
+        run: docker compose -f docker/docker-compose.yml up -d
+        env:
+          REDIS_PASSWORD: ""
+          POSTGRES_DB: stream_sentinel
+          POSTGRES_USER: stream_sentinel_user
+          POSTGRES_PASSWORD: ci-test-postgres-password-not-production
+          CLICKHOUSE_DB: stream_sentinel
+          CLICKHOUSE_USER: stream_sentinel_user
+          CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for Kafka..."
+          for i in $(seq 1 60); do
+            if docker exec stream-sentinel-kafka kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1; then
+              echo "Kafka is ready"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "Kafka failed to start"
+              docker compose -f docker/docker-compose.yml logs kafka
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for Redis..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-redis redis-cli ping | grep -q PONG; then
+              echo "Redis is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Redis failed to start"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for PostgreSQL..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-postgres pg_isready -U stream_sentinel_user -d stream_sentinel > /dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "PostgreSQL failed to start"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for ClickHouse..."
+          for i in $(seq 1 30); do
+            if docker exec stream-sentinel-clickhouse wget --quiet --tries=1 --spider http://localhost:8123/ping 2>/dev/null; then
+              echo "ClickHouse is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "ClickHouse failed to start"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "All services are healthy"
+
+      - name: Run performance tests
+        run: pytest tests/performance/ -m performance -v --tb=short --junitxml=reports/performance-results.xml
+        continue-on-error: false
+        env:
+          REDIS_PASSWORD: ""
+          POSTGRES_DB: stream_sentinel
+          POSTGRES_USER: stream_sentinel_user
+          POSTGRES_PASSWORD: ci-test-postgres-password-not-production
+          CLICKHOUSE_DB: stream_sentinel
+          CLICKHOUSE_USER: stream_sentinel_user
+          CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
+
+      - name: Upload performance test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-results
+          path: reports/performance-results.xml
+          retention-days: 90
+
+      - name: Comment performance results on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '## Performance Test Results\n\n';
+
+            try {
+              const xml = fs.readFileSync('reports/performance-results.xml', 'utf8');
+              const tests = xml.match(/tests="(\d+)"/)?.[1] || '?';
+              const failures = xml.match(/failures="(\d+)"/)?.[1] || '?';
+              const errors = xml.match(/errors="(\d+)"/)?.[1] || '?';
+              const time = xml.match(/time="([\d.]+)"/)?.[1] || '?';
+
+              const status = (failures === '0' && errors === '0') ? ':white_check_mark:' : ':x:';
+              body += `${status} **Tests:** ${tests} | **Failures:** ${failures} | **Errors:** ${errors} | **Time:** ${time}s\n\n`;
+              body += `> Target: 10k+ TPS sustained, <100ms P99 latency\n`;
+            } catch (e) {
+              body += ':warning: Could not parse performance test results.\n';
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Tear down services
+        if: always()
+        run: docker compose -f docker/docker-compose.yml down -v
