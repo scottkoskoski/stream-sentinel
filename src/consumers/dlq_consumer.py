@@ -189,7 +189,8 @@ def main():
         logger.info("Combined metrics + health server started on port 8004")
     except Exception as e:
         logger.warning(
-            "Failed to start metrics server: %s -- continuing without metrics endpoint", e
+            "Failed to start metrics server: %s -- continuing without metrics endpoint",
+            e,
         )
 
     consumer = DLQConsumer(output_path=args.output)

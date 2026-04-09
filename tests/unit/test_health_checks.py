@@ -8,8 +8,8 @@ infrastructure (Kafka, Redis, etc.).
 
 import json
 import sys
-import time
 import threading
+import time
 import urllib.request
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -22,12 +22,11 @@ from monitoring.health import (
     DependencyCheck,
     HealthCheckHandler,
     HealthCheckServer,
-    make_kafka_check,
-    make_redis_check,
-    make_model_check,
     make_database_check,
+    make_kafka_check,
+    make_model_check,
+    make_redis_check,
 )
-
 
 # ---------------------------------------------------------------------------
 # DependencyCheck
@@ -212,9 +211,7 @@ class TestHealthHTTPEndpoints:
         assert "test_dep" in body["checks"]
 
     def test_readiness_endpoint_not_ready(self):
-        self.server.register_check(
-            "broken", lambda: (_ for _ in ()).throw(RuntimeError("down"))
-        )
+        self.server.register_check("broken", lambda: (_ for _ in ()).throw(RuntimeError("down")))
         code, body = self._get("/readiness")
         assert code == 503
         assert body["status"] == "not_ready"

@@ -14,16 +14,17 @@ Key concepts demonstrated:
 - Environment-aware settings (dev/staging/production)
 """
 
-import os
 import logging
-from typing import Dict, Any, Optional
+import os
 from enum import Enum
 from pathlib import Path
+from typing import Any, Dict, Optional
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file if it exists
 # This allows for local development configuration without hardcoding secrets
-env_path = Path(__file__).parent.parent.parent / '.env'
+env_path = Path(__file__).parent.parent.parent / ".env"
 if env_path.exists():
     load_dotenv(env_path, override=False)
 
@@ -56,9 +57,7 @@ class KafkaConfig:
             environment: Override environment detection (dev/staging/production)
         """
         # Environment detection
-        self.environment = Environment(
-            environment or os.getenv("STREAM_SENTINEL_ENV", "development")
-        )
+        self.environment = Environment(environment or os.getenv("STREAM_SENTINEL_ENV", "development"))
 
         # Core connection settings
         self.bootstrap_servers = self._get_bootstrap_servers()
@@ -67,17 +66,13 @@ class KafkaConfig:
         # Setup logging
         self.logger = self._setup_logging()
 
-        self.logger.info(
-            f"Kafka configuration initialized for {self.environment.value}"
-        )
+        self.logger.info(f"Kafka configuration initialized for {self.environment.value}")
 
     def _get_bootstrap_servers(self) -> str:
         """Get Kafka bootstrap servers based on environment."""
         servers_map = {
             Environment.DEVELOPMENT: "localhost:9092",
-            Environment.STAGING: os.getenv(
-                "KAFKA_STAGING_SERVERS", "kafka-staging:9092"
-            ),
+            Environment.STAGING: os.getenv("KAFKA_STAGING_SERVERS", "kafka-staging:9092"),
             Environment.PRODUCTION: os.getenv(
                 "KAFKA_PROD_SERVERS",
                 "kafka-prod-1:9092,kafka-prod-2:9092,kafka-prod-3:9092",
@@ -98,12 +93,8 @@ class KafkaConfig:
 
         registry_map = {
             Environment.DEVELOPMENT: "http://localhost:8081",
-            Environment.STAGING: os.getenv(
-                "SCHEMA_REGISTRY_STAGING", "http://schema-registry-staging:8081"
-            ),
-            Environment.PRODUCTION: os.getenv(
-                "SCHEMA_REGISTRY_PROD", "http://schema-registry-prod:8081"
-            ),
+            Environment.STAGING: os.getenv("SCHEMA_REGISTRY_STAGING", "http://schema-registry-staging:8081"),
+            Environment.PRODUCTION: os.getenv("SCHEMA_REGISTRY_PROD", "http://schema-registry-prod:8081"),
         }
         return registry_map[self.environment]
 
@@ -113,9 +104,7 @@ class KafkaConfig:
 
         if not logger.handlers:  # Avoid duplicate handlers
             handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             handler.setFormatter(formatter)
             logger.addHandler(handler)
 
@@ -179,14 +168,10 @@ class KafkaConfig:
                 }
             )
 
-        self.logger.debug(
-            f"Generated {producer_type} producer config for {self.environment.value}"
-        )
+        self.logger.debug(f"Generated {producer_type} producer config for {self.environment.value}")
         return config
 
-    def get_consumer_config(
-        self, consumer_group: str, consumer_type: str = "default"
-    ) -> Dict[str, Any]:
+    def get_consumer_config(self, consumer_group: str, consumer_type: str = "default") -> Dict[str, Any]:
         """
         Get optimized consumer configuration for confluent-kafka.
 
@@ -238,9 +223,7 @@ class KafkaConfig:
                 }
             )
 
-        self.logger.debug(
-            f"Generated {consumer_type} consumer config for group '{consumer_group}'"
-        )
+        self.logger.debug(f"Generated {consumer_type} consumer config for group '{consumer_group}'")
         return config
 
     def get_topic_config(self, topic_type: str) -> Dict[str, Any]:
@@ -263,70 +246,46 @@ class KafkaConfig:
         topic_configs = {
             "transactions": {
                 "num_partitions": 12,  # High parallelism for transaction processing
-                "replication_factor": (
-                    3 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "replication_factor": (3 if self.environment == Environment.PRODUCTION else 1),
                 "retention_ms": 604800000,  # 7 days retention
                 "segment_ms": 86400000,  # Daily segments (24 hours)
-                "min_insync_replicas": (
-                    2 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "min_insync_replicas": (2 if self.environment == Environment.PRODUCTION else 1),
             },
             "market_data": {
                 "num_partitions": 6,  # Moderate parallelism
-                "replication_factor": (
-                    3 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "replication_factor": (3 if self.environment == Environment.PRODUCTION else 1),
                 "retention_ms": 259200000,  # 3 days retention (less critical for replay)
                 "segment_ms": 3600000,  # Hourly segments
-                "min_insync_replicas": (
-                    2 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "min_insync_replicas": (2 if self.environment == Environment.PRODUCTION else 1),
             },
             "sentiment": {
                 "num_partitions": 3,  # Lower volume data
-                "replication_factor": (
-                    3 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "replication_factor": (3 if self.environment == Environment.PRODUCTION else 1),
                 "retention_ms": 1209600000,  # 14 days retention (useful for analysis)
                 "segment_ms": 86400000,  # Daily segments
-                "min_insync_replicas": (
-                    2 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "min_insync_replicas": (2 if self.environment == Environment.PRODUCTION else 1),
             },
             "alerts": {
                 "num_partitions": 6,  # Moderate parallelism for alert processing
-                "replication_factor": (
-                    3 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "replication_factor": (3 if self.environment == Environment.PRODUCTION else 1),
                 "retention_ms": 2592000000,  # 30 days retention (compliance)
                 "segment_ms": 86400000,  # Daily segments
-                "min_insync_replicas": (
-                    2 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "min_insync_replicas": (2 if self.environment == Environment.PRODUCTION else 1),
                 "cleanup_policy": "compact",  # Keep latest alert per key
             },
             "blocked_transactions": {
                 "num_partitions": 6,  # Match alerts parallelism
-                "replication_factor": (
-                    3 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "replication_factor": (3 if self.environment == Environment.PRODUCTION else 1),
                 "retention_ms": 2592000000,  # 30 days retention (audit/compliance)
                 "segment_ms": 86400000,  # Daily segments
-                "min_insync_replicas": (
-                    2 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "min_insync_replicas": (2 if self.environment == Environment.PRODUCTION else 1),
             },
             "dead_letter_queue": {
                 "num_partitions": 3,  # Lower volume expected
-                "replication_factor": (
-                    3 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "replication_factor": (3 if self.environment == Environment.PRODUCTION else 1),
                 "retention_ms": 2592000000,  # 30 days retention for investigation
                 "segment_ms": 86400000,  # Daily segments
-                "min_insync_replicas": (
-                    2 if self.environment == Environment.PRODUCTION else 1
-                ),
+                "min_insync_replicas": (2 if self.environment == Environment.PRODUCTION else 1),
                 "cleanup_policy": "delete",
             },
         }
@@ -362,9 +321,7 @@ class KafkaConfig:
         """Get configuration for Kafka monitoring and metrics."""
         return {
             "jmx_port": 9101,
-            "metrics_reporters": [
-                "io.confluent.metrics.reporter.ConfluentMetricsReporter"
-            ],
+            "metrics_reporters": ["io.confluent.metrics.reporter.ConfluentMetricsReporter"],
             "confluent_metrics_reporter_bootstrap_servers": self.bootstrap_servers,
             "confluent_metrics_reporter_topic": "_confluent-metrics",
         }
@@ -394,9 +351,7 @@ if __name__ == "__main__":
     market_data_producer_config = config.get_producer_config("market_data")
 
     # Get different consumer configurations
-    fraud_detector_config = config.get_consumer_config(
-        "fraud-detection-group", "fraud_detector"
-    )
+    fraud_detector_config = config.get_consumer_config("fraud-detection-group", "fraud_detector")
     analytics_config = config.get_consumer_config("analytics-group", "analytics")
 
     # Get topic configurations
@@ -419,9 +374,7 @@ if __name__ == "__main__":
         producer.flush()  # Clean shutdown
 
     except ImportError:
-        print(
-            "  Confluent Kafka not installed - install with: pip install confluent-kafka"
-        )
+        print("  Confluent Kafka not installed - install with: pip install confluent-kafka")
     except Exception as e:
         print(f" Kafka connection failed: {e}")
         print("Make sure your Kafka cluster is running (docker-compose up -d)")

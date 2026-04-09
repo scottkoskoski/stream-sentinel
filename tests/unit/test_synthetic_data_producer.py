@@ -11,21 +11,18 @@ transactions with all required features including:
 - Enhanced card features (card4, card6)
 """
 
-import pytest
-import sys
 import os
+import sys
 import time
-from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Any, Dict
+from unittest.mock import Mock, patch
+
+import pytest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from producers.synthetic_transaction_producer import (
-    SyntheticTransactionProducer,
-    Transaction,
-    UserProfile
-)
+from producers.synthetic_transaction_producer import SyntheticTransactionProducer, Transaction, UserProfile
 
 
 class TestSyntheticDataProducer:
@@ -33,9 +30,11 @@ class TestSyntheticDataProducer:
 
     def setup_method(self):
         """Set up test fixtures."""
-        with patch('producers.synthetic_transaction_producer.get_kafka_config') as mock_config, \
-             patch('producers.synthetic_transaction_producer.Producer') as mock_producer, \
-             patch.object(SyntheticTransactionProducer, '_load_analysis_results') as mock_analysis:
+        with (
+            patch("producers.synthetic_transaction_producer.get_kafka_config") as mock_config,
+            patch("producers.synthetic_transaction_producer.Producer") as mock_producer,
+            patch.object(SyntheticTransactionProducer, "_load_analysis_results") as mock_analysis,
+        ):
 
             mock_kafka_config = Mock()
             mock_kafka_config.get_producer_config.return_value = {"bootstrap.servers": "localhost:9092"}
@@ -53,9 +52,7 @@ class TestSyntheticDataProducer:
     def _get_mock_analysis_results(self):
         """Get mock analysis results for testing."""
         return {
-            "schema": {
-                "fraud_rate": 0.027
-            },
+            "schema": {"fraud_rate": 0.027},
             "synthetic_spec": {
                 "transaction_patterns": {
                     "amount_distribution": {
@@ -64,106 +61,112 @@ class TestSyntheticDataProducer:
                         "min_amount": 1.0,
                         "max_amount": 1000.0,
                     },
-                    "product_codes": {"W": 0.7, "C": 0.15, "R": 0.1, "H": 0.03, "S": 0.02},
+                    "product_codes": {
+                        "W": 0.7,
+                        "C": 0.15,
+                        "R": 0.1,
+                        "H": 0.03,
+                        "S": 0.02,
+                    },
                 },
                 "fraud_patterns": {
                     "base_fraud_rate": 0.027,
                     "amount_patterns": {"high_amount_bias": 1.2},
-                }
-            }
+                },
+            },
         }
 
     def test_transaction_has_core_features(self):
         """Test that generated transactions have core IEEE-CIS features."""
         transaction = self.producer._generate_transaction()
 
-        assert hasattr(transaction, 'transaction_id')
+        assert hasattr(transaction, "transaction_id")
         assert transaction.transaction_id is not None
-        assert hasattr(transaction, 'is_fraud')
+        assert hasattr(transaction, "is_fraud")
         assert transaction.is_fraud in (0, 1)
-        assert hasattr(transaction, 'transaction_dt')
+        assert hasattr(transaction, "transaction_dt")
         assert isinstance(transaction.transaction_dt, int)
-        assert hasattr(transaction, 'transaction_amt')
+        assert hasattr(transaction, "transaction_amt")
         assert transaction.transaction_amt > 0
-        assert hasattr(transaction, 'product_cd')
-        assert transaction.product_cd in ('W', 'C', 'R', 'H', 'S')
+        assert hasattr(transaction, "product_cd")
+        assert transaction.product_cd in ("W", "C", "R", "H", "S")
 
     def test_transaction_has_card_features(self):
         """Test that generated transactions have all card features."""
         transaction = self.producer._generate_transaction()
 
-        assert hasattr(transaction, 'card1')
-        assert hasattr(transaction, 'card2')
-        assert hasattr(transaction, 'card3')
-        assert hasattr(transaction, 'card4')
-        assert hasattr(transaction, 'card5')
-        assert hasattr(transaction, 'card6')
+        assert hasattr(transaction, "card1")
+        assert hasattr(transaction, "card2")
+        assert hasattr(transaction, "card3")
+        assert hasattr(transaction, "card4")
+        assert hasattr(transaction, "card5")
+        assert hasattr(transaction, "card6")
 
     def test_transaction_has_address_and_distance_features(self):
         """Test address and distance features exist."""
         transaction = self.producer._generate_transaction()
 
-        assert hasattr(transaction, 'addr1')
-        assert hasattr(transaction, 'addr2')
-        assert hasattr(transaction, 'dist1')
-        assert hasattr(transaction, 'dist2')
+        assert hasattr(transaction, "addr1")
+        assert hasattr(transaction, "addr2")
+        assert hasattr(transaction, "dist1")
+        assert hasattr(transaction, "dist2")
 
     def test_transaction_has_email_features(self):
         """Test email domain features exist."""
         transaction = self.producer._generate_transaction()
 
-        assert hasattr(transaction, 'p_emaildomain')
-        assert hasattr(transaction, 'r_emaildomain')
+        assert hasattr(transaction, "p_emaildomain")
+        assert hasattr(transaction, "r_emaildomain")
 
     def test_transaction_has_counting_features_c1_c14(self):
         """Test that C1-C14 counting features exist on Transaction."""
         transaction = self.producer._generate_transaction()
 
         for i in range(1, 15):
-            attr_name = f'c{i}'
+            attr_name = f"c{i}"
             assert hasattr(transaction, attr_name), f"Missing counting feature {attr_name}"
             value = getattr(transaction, attr_name)
-            assert value is None or isinstance(value, (int, float)), (
-                f"{attr_name} should be numeric or None, got {type(value)}"
-            )
+            assert value is None or isinstance(
+                value, (int, float)
+            ), f"{attr_name} should be numeric or None, got {type(value)}"
 
     def test_transaction_has_time_delta_features_d1_d15(self):
         """Test that D1-D15 time delta features exist on Transaction."""
         transaction = self.producer._generate_transaction()
 
         for i in range(1, 16):
-            attr_name = f'd{i}'
+            attr_name = f"d{i}"
             assert hasattr(transaction, attr_name), f"Missing time delta feature {attr_name}"
             value = getattr(transaction, attr_name)
-            assert value is None or isinstance(value, (int, float)), (
-                f"{attr_name} should be numeric or None, got {type(value)}"
-            )
+            assert value is None or isinstance(
+                value, (int, float)
+            ), f"{attr_name} should be numeric or None, got {type(value)}"
 
     def test_transaction_has_match_features_m1_m9(self):
         """Test that M1-M9 match features exist on Transaction."""
         transaction = self.producer._generate_transaction()
 
         for i in range(1, 10):
-            attr_name = f'm{i}'
+            attr_name = f"m{i}"
             assert hasattr(transaction, attr_name), f"Missing match feature {attr_name}"
             value = getattr(transaction, attr_name)
-            assert value is None or isinstance(value, str), (
-                f"{attr_name} should be str or None, got {type(value)}"
-            )
+            assert value is None or isinstance(value, str), f"{attr_name} should be str or None, got {type(value)}"
             if value is not None:
-                assert value in ('T', 'F', 'NotFound'), (
-                    f"{attr_name} value '{value}' not in expected set"
-                )
+                assert value in (
+                    "T",
+                    "F",
+                    "NotFound",
+                ), f"{attr_name} value '{value}' not in expected set"
 
     def test_transaction_has_metadata_fields(self):
         """Test that metadata fields are populated."""
         transaction = self.producer._generate_transaction()
 
-        assert hasattr(transaction, 'generated_timestamp')
+        assert hasattr(transaction, "generated_timestamp")
         assert transaction.generated_timestamp is not None
-        assert hasattr(transaction, 'user_id')
+        assert hasattr(transaction, "user_id")
         assert transaction.user_id is not None
-        assert hasattr(transaction, 'session_id')
+        assert hasattr(transaction, "session_id")
         assert transaction.session_id is not None
 
     def test_enhanced_card_features_values(self):
@@ -171,23 +174,21 @@ class TestSyntheticDataProducer:
         transaction = self.producer._generate_transaction()
 
         if transaction.card4 is not None:
-            expected_companies = ['visa', 'mastercard', 'american express', 'discover']
-            assert transaction.card4.lower() in expected_companies, (
-                f"card4 '{transaction.card4}' not in expected companies"
-            )
+            expected_companies = ["visa", "mastercard", "american express", "discover"]
+            assert (
+                transaction.card4.lower() in expected_companies
+            ), f"card4 '{transaction.card4}' not in expected companies"
 
         if transaction.card6 is not None:
-            expected_types = ['debit', 'credit', 'debit or credit', 'charge card']
-            assert transaction.card6.lower() in expected_types, (
-                f"card6 '{transaction.card6}' not in expected types"
-            )
+            expected_types = ["debit", "credit", "debit or credit", "charge card"]
+            assert transaction.card6.lower() in expected_types, f"card6 '{transaction.card6}' not in expected types"
 
     def test_counting_features_are_nonnegative(self):
         """Test that non-None counting features have non-negative values."""
         transaction = self.producer._generate_transaction()
 
         for i in range(1, 15):
-            value = getattr(transaction, f'c{i}')
+            value = getattr(transaction, f"c{i}")
             if value is not None:
                 assert value >= 0, f"c{i} should be non-negative, got {value}"
 
@@ -196,7 +197,7 @@ class TestSyntheticDataProducer:
         transaction = self.producer._generate_transaction()
 
         for i in range(1, 16):
-            value = getattr(transaction, f'd{i}')
+            value = getattr(transaction, f"d{i}")
             if value is not None:
                 assert value >= 0, f"d{i} should be non-negative, got {value}"
 
@@ -268,9 +269,7 @@ class TestSyntheticDataProducer:
         """Test that all generated amounts are positive."""
         for _ in range(50):
             txn = self.producer._generate_transaction()
-            assert txn.transaction_amt > 0, (
-                f"Transaction amount should be positive, got {txn.transaction_amt}"
-            )
+            assert txn.transaction_amt > 0, f"Transaction amount should be positive, got {txn.transaction_amt}"
 
     def test_user_profile_updates_after_transaction(self):
         """Test that user profiles are updated after transactions."""
@@ -296,6 +295,4 @@ class TestSyntheticDataProducer:
 
         missing_rate = none_count / total
         # IEEE-CIS data has high sparsity for distance features
-        assert missing_rate > 0.3, (
-            f"Distance features should be sparse, missing rate: {missing_rate:.1%}"
-        )
+        assert missing_rate > 0.3, f"Distance features should be sparse, missing rate: {missing_rate:.1%}"

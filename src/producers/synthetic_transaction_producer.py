@@ -21,20 +21,21 @@ Architecture Concepts Demonstrated:
 - Configurable load testing infrastructure
 """
 
+import argparse
 import json
+import logging
+import multiprocessing
+import random
+import threading
 import time
 import uuid
-import random
-import argparse
-import threading
-import multiprocessing
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass, asdict
 from concurrent.futures import ThreadPoolExecutor
-import numpy as np
-import logging
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 
 # Prefer ujson for faster serialization (3-5x over stdlib json on typical payloads)
 try:
@@ -42,13 +43,14 @@ try:
 except ImportError:
     _json = json
 
-from confluent_kafka import Producer
-from confluent_kafka.admin import AdminClient, NewTopic
+import importlib.util
+import os
 
 # Import our configuration system
 import sys
-import os
-import importlib.util
+
+from confluent_kafka import Producer
+from confluent_kafka.admin import AdminClient, NewTopic
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from kafka.config import get_kafka_config
@@ -64,6 +66,7 @@ _spec.loader.exec_module(gen_config)
 # Schema Registry integration (optional -- system works without it)
 try:
     from kafka.schema_utils import get_schema_helper, serialize_message
+
     SCHEMA_UTILS_AVAILABLE = True
 except ImportError:
     SCHEMA_UTILS_AVAILABLE = False
@@ -95,7 +98,7 @@ class Transaction:
     dist2: Optional[float]
     p_emaildomain: Optional[str]
     r_emaildomain: Optional[str]
-    
+
     # Counting features C1-C14 (entity relationship counts)
     c1: Optional[float] = None  # Cards associated with this address
     c2: Optional[float] = None  # Addresses associated with this card
@@ -106,12 +109,12 @@ class Transaction:
     c7: Optional[float] = None  # Transactions from this device today
     c8: Optional[float] = None  # Unique email domains for this card
     c9: Optional[float] = None  # Transactions with this card today
-    c10: Optional[float] = None # Unique addresses for this card
-    c11: Optional[float] = None # Transactions from this IP today
-    c12: Optional[float] = None # Unique cards for this user
-    c13: Optional[float] = None # Transactions with this product code today
-    c14: Optional[float] = None # Days since first transaction with this card
-    
+    c10: Optional[float] = None  # Unique addresses for this card
+    c11: Optional[float] = None  # Transactions from this IP today
+    c12: Optional[float] = None  # Unique cards for this user
+    c13: Optional[float] = None  # Transactions with this product code today
+    c14: Optional[float] = None  # Days since first transaction with this card
+
     # Time delta features D1-D15 (temporal relationships)
     d1: Optional[float] = None  # Days since account creation
     d2: Optional[float] = None  # Days since last transaction
@@ -122,23 +125,23 @@ class Transaction:
     d7: Optional[float] = None  # Hours since last transaction with this email
     d8: Optional[float] = None  # Days since first transaction with this merchant
     d9: Optional[float] = None  # Days since last transaction with this amount range
-    d10: Optional[float] = None # Hours since last login from this device
-    d11: Optional[float] = None # Days since address was first seen
-    d12: Optional[float] = None # Hours since last failed transaction
-    d13: Optional[float] = None # Days since profile was last updated
-    d14: Optional[float] = None # Hours since last successful transaction
-    d15: Optional[float] = None # Days since last password change
-    
+    d10: Optional[float] = None  # Hours since last login from this device
+    d11: Optional[float] = None  # Days since address was first seen
+    d12: Optional[float] = None  # Hours since last failed transaction
+    d13: Optional[float] = None  # Days since profile was last updated
+    d14: Optional[float] = None  # Hours since last successful transaction
+    d15: Optional[float] = None  # Days since last password change
+
     # Match features M1-M9 (identity verification flags)
-    m1: Optional[str] = None    # Name on card matches billing address name
-    m2: Optional[str] = None    # Email domain matches card issuer domain
-    m3: Optional[str] = None    # Phone area code matches billing address area code
-    m4: Optional[str] = None    # Device timezone matches billing address timezone
-    m5: Optional[str] = None    # Previous transaction patterns match current behavior
-    m6: Optional[str] = None    # IP geolocation matches billing address
-    m7: Optional[str] = None    # Card usage pattern matches historical behavior
-    m8: Optional[str] = None    # Email domain matches merchant domain
-    m9: Optional[str] = None    # Transaction time matches user's typical pattern
+    m1: Optional[str] = None  # Name on card matches billing address name
+    m2: Optional[str] = None  # Email domain matches card issuer domain
+    m3: Optional[str] = None  # Phone area code matches billing address area code
+    m4: Optional[str] = None  # Device timezone matches billing address timezone
+    m5: Optional[str] = None  # Previous transaction patterns match current behavior
+    m6: Optional[str] = None  # IP geolocation matches billing address
+    m7: Optional[str] = None  # Card usage pattern matches historical behavior
+    m8: Optional[str] = None  # Email domain matches merchant domain
+    m9: Optional[str] = None  # Transaction time matches user's typical pattern
 
     # V-features (Vesta engineered features from IEEE-CIS dataset)
     # V1-V11: Card/address match flags
@@ -298,35 +301,35 @@ class Transaction:
     v305: Optional[float] = None
 
     # Identity features (device/browser/OS)
-    id_11: Optional[float] = None   # Screen DPI
-    id_12: Optional[str] = None     # Found/NotFound
-    id_13: Optional[float] = None   # Browser version
-    id_15: Optional[str] = None     # Found/New/Unknown
-    id_16: Optional[str] = None     # Found/NotFound
-    id_17: Optional[float] = None   # Device identifier hash
-    id_19: Optional[float] = None   # ISP identifier
-    id_20: Optional[float] = None   # ISP region
-    id_23: Optional[str] = None     # Proxy type
-    id_27: Optional[str] = None     # Found/NotFound
-    id_28: Optional[str] = None     # Found/New
-    id_29: Optional[str] = None     # Found/NotFound
-    id_30: Optional[str] = None     # OS string
-    id_31: Optional[str] = None     # Browser string
-    id_33: Optional[str] = None     # Screen resolution
-    id_34: Optional[str] = None     # Match status
-    id_35: Optional[str] = None     # T/F flag
-    id_36: Optional[str] = None     # T/F flag
-    id_37: Optional[str] = None     # T/F flag
-    id_38: Optional[str] = None     # T/F flag
+    id_11: Optional[float] = None  # Screen DPI
+    id_12: Optional[str] = None  # Found/NotFound
+    id_13: Optional[float] = None  # Browser version
+    id_15: Optional[str] = None  # Found/New/Unknown
+    id_16: Optional[str] = None  # Found/NotFound
+    id_17: Optional[float] = None  # Device identifier hash
+    id_19: Optional[float] = None  # ISP identifier
+    id_20: Optional[float] = None  # ISP region
+    id_23: Optional[str] = None  # Proxy type
+    id_27: Optional[str] = None  # Found/NotFound
+    id_28: Optional[str] = None  # Found/New
+    id_29: Optional[str] = None  # Found/NotFound
+    id_30: Optional[str] = None  # OS string
+    id_31: Optional[str] = None  # Browser string
+    id_33: Optional[str] = None  # Screen resolution
+    id_34: Optional[str] = None  # Match status
+    id_35: Optional[str] = None  # T/F flag
+    id_36: Optional[str] = None  # T/F flag
+    id_37: Optional[str] = None  # T/F flag
+    id_38: Optional[str] = None  # T/F flag
 
     # Device features
-    device_type: Optional[str] = None    # desktop/mobile/unknown
-    device_info: Optional[str] = None    # OS/browser info string
+    device_type: Optional[str] = None  # desktop/mobile/unknown
+    device_info: Optional[str] = None  # OS/browser info string
 
     # Derived amount features
-    transaction_amt_log: Optional[float] = None       # log1p(amount)
-    transaction_amt_decimal: Optional[float] = None   # amount - int(amount)
-    transaction_amt_bin: Optional[int] = None          # Binned amount category 0-4
+    transaction_amt_log: Optional[float] = None  # log1p(amount)
+    transaction_amt_decimal: Optional[float] = None  # amount - int(amount)
+    transaction_amt_bin: Optional[int] = None  # Binned amount category 0-4
 
     # Additional metadata for stream processing (required fields must not have defaults after optional fields)
     generated_timestamp: Optional[str] = None
@@ -458,29 +461,28 @@ class SyntheticTransactionProducer:
         self.start_time = time.time()
         self.user_profiles: Dict[str, UserProfile] = {}
         self.running = False
-        
+
         # Enhanced feature tracking for C/D/M features
         self.entity_tracking = {
             # For counting features (C1-C14)
-            "card_addresses": {},      # card -> set of addresses
-            "address_cards": {},       # address -> set of cards  
+            "card_addresses": {},  # card -> set of addresses
+            "address_cards": {},  # address -> set of cards
             "email_transactions": {},  # email -> list of transaction times
-            "user_merchants": {},      # user -> set of merchants used
-            "card_emails": {},         # card -> set of email domains
-            "email_addresses": {},     # email -> set of addresses
-            "device_transactions": {}, # device -> list of transaction times
-            "card_firstseen": {},      # card -> first seen timestamp
-            "user_cards": {},          # user -> set of cards used
-            
-            # For time delta features (D1-D15)  
-            "user_created": {},        # user -> creation timestamp
-            "user_lasttxn": {},        # user -> last transaction timestamp
-            "card_firstuse": {},       # card -> first use timestamp
-            "device_lasttxn": {},      # device -> last transaction timestamp
-            "user_lastfraud": {},      # user -> last fraud report timestamp
-            "email_lasttxn": {},       # email -> last transaction timestamp
-            "merchant_firstuse": {},   # merchant -> first use timestamp
-            "address_firstseen": {},   # address -> first seen timestamp
+            "user_merchants": {},  # user -> set of merchants used
+            "card_emails": {},  # card -> set of email domains
+            "email_addresses": {},  # email -> set of addresses
+            "device_transactions": {},  # device -> list of transaction times
+            "card_firstseen": {},  # card -> first seen timestamp
+            "user_cards": {},  # user -> set of cards used
+            # For time delta features (D1-D15)
+            "user_created": {},  # user -> creation timestamp
+            "user_lasttxn": {},  # user -> last transaction timestamp
+            "card_firstuse": {},  # card -> first use timestamp
+            "device_lasttxn": {},  # device -> last transaction timestamp
+            "user_lastfraud": {},  # user -> last fraud report timestamp
+            "email_lasttxn": {},  # email -> last transaction timestamp
+            "merchant_firstuse": {},  # merchant -> first use timestamp
+            "address_firstseen": {},  # address -> first seen timestamp
         }
 
         # Pre-compute weighted choice lists to avoid rebuilding each call
@@ -514,19 +516,13 @@ class SyntheticTransactionProducer:
             try:
                 self._schema_helper = get_schema_helper()
                 if self._schema_helper.is_available:
-                    self.logger.info(
-                        "Schema Registry available -- producing Avro-validated messages"
-                    )
+                    self.logger.info("Schema Registry available -- producing Avro-validated messages")
                 else:
-                    self.logger.info(
-                        "Schema Registry not reachable -- producing plain JSON messages"
-                    )
+                    self.logger.info("Schema Registry not reachable -- producing plain JSON messages")
             except Exception as e:
                 self.logger.warning(f"Schema helper init failed: {e}")
         else:
-            self.logger.info(
-                "schema_utils not importable -- producing plain JSON messages"
-            )
+            self.logger.info("schema_utils not importable -- producing plain JSON messages")
 
         self.logger.info("Synthetic Transaction Producer initialized")
 
@@ -536,9 +532,7 @@ class SyntheticTransactionProducer:
 
         if not logger.handlers:
             handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             handler.setFormatter(formatter)
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
@@ -556,9 +550,7 @@ class SyntheticTransactionProducer:
             # Extract key parameters for easy access
             results = data["analysis_results"]
             self.fraud_rate = results["schema"]["fraud_rate"]
-            self.transaction_patterns = results["synthetic_spec"][
-                "transaction_patterns"
-            ]
+            self.transaction_patterns = results["synthetic_spec"]["transaction_patterns"]
             self.fraud_patterns = results["synthetic_spec"]["fraud_patterns"]
 
             return results
@@ -635,13 +627,8 @@ class SyntheticTransactionProducer:
         """Generate realistic transaction amount."""
         if is_fraud:
             # Fraud transactions tend to be slightly higher on average
-            bias_multiplier = self.fraud_patterns.get("amount_patterns", {}).get(
-                "high_amount_bias", 1.2
-            )
-            mean_log = (
-                self.transaction_patterns["amount_distribution"]["mean_log"]
-                * bias_multiplier
-            )
+            bias_multiplier = self.fraud_patterns.get("amount_patterns", {}).get("high_amount_bias", 1.2)
+            mean_log = self.transaction_patterns["amount_distribution"]["mean_log"] * bias_multiplier
         else:
             mean_log = self.transaction_patterns["amount_distribution"]["mean_log"]
 
@@ -700,9 +687,7 @@ class SyntheticTransactionProducer:
 
         return card1, card2, card3, card4, card5, card6
 
-    def _generate_address_features(
-        self, user: UserProfile
-    ) -> Tuple[Optional[float], Optional[float]]:
+    def _generate_address_features(self, user: UserProfile) -> Tuple[Optional[float], Optional[float]]:
         """Generate address-related features."""
         base_addr = user.get_typical_location()
 
@@ -756,9 +741,15 @@ class SyntheticTransactionProducer:
             return None
         return value
 
-    def _generate_counting_features(self, user: UserProfile, card1: int, addr1: float,
-                                    p_email: Optional[str], product_cd: str,
-                                    current_time: float) -> Dict[str, Optional[float]]:
+    def _generate_counting_features(
+        self,
+        user: UserProfile,
+        card1: int,
+        addr1: float,
+        p_email: Optional[str],
+        product_cd: str,
+        current_time: float,
+    ) -> Dict[str, Optional[float]]:
         """Generate C1-C14 counting features from entity tracking state.
 
         Every C-feature is derived from actual entity relationship dictionaries
@@ -872,10 +863,15 @@ class SyntheticTransactionProducer:
 
         return features
 
-    def _generate_time_delta_features(self, user: UserProfile, card1: int,
-                                      p_email: Optional[str], product_cd: str,
-                                      addr1: float,
-                                      current_time: float) -> Dict[str, Optional[float]]:
+    def _generate_time_delta_features(
+        self,
+        user: UserProfile,
+        card1: int,
+        p_email: Optional[str],
+        product_cd: str,
+        addr1: float,
+        current_time: float,
+    ) -> Dict[str, Optional[float]]:
         """Generate D1-D15 time delta features from entity tracking state.
 
         Every D-feature is computed from actual temporal relationships stored
@@ -918,9 +914,7 @@ class SyntheticTransactionProducer:
         dev_last[device_id] = current_time
 
         # --- D5: Days since last fraud report on this account ---
-        last_fraud = self.entity_tracking["user_lastfraud"].get(
-            user.user_id, current_time - 30 * 86400
-        )
+        last_fraud = self.entity_tracking["user_lastfraud"].get(user.user_id, current_time - 30 * 86400)
         d5_val = (current_time - last_fraud) / 86400.0
         features["d5"] = self._apply_null(float(max(0, d5_val)), "d5", null_rates)
 
@@ -952,7 +946,7 @@ class SyntheticTransactionProducer:
         # Track by amount bucket: <10, 10-100, 100-500, 500+
         if "amount_range_lasttxn" not in self.entity_tracking:
             self.entity_tracking["amount_range_lasttxn"] = {}
-        amt = getattr(user, 'total_spent', 0) / max(1, user.total_transactions) if user.total_transactions > 0 else 50.0
+        amt = getattr(user, "total_spent", 0) / max(1, user.total_transactions) if user.total_transactions > 0 else 50.0
         if amt < 10:
             bucket = "small"
         elif amt < 100:
@@ -962,7 +956,9 @@ class SyntheticTransactionProducer:
         else:
             bucket = "xlarge"
         bucket_key = f"{user.user_id}_{bucket}"
-        amt_last = self.entity_tracking["amount_range_lasttxn"].get(bucket_key, current_time - random.uniform(1, 7) * 86400)
+        amt_last = self.entity_tracking["amount_range_lasttxn"].get(
+            bucket_key, current_time - random.uniform(1, 7) * 86400
+        )
         d9_val = (current_time - amt_last) / 86400.0
         features["d9"] = self._apply_null(float(max(0, d9_val)), "d9", null_rates)
         self.entity_tracking["amount_range_lasttxn"][bucket_key] = current_time
@@ -985,7 +981,8 @@ class SyntheticTransactionProducer:
         if "user_lastfailed" not in self.entity_tracking:
             self.entity_tracking["user_lastfailed"] = {}
         last_failed = self.entity_tracking["user_lastfailed"].get(
-            user.user_id, current_time - random.uniform(12, 168) * 3600  # 12h to 7 days ago
+            user.user_id,
+            current_time - random.uniform(12, 168) * 3600,  # 12h to 7 days ago
         )
         d12_val = (current_time - last_failed) / 3600.0
         features["d12"] = self._apply_null(float(max(0, d12_val)), "d12", null_rates)
@@ -1008,17 +1005,23 @@ class SyntheticTransactionProducer:
         if "user_password_changed" not in self.entity_tracking:
             self.entity_tracking["user_password_changed"] = {}
         pw_changed = self.entity_tracking["user_password_changed"].get(
-            user.user_id, user_created.get(user.user_id, current_time) - random.uniform(0, 90) * 86400
+            user.user_id,
+            user_created.get(user.user_id, current_time) - random.uniform(0, 90) * 86400,
         )
         d15_val = (current_time - pw_changed) / 86400.0
         features["d15"] = self._apply_null(float(max(0, d15_val)), "d15", null_rates)
 
         return features
 
-    def _generate_match_features(self, card4: Optional[str], p_email: Optional[str],
-                                  addr1: float, user: UserProfile,
-                                  current_time: float,
-                                  is_fraud: bool = False) -> Dict[str, Optional[str]]:
+    def _generate_match_features(
+        self,
+        card4: Optional[str],
+        p_email: Optional[str],
+        addr1: float,
+        user: UserProfile,
+        current_time: float,
+        is_fraud: bool = False,
+    ) -> Dict[str, Optional[str]]:
         """Generate M1-M9 match features using config-driven weight tables.
 
         Legitimate and fraudulent transactions use separate weight tables
@@ -1069,9 +1072,7 @@ class SyntheticTransactionProducer:
 
         return features
 
-    def _determine_if_fraud(
-        self, user: UserProfile, amount: float, current_time: int
-    ) -> Tuple[bool, Optional[str]]:
+    def _determine_if_fraud(self, user: UserProfile, amount: float, current_time: int) -> Tuple[bool, Optional[str]]:
         """Determine if transaction should be fraudulent.
 
         Uses config-driven temporal multipliers (peak 2-4 AM), amount
@@ -1127,8 +1128,7 @@ class SyntheticTransactionProducer:
     # V-feature generation
     # ------------------------------------------------------------------
 
-    def _generate_v_features(self, is_fraud: bool, addr1: float,
-                             card1: int) -> Dict[str, Optional[float]]:
+    def _generate_v_features(self, is_fraud: bool, addr1: float, card1: int) -> Dict[str, Optional[float]]:
         """Generate all V-features (Vesta engineered features).
 
         V-features are grouped by type and generated with distributions
@@ -1276,9 +1276,7 @@ class SyntheticTransactionProducer:
             if random.random() < params["null_rate"]:
                 features[feat_name] = None
             else:
-                features[feat_name] = round(
-                    random.uniform(params["min"], params["max"]), 2
-                )
+                features[feat_name] = round(random.uniform(params["min"], params["max"]), 2)
 
         # Categorical id-features
         for feat_name, params in gen_config.ID_CATEGORICAL_FEATURES.items():
@@ -1300,9 +1298,7 @@ class SyntheticTransactionProducer:
                 weights = gen_config.ID_TF_FRAUD_WEIGHTS
             else:
                 weights = gen_config.ID_TF_LEGITIMATE_WEIGHTS
-            features[feat_name] = random.choices(
-                ["T", "F", "unknown"], weights=list(weights)
-            )[0]
+            features[feat_name] = random.choices(["T", "F", "unknown"], weights=list(weights))[0]
 
         return features
 
@@ -1324,18 +1320,14 @@ class SyntheticTransactionProducer:
             dist = gen_config.DEVICE_TYPE_FRAUD_DISTRIBUTION
         else:
             dist = gen_config.DEVICE_TYPE_DISTRIBUTION
-        device_type = random.choices(
-            list(dist.keys()), weights=list(dist.values())
-        )[0]
+        device_type = random.choices(list(dist.keys()), weights=list(dist.values()))[0]
 
         # DeviceInfo (~60% null)
         if random.random() < gen_config.DEVICE_INFO_NULL_RATE:
             device_info = None
         else:
             dist = gen_config.DEVICE_INFO_DISTRIBUTION
-            device_info = random.choices(
-                list(dist.keys()), weights=list(dist.values())
-            )[0]
+            device_info = random.choices(list(dist.keys()), weights=list(dist.values()))[0]
 
         return device_type, device_info
 
@@ -1367,9 +1359,11 @@ class SyntheticTransactionProducer:
 
         return amt_log, amt_decimal, amt_bin
 
-    def _apply_fraud_correlations(self, counting_features: Dict[str, Optional[float]],
-                                    time_delta_features: Dict[str, Optional[float]],
-                                    ) -> None:
+    def _apply_fraud_correlations(
+        self,
+        counting_features: Dict[str, Optional[float]],
+        time_delta_features: Dict[str, Optional[float]],
+    ) -> None:
         """Apply correlated anomaly injection to C and D features for fraud.
 
         When a transaction is fraudulent, its anomalies should be correlated:
@@ -1420,9 +1414,7 @@ class SyntheticTransactionProducer:
 
         # Generate transaction timing
         current_time = int(time.time())
-        transaction_dt = self.transaction_counter * 100 + random.randint(
-            0, 99
-        )  # Realistic time progression
+        transaction_dt = self.transaction_counter * 100 + random.randint(0, 99)  # Realistic time progression
 
         # Generate amount (before fraud determination to use in fraud logic)
         amount = self._generate_transaction_amount()
@@ -1449,9 +1441,15 @@ class SyntheticTransactionProducer:
 
         # Generate enhanced features
         current_time_float = float(current_time)
-        counting_features = self._generate_counting_features(user, card1, addr1, p_email, product_cd, current_time_float)
-        time_delta_features = self._generate_time_delta_features(user, card1, p_email, product_cd, addr1 or 0.0, current_time_float)
-        match_features = self._generate_match_features(card4, p_email, addr1, user, current_time_float, is_fraud=is_fraud)
+        counting_features = self._generate_counting_features(
+            user, card1, addr1, p_email, product_cd, current_time_float
+        )
+        time_delta_features = self._generate_time_delta_features(
+            user, card1, p_email, product_cd, addr1 or 0.0, current_time_float
+        )
+        match_features = self._generate_match_features(
+            card4, p_email, addr1, user, current_time_float, is_fraud=is_fraud
+        )
 
         # Generate new feature groups (V-features, id-features, device, derived amounts)
         v_features = self._generate_v_features(is_fraud, addr1 or 0.0, card1)
@@ -1483,7 +1481,6 @@ class SyntheticTransactionProducer:
             dist2=dist2,
             p_emaildomain=p_email,
             r_emaildomain=r_email,
-
             # Add enhanced features
             c1=counting_features.get("c1"),
             c2=counting_features.get("c2"),
@@ -1499,7 +1496,6 @@ class SyntheticTransactionProducer:
             c12=counting_features.get("c12"),
             c13=counting_features.get("c13"),
             c14=counting_features.get("c14"),
-
             d1=time_delta_features.get("d1"),
             d2=time_delta_features.get("d2"),
             d3=time_delta_features.get("d3"),
@@ -1515,7 +1511,6 @@ class SyntheticTransactionProducer:
             d13=time_delta_features.get("d13"),
             d14=time_delta_features.get("d14"),
             d15=time_delta_features.get("d15"),
-
             m1=match_features.get("m1"),
             m2=match_features.get("m2"),
             m3=match_features.get("m3"),
@@ -1525,34 +1520,159 @@ class SyntheticTransactionProducer:
             m7=match_features.get("m7"),
             m8=match_features.get("m8"),
             m9=match_features.get("m9"),
-
             # V-features
-            **{k: v_features.get(k) for k in [
-                "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11",
-                "v12", "v13", "v14",
-                "v19", "v20", "v23", "v24", "v25", "v26", "v29", "v30",
-                "v33", "v34", "v35", "v36", "v37", "v38",
-                "v41", "v44", "v45", "v46", "v47", "v48", "v49",
-                "v51", "v52", "v53", "v54", "v55", "v56",
-                "v61", "v62", "v65", "v66", "v67", "v69", "v70",
-                "v75", "v76", "v77", "v78", "v79", "v82", "v83",
-                "v86", "v87", "v88", "v90", "v91", "v94",
-                "v107", "v108", "v109", "v110", "v111", "v112", "v113", "v114",
-                "v115", "v116", "v117", "v118", "v119", "v120", "v121", "v122",
-                "v123", "v124", "v125",
-                "v170", "v171", "v176",
-                "v186", "v187", "v188", "v189", "v190", "v191", "v192", "v193",
-                "v194", "v195", "v196", "v197", "v198", "v199", "v200", "v201",
-                "v203", "v204",
-                "v211", "v212", "v213", "v217", "v218", "v219",
-                "v228", "v229", "v230", "v232", "v233",
-                "v240", "v241", "v242", "v243", "v244", "v245", "v246", "v247",
-                "v248", "v249", "v250", "v251", "v252", "v253", "v254",
-                "v257", "v258", "v259", "v260", "v261", "v262", "v263", "v264", "v265",
-                "v273", "v274", "v275", "v282", "v283", "v290", "v292",
-                "v302", "v303", "v304", "v305",
-            ]},
-
+            **{
+                k: v_features.get(k)
+                for k in [
+                    "v1",
+                    "v2",
+                    "v3",
+                    "v4",
+                    "v5",
+                    "v6",
+                    "v7",
+                    "v8",
+                    "v9",
+                    "v10",
+                    "v11",
+                    "v12",
+                    "v13",
+                    "v14",
+                    "v19",
+                    "v20",
+                    "v23",
+                    "v24",
+                    "v25",
+                    "v26",
+                    "v29",
+                    "v30",
+                    "v33",
+                    "v34",
+                    "v35",
+                    "v36",
+                    "v37",
+                    "v38",
+                    "v41",
+                    "v44",
+                    "v45",
+                    "v46",
+                    "v47",
+                    "v48",
+                    "v49",
+                    "v51",
+                    "v52",
+                    "v53",
+                    "v54",
+                    "v55",
+                    "v56",
+                    "v61",
+                    "v62",
+                    "v65",
+                    "v66",
+                    "v67",
+                    "v69",
+                    "v70",
+                    "v75",
+                    "v76",
+                    "v77",
+                    "v78",
+                    "v79",
+                    "v82",
+                    "v83",
+                    "v86",
+                    "v87",
+                    "v88",
+                    "v90",
+                    "v91",
+                    "v94",
+                    "v107",
+                    "v108",
+                    "v109",
+                    "v110",
+                    "v111",
+                    "v112",
+                    "v113",
+                    "v114",
+                    "v115",
+                    "v116",
+                    "v117",
+                    "v118",
+                    "v119",
+                    "v120",
+                    "v121",
+                    "v122",
+                    "v123",
+                    "v124",
+                    "v125",
+                    "v170",
+                    "v171",
+                    "v176",
+                    "v186",
+                    "v187",
+                    "v188",
+                    "v189",
+                    "v190",
+                    "v191",
+                    "v192",
+                    "v193",
+                    "v194",
+                    "v195",
+                    "v196",
+                    "v197",
+                    "v198",
+                    "v199",
+                    "v200",
+                    "v201",
+                    "v203",
+                    "v204",
+                    "v211",
+                    "v212",
+                    "v213",
+                    "v217",
+                    "v218",
+                    "v219",
+                    "v228",
+                    "v229",
+                    "v230",
+                    "v232",
+                    "v233",
+                    "v240",
+                    "v241",
+                    "v242",
+                    "v243",
+                    "v244",
+                    "v245",
+                    "v246",
+                    "v247",
+                    "v248",
+                    "v249",
+                    "v250",
+                    "v251",
+                    "v252",
+                    "v253",
+                    "v254",
+                    "v257",
+                    "v258",
+                    "v259",
+                    "v260",
+                    "v261",
+                    "v262",
+                    "v263",
+                    "v264",
+                    "v265",
+                    "v273",
+                    "v274",
+                    "v275",
+                    "v282",
+                    "v283",
+                    "v290",
+                    "v292",
+                    "v302",
+                    "v303",
+                    "v304",
+                    "v305",
+                ]
+            },
             # Identity features
             id_11=id_features.get("id_11"),
             id_12=id_features.get("id_12"),
@@ -1574,16 +1694,13 @@ class SyntheticTransactionProducer:
             id_36=id_features.get("id_36"),
             id_37=id_features.get("id_37"),
             id_38=id_features.get("id_38"),
-
             # Device features
             device_type=device_type,
             device_info=device_info,
-
             # Derived amount features
             transaction_amt_log=amt_log,
             transaction_amt_decimal=amt_decimal,
             transaction_amt_bin=amt_bin,
-
             generated_timestamp=datetime.now().isoformat(),
             user_id=user.user_id,
             session_id=f"sess_{user.total_transactions // 5}",  # New session every 5 transactions
@@ -1623,11 +1740,7 @@ class SyntheticTransactionProducer:
                 self.stats["legitimate_produced"] += 1
 
             # Use Avro serialization when Schema Registry is reachable
-            if (
-                self._schema_helper is not None
-                and self._schema_helper.is_available
-                and SCHEMA_UTILS_AVAILABLE
-            ):
+            if self._schema_helper is not None and self._schema_helper.is_available and SCHEMA_UTILS_AVAILABLE:
                 message_value = serialize_message(
                     self._schema_helper,
                     "transaction",
@@ -1667,9 +1780,7 @@ class SyntheticTransactionProducer:
             total_transactions: If > 0, stop after this many (overrides duration)
             id_prefix: Prefix for transaction IDs (for multi-worker uniqueness)
         """
-        self.logger.info(
-            f"Starting production: {target_tps} TPS for {duration_seconds}s with {user_count} users"
-        )
+        self.logger.info(f"Starting production: {target_tps} TPS for {duration_seconds}s with {user_count} users")
         self._id_prefix = id_prefix
 
         if not self.setup_topic():
@@ -1744,9 +1855,7 @@ class SyntheticTransactionProducer:
         elapsed = time.time() - self.start_time
         if elapsed > 0:
             actual_tps = self.stats["total_produced"] / elapsed
-            fraud_rate = (
-                self.stats["fraud_produced"] / max(1, self.stats["total_produced"])
-            ) * 100
+            fraud_rate = (self.stats["fraud_produced"] / max(1, self.stats["total_produced"])) * 100
 
             self.logger.info(
                 f"Stats - Total: {self.stats['total_produced']}, "
@@ -1763,13 +1872,9 @@ class SyntheticTransactionProducer:
         self.logger.info("=" * 60)
         self.logger.info("FINAL PRODUCTION STATISTICS")
         self.logger.info("=" * 60)
-        self.logger.info(
-            f"Total Transactions Produced: {self.stats['total_produced']:,}"
-        )
+        self.logger.info(f"Total Transactions Produced: {self.stats['total_produced']:,}")
         self.logger.info(f"Fraudulent Transactions: {self.stats['fraud_produced']:,}")
-        self.logger.info(
-            f"Legitimate Transactions: {self.stats['legitimate_produced']:,}"
-        )
+        self.logger.info(f"Legitimate Transactions: {self.stats['legitimate_produced']:,}")
         self.logger.info(
             f"Fraud Rate: {(self.stats['fraud_produced'] / max(1, self.stats['total_produced'])) * 100:.3f}%"
         )
@@ -1825,23 +1930,33 @@ def main():
     """Main function for running the synthetic producer."""
     parser = argparse.ArgumentParser(description="Synthetic Transaction Producer")
     parser.add_argument(
-        "--workers", type=int, default=1,
+        "--workers",
+        type=int,
+        default=1,
         help="Number of parallel producer processes (default: 1)",
     )
     parser.add_argument(
-        "--tps", type=int, default=gen_config.DEFAULT_TARGET_TPS,
+        "--tps",
+        type=int,
+        default=gen_config.DEFAULT_TARGET_TPS,
         help=f"Target transactions per second (default: {gen_config.DEFAULT_TARGET_TPS})",
     )
     parser.add_argument(
-        "--duration", type=int, default=gen_config.DEFAULT_DURATION_SECONDS,
+        "--duration",
+        type=int,
+        default=gen_config.DEFAULT_DURATION_SECONDS,
         help=f"Duration in seconds (default: {gen_config.DEFAULT_DURATION_SECONDS})",
     )
     parser.add_argument(
-        "--users", type=int, default=gen_config.DEFAULT_USER_COUNT,
+        "--users",
+        type=int,
+        default=gen_config.DEFAULT_USER_COUNT,
         help=f"Number of simulated users (default: {gen_config.DEFAULT_USER_COUNT})",
     )
     parser.add_argument(
-        "--total", type=int, default=0,
+        "--total",
+        type=int,
+        default=0,
         help="Total transactions to produce (0 = use duration, default: 0)",
     )
     args = parser.parse_args()
@@ -1885,7 +2000,14 @@ def main():
         for wid in range(num_workers):
             p = multiprocessing.Process(
                 target=_worker_process,
-                args=(wid, per_worker_tps, args.duration, args.users, per_worker_txns, result_dict),
+                args=(
+                    wid,
+                    per_worker_tps,
+                    args.duration,
+                    args.users,
+                    per_worker_txns,
+                    result_dict,
+                ),
             )
             p.start()
             processes.append(p)
@@ -1911,9 +2033,7 @@ def main():
         logger.info(f"Total Transactions: {agg_total:,}")
         logger.info(f"Fraudulent: {agg_fraud:,}")
         logger.info(f"Legitimate: {agg_legit:,}")
-        logger.info(
-            f"Fraud Rate: {agg_fraud / max(1, agg_total) * 100:.3f}%"
-        )
+        logger.info(f"Fraud Rate: {agg_fraud / max(1, agg_total) * 100:.3f}%")
         logger.info(f"Aggregate TPS: {agg_tps:.0f}")
         logger.info(f"Errors: {agg_errors}")
         logger.info(f"Wall-clock Duration: {total_elapsed:.1f}s")

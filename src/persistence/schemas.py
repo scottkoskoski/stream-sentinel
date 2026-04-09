@@ -5,10 +5,10 @@ PostgreSQL: Critical transactional data requiring ACID compliance
 ClickHouse: High-volume analytics data optimized for time-series queries
 """
 
-from enum import Enum
-from typing import Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+from typing import Any, Dict
 
 
 class AlertSeverity(Enum):
@@ -35,7 +35,7 @@ class UserStatus(Enum):
 @dataclass
 class PostgreSQLSchemas:
     """PostgreSQL table schemas for critical transactional data."""
-    
+
     FRAUD_ALERTS = """
     CREATE TABLE IF NOT EXISTS fraud_alerts (
         alert_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -63,7 +63,7 @@ class PostgreSQLSchemas:
     CREATE INDEX IF NOT EXISTS idx_fraud_alerts_created_at ON fraud_alerts (created_at);
     CREATE INDEX IF NOT EXISTS idx_fraud_alerts_transaction_id ON fraud_alerts (transaction_id);
     """
-    
+
     USER_ACCOUNTS = """
     CREATE TABLE IF NOT EXISTS user_accounts (
         user_id VARCHAR(255) PRIMARY KEY,
@@ -83,7 +83,7 @@ class PostgreSQLSchemas:
     CREATE INDEX IF NOT EXISTS idx_user_accounts_last_alert ON user_accounts (last_alert_at);
     CREATE INDEX IF NOT EXISTS idx_user_accounts_blocked_at ON user_accounts (blocked_at);
     """
-    
+
     MODEL_PERFORMANCE = """
     CREATE TABLE IF NOT EXISTS model_performance (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -102,7 +102,7 @@ class PostgreSQLSchemas:
     CREATE INDEX IF NOT EXISTS idx_model_performance_version_date ON model_performance (model_version, evaluation_date);
     CREATE INDEX IF NOT EXISTS idx_model_performance_metric ON model_performance (metric_name, evaluation_date);
     """
-    
+
     SYSTEM_AUDIT_LOG = """
     CREATE TABLE IF NOT EXISTS system_audit_log (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -124,7 +124,7 @@ class PostgreSQLSchemas:
     CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON system_audit_log (event_type);
     CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON system_audit_log (actor_id);
     """
-    
+
     # Trigger for updating timestamps
     UPDATE_TIMESTAMP_TRIGGER = """
     CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -135,14 +135,14 @@ class PostgreSQLSchemas:
     END;
     $$ language 'plpgsql';
     """
-    
+
     FRAUD_ALERTS_TRIGGER = """
     CREATE OR REPLACE TRIGGER update_fraud_alerts_updated_at
         BEFORE UPDATE ON fraud_alerts
         FOR EACH ROW
         EXECUTE FUNCTION update_updated_at_column();
     """
-    
+
     USER_ACCOUNTS_TRIGGER = """
     CREATE OR REPLACE TRIGGER update_user_accounts_updated_at
         BEFORE UPDATE ON user_accounts
@@ -154,7 +154,7 @@ class PostgreSQLSchemas:
 @dataclass
 class ClickHouseSchemas:
     """ClickHouse table schemas for high-volume analytics data."""
-    
+
     TRANSACTION_RECORDS = """
     CREATE TABLE IF NOT EXISTS transaction_records (
         transaction_id String,
@@ -178,7 +178,7 @@ class ClickHouseSchemas:
     TTL timestamp + INTERVAL 2 YEAR
     SETTINGS index_granularity = 8192;
     """
-    
+
     FRAUD_FEATURES = """
     CREATE TABLE IF NOT EXISTS fraud_features (
         transaction_id String,
@@ -195,7 +195,7 @@ class ClickHouseSchemas:
     TTL timestamp + INTERVAL 1 YEAR
     SETTINGS index_granularity = 8192;
     """
-    
+
     DETECTION_RESULTS = """
     CREATE TABLE IF NOT EXISTS detection_results (
         transaction_id String,
@@ -217,7 +217,7 @@ class ClickHouseSchemas:
     TTL timestamp + INTERVAL 2 YEAR
     SETTINGS index_granularity = 8192;
     """
-    
+
     PERFORMANCE_METRICS = """
     CREATE TABLE IF NOT EXISTS performance_metrics (
         timestamp DateTime64(3),
@@ -238,34 +238,34 @@ class ClickHouseSchemas:
 # Schema validation and migration utilities
 class SchemaManager:
     """Manages database schema creation and migrations."""
-    
+
     @staticmethod
     def get_postgresql_schemas() -> Dict[str, str]:
         """Get all PostgreSQL table creation statements."""
         return {
-            'fraud_alerts': PostgreSQLSchemas.FRAUD_ALERTS,
-            'fraud_alerts_indexes': PostgreSQLSchemas.FRAUD_ALERTS_INDEXES,
-            'user_accounts': PostgreSQLSchemas.USER_ACCOUNTS,
-            'user_accounts_indexes': PostgreSQLSchemas.USER_ACCOUNTS_INDEXES,
-            'model_performance': PostgreSQLSchemas.MODEL_PERFORMANCE,
-            'model_performance_indexes': PostgreSQLSchemas.MODEL_PERFORMANCE_INDEXES,
-            'system_audit_log': PostgreSQLSchemas.SYSTEM_AUDIT_LOG,
-            'system_audit_log_indexes': PostgreSQLSchemas.SYSTEM_AUDIT_LOG_INDEXES,
-            'update_timestamp_function': PostgreSQLSchemas.UPDATE_TIMESTAMP_TRIGGER,
-            'fraud_alerts_trigger': PostgreSQLSchemas.FRAUD_ALERTS_TRIGGER,
-            'user_accounts_trigger': PostgreSQLSchemas.USER_ACCOUNTS_TRIGGER
+            "fraud_alerts": PostgreSQLSchemas.FRAUD_ALERTS,
+            "fraud_alerts_indexes": PostgreSQLSchemas.FRAUD_ALERTS_INDEXES,
+            "user_accounts": PostgreSQLSchemas.USER_ACCOUNTS,
+            "user_accounts_indexes": PostgreSQLSchemas.USER_ACCOUNTS_INDEXES,
+            "model_performance": PostgreSQLSchemas.MODEL_PERFORMANCE,
+            "model_performance_indexes": PostgreSQLSchemas.MODEL_PERFORMANCE_INDEXES,
+            "system_audit_log": PostgreSQLSchemas.SYSTEM_AUDIT_LOG,
+            "system_audit_log_indexes": PostgreSQLSchemas.SYSTEM_AUDIT_LOG_INDEXES,
+            "update_timestamp_function": PostgreSQLSchemas.UPDATE_TIMESTAMP_TRIGGER,
+            "fraud_alerts_trigger": PostgreSQLSchemas.FRAUD_ALERTS_TRIGGER,
+            "user_accounts_trigger": PostgreSQLSchemas.USER_ACCOUNTS_TRIGGER,
         }
-    
+
     @staticmethod
     def get_clickhouse_schemas() -> Dict[str, str]:
         """Get all ClickHouse table creation statements."""
         return {
-            'transaction_records': ClickHouseSchemas.TRANSACTION_RECORDS,
-            'fraud_features': ClickHouseSchemas.FRAUD_FEATURES,
-            'detection_results': ClickHouseSchemas.DETECTION_RESULTS,
-            'performance_metrics': ClickHouseSchemas.PERFORMANCE_METRICS
+            "transaction_records": ClickHouseSchemas.TRANSACTION_RECORDS,
+            "fraud_features": ClickHouseSchemas.FRAUD_FEATURES,
+            "detection_results": ClickHouseSchemas.DETECTION_RESULTS,
+            "performance_metrics": ClickHouseSchemas.PERFORMANCE_METRICS,
         }
-    
+
     @staticmethod
     def validate_schema_compatibility() -> bool:
         """Validate that schemas are compatible with application logic."""
@@ -277,6 +277,7 @@ class SchemaManager:
 @dataclass
 class FraudAlert:
     """Data model for fraud alert records."""
+
     transaction_id: str
     user_id: str
     severity: AlertSeverity
@@ -287,24 +288,25 @@ class FraudAlert:
     status: AlertStatus = AlertStatus.PENDING
     alert_id: str = None
     created_at: datetime = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for database insertion."""
         return {
-            'transaction_id': self.transaction_id,
-            'user_id': self.user_id,
-            'severity': self.severity.value,
-            'status': self.status.value,
-            'fraud_score': self.fraud_score,
-            'ml_prediction': self.ml_prediction,
-            'business_rules_triggered': self.business_rules_triggered,
-            'explanation': self.explanation
+            "transaction_id": self.transaction_id,
+            "user_id": self.user_id,
+            "severity": self.severity.value,
+            "status": self.status.value,
+            "fraud_score": self.fraud_score,
+            "ml_prediction": self.ml_prediction,
+            "business_rules_triggered": self.business_rules_triggered,
+            "explanation": self.explanation,
         }
 
 
 @dataclass
 class TransactionRecord:
     """Data model for transaction records."""
+
     transaction_id: str
     user_id: str
     timestamp: datetime
@@ -317,20 +319,20 @@ class TransactionRecord:
     is_fraud: bool
     fraud_score: float
     processing_time_ms: int
-    
+
     def to_clickhouse_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for ClickHouse insertion."""
         return {
-            'transaction_id': self.transaction_id,
-            'user_id': self.user_id,
-            'timestamp': self.timestamp,
-            'amount': self.amount,
-            'merchant_category': self.merchant_category,
-            'payment_method': self.payment_method,
-            'device_info': self.device_info,
-            'location_country': self.location_country,
-            'location_state': self.location_state,
-            'is_fraud': 1 if self.is_fraud else 0,
-            'fraud_score': self.fraud_score,
-            'processing_time_ms': self.processing_time_ms
+            "transaction_id": self.transaction_id,
+            "user_id": self.user_id,
+            "timestamp": self.timestamp,
+            "amount": self.amount,
+            "merchant_category": self.merchant_category,
+            "payment_method": self.payment_method,
+            "device_info": self.device_info,
+            "location_country": self.location_country,
+            "location_state": self.location_state,
+            "is_fraud": 1 if self.is_fraud else 0,
+            "fraud_score": self.fraud_score,
+            "processing_time_ms": self.processing_time_ms,
         }

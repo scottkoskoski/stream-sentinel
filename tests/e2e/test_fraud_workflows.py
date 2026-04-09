@@ -16,22 +16,21 @@ These tests use the ACTUAL methods available in FraudDetector and AlertProcessor
 - AlertProcessor.process_alert(alert) -> None
 """
 
-import pytest
 import json
+import sys
 import time
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
-from unittest.mock import Mock, patch, MagicMock
-from confluent_kafka import Producer, Consumer
-
-import sys
 from pathlib import Path
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+from confluent_kafka import Consumer, Producer
+
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
+from consumers.alert_processor import AlertContext, AlertProcessor, AlertResponse, AlertSeverity, ResponseAction
 from consumers.fraud_detector import FraudDetector, FraudFeatures, UserProfile
-from consumers.alert_processor import (
-    AlertProcessor, AlertSeverity, ResponseAction, AlertContext, AlertResponse
-)
 
 
 def make_mock_fraud_detector(ml_score=None):
@@ -42,18 +41,16 @@ def make_mock_fraud_detector(ml_score=None):
 
     mock_config = Mock()
     mock_config.get_consumer_config.return_value = {
-        'group.id': 'e2e-test-group',
-        'bootstrap.servers': 'localhost:9092',
-        'auto.offset.reset': 'earliest'
+        "group.id": "e2e-test-group",
+        "bootstrap.servers": "localhost:9092",
+        "auto.offset.reset": "earliest",
     }
-    mock_config.get_producer_config.return_value = {
-        'bootstrap.servers': 'localhost:9092'
-    }
+    mock_config.get_producer_config.return_value = {"bootstrap.servers": "localhost:9092"}
 
-    with patch('consumers.fraud_detector.get_kafka_config', return_value=mock_config):
-        with patch('consumers.fraud_detector.redis.Redis', return_value=mock_redis):
-            with patch('consumers.fraud_detector.Consumer'):
-                with patch('consumers.fraud_detector.Producer'):
+    with patch("consumers.fraud_detector.get_kafka_config", return_value=mock_config):
+        with patch("consumers.fraud_detector.redis.Redis", return_value=mock_redis):
+            with patch("consumers.fraud_detector.Consumer"):
+                with patch("consumers.fraud_detector.Producer"):
                     detector = FraudDetector(use_ml_model=False)
                     detector.redis_client = mock_redis
     return detector
@@ -68,18 +65,16 @@ def make_mock_alert_processor():
 
     mock_config = Mock()
     mock_config.get_consumer_config.return_value = {
-        'group.id': 'e2e-alert-test-group',
-        'bootstrap.servers': 'localhost:9092',
-        'auto.offset.reset': 'earliest'
+        "group.id": "e2e-alert-test-group",
+        "bootstrap.servers": "localhost:9092",
+        "auto.offset.reset": "earliest",
     }
-    mock_config.get_producer_config.return_value = {
-        'bootstrap.servers': 'localhost:9092'
-    }
+    mock_config.get_producer_config.return_value = {"bootstrap.servers": "localhost:9092"}
 
-    with patch('consumers.alert_processor.get_kafka_config', return_value=mock_config):
-        with patch('consumers.alert_processor.redis.Redis', return_value=mock_redis):
-            with patch('consumers.alert_processor.Consumer'):
-                with patch('consumers.alert_processor.Producer'):
+    with patch("consumers.alert_processor.get_kafka_config", return_value=mock_config):
+        with patch("consumers.alert_processor.redis.Redis", return_value=mock_redis):
+            with patch("consumers.alert_processor.Consumer"):
+                with patch("consumers.alert_processor.Producer"):
                     processor = AlertProcessor()
                     processor.redis_client = mock_redis
     return processor
@@ -93,7 +88,7 @@ def create_ieee_transaction(**kwargs):
         "transaction_amt": 250.50,
         "generated_timestamp": "2023-08-15T14:30:00",
         "product_cd": "W",
-        "card6": "credit"
+        "card6": "credit",
     }
     defaults.update(kwargs)
     return defaults
@@ -115,7 +110,7 @@ class TestFraudDetectionWorkflows:
             transaction_id="normal_txn_001",
             card1="normal_user_001",
             transaction_amt=45.75,
-            generated_timestamp="2023-08-15T14:30:00"
+            generated_timestamp="2023-08-15T14:30:00",
         )
 
         # User with established history -- avg $100 transactions
@@ -127,7 +122,7 @@ class TestFraudDetectionWorkflows:
             daily_transaction_count=2,
             daily_amount=200.0,
             last_transaction_time="2023-08-15T12:00:00",
-            last_transaction_amount=80.0
+            last_transaction_amount=80.0,
         )
 
         # Step 1: Extract features using the REAL extract_features method
@@ -149,9 +144,7 @@ class TestFraudDetectionWorkflows:
 
         # Step 3: Verify fraud score is low for normal transaction
         # Rule-based score: no risk factors triggered
-        assert features.fraud_score < 0.3, (
-            f"Normal transaction should have low fraud score, got {features.fraud_score}"
-        )
+        assert features.fraud_score < 0.3, f"Normal transaction should have low fraud score, got {features.fraud_score}"
         assert features.is_fraud_alert is False
 
     def test_high_risk_fraud_transaction_workflow(self):
@@ -166,7 +159,7 @@ class TestFraudDetectionWorkflows:
             transaction_id="fraud_txn_001",
             card1="fraud_user_001",
             transaction_amt=5000.0,  # High amount
-            generated_timestamp="2023-08-15T03:15:00"  # 3 AM - unusual hour
+            generated_timestamp="2023-08-15T03:15:00",  # 3 AM - unusual hour
         )
 
         # User with low average spend who suddenly has big transaction
@@ -178,7 +171,7 @@ class TestFraudDetectionWorkflows:
             daily_transaction_count=30,  # High daily count
             daily_amount=600.0,
             last_transaction_time="2023-08-15T03:14:00",  # 1 minute ago -- rapid
-            last_transaction_amount=50.0
+            last_transaction_amount=50.0,
         )
 
         features = detector.extract_features(fraud_txn, user_profile)
@@ -194,9 +187,7 @@ class TestFraudDetectionWorkflows:
         # Rule-based: amount_ratio>5 (+0.3), high_amount (+0.2),
         #   unusual_hour (+0.15), rapid (+0.25), daily_count>25 (+0.1)
         # = 1.0 (clamped)
-        assert features.fraud_score >= 0.7, (
-            f"High-risk transaction should score >= 0.7, got {features.fraud_score}"
-        )
+        assert features.fraud_score >= 0.7, f"High-risk transaction should score >= 0.7, got {features.fraud_score}"
         assert features.is_fraud_alert is True
 
     def test_new_user_first_transaction_workflow(self):
@@ -207,7 +198,7 @@ class TestFraudDetectionWorkflows:
             transaction_id="new_user_first_txn",
             card1="brand_new_user",
             transaction_amt=125.00,
-            generated_timestamp="2023-08-15T10:00:00"
+            generated_timestamp="2023-08-15T10:00:00",
         )
 
         # Brand new user: all zeros
@@ -242,14 +233,14 @@ class TestFraudDetectionWorkflows:
             daily_transaction_count=55,  # Very high daily count > 50
             daily_amount=2750.0,
             last_transaction_time="2023-08-15T14:29:30",  # 30 seconds ago
-            last_transaction_amount=50.0
+            last_transaction_amount=50.0,
         )
 
         rapid_txn = create_ieee_transaction(
             transaction_id="velocity_txn",
             card1="velocity_user",
             transaction_amt=50.0,
-            generated_timestamp="2023-08-15T14:30:00"
+            generated_timestamp="2023-08-15T14:30:00",
         )
 
         features = detector.extract_features(rapid_txn, user_profile)
@@ -288,11 +279,8 @@ class TestFraudDetectionWorkflows:
             "alert_id": "alert_high_001",
             "user_id": "user_high",
             "fraud_score": 0.75,
-            "risk_factors": {
-                "is_rapid_transaction": True,
-                "velocity_score": 20
-            },
-            "transaction_details": {"amount": 1500}
+            "risk_factors": {"is_rapid_transaction": True, "velocity_score": 20},
+            "transaction_details": {"amount": 1500},
         }
         assert processor.classify_alert_severity(high_alert) == AlertSeverity.HIGH
 
@@ -304,7 +292,7 @@ class TestFraudDetectionWorkflows:
             "risk_factors": {
                 "is_high_amount": True,
                 "is_unusual_hour": True,
-            }
+            },
         }
         assert processor.classify_alert_severity(medium_alert) == AlertSeverity.MEDIUM
 
@@ -314,13 +302,17 @@ class TestFraudDetectionWorkflows:
 
         # Test IMMEDIATE_BLOCK for critical fraud
         critical_context = AlertContext(
-            original_alert={"alert_id": "crit_001", "user_id": "blocked_user", "fraud_score": 0.95},
+            original_alert={
+                "alert_id": "crit_001",
+                "user_id": "blocked_user",
+                "fraud_score": 0.95,
+            },
             user_risk_profile={"risk_level": "high"},
             historical_alerts=[],
             transaction_pattern={"recent_alerts_24h": 0, "is_repeat_offender": False},
             recommended_action=ResponseAction.IMMEDIATE_BLOCK,
             confidence_score=0.95,
-            enrichment_timestamp=datetime.now().isoformat()
+            enrichment_timestamp=datetime.now().isoformat(),
         )
 
         response = processor.execute_response_action(critical_context, AlertSeverity.CRITICAL)
@@ -338,13 +330,17 @@ class TestFraudDetectionWorkflows:
         processor = make_mock_alert_processor()
 
         low_context = AlertContext(
-            original_alert={"alert_id": "low_001", "user_id": "low_user", "fraud_score": 0.1},
+            original_alert={
+                "alert_id": "low_001",
+                "user_id": "low_user",
+                "fraud_score": 0.1,
+            },
             user_risk_profile={"risk_level": "low"},
             historical_alerts=[],
             transaction_pattern={"recent_alerts_24h": 0, "is_repeat_offender": False},
             recommended_action=ResponseAction.LOG_ONLY,
             confidence_score=0.5,
-            enrichment_timestamp=datetime.now().isoformat()
+            enrichment_timestamp=datetime.now().isoformat(),
         )
 
         response = processor.execute_response_action(low_context, AlertSeverity.LOW)
@@ -364,7 +360,7 @@ class TestFraudDetectionWorkflows:
             transaction_id="pipeline_txn_001",
             card1="pipeline_user",
             transaction_amt=3000.0,
-            generated_timestamp="2023-08-15T02:00:00"
+            generated_timestamp="2023-08-15T02:00:00",
         )
 
         user_profile = UserProfile(
@@ -375,7 +371,7 @@ class TestFraudDetectionWorkflows:
             daily_transaction_count=1,
             daily_amount=20.0,
             last_transaction_time="2023-08-15T01:58:00",  # 2 minutes ago
-            last_transaction_amount=20.0
+            last_transaction_amount=20.0,
         )
 
         # Step 1: Extract features
@@ -401,16 +397,17 @@ class TestFraudDetectionWorkflows:
             "transaction_details": {
                 "amount": features.amount,
                 "hour": features.transaction_hour,
-            }
+            },
         }
 
         # Step 3: Classify severity
         severity = processor.classify_alert_severity(alert_data)
 
         # With fraud_score >= 0.7 and is_rapid_transaction, should be HIGH or CRITICAL
-        assert severity in (AlertSeverity.HIGH, AlertSeverity.CRITICAL), (
-            f"Expected HIGH or CRITICAL severity, got {severity}"
-        )
+        assert severity in (
+            AlertSeverity.HIGH,
+            AlertSeverity.CRITICAL,
+        ), f"Expected HIGH or CRITICAL severity, got {severity}"
 
     def test_user_profile_lifecycle(self):
         """Test user profile creation, update, and retrieval through FraudDetector."""
@@ -444,10 +441,10 @@ class TestFraudDetectionWorkflows:
         # Save and verify Redis call
         detector.save_user_profile(new_profile)
         detector.redis_client.hset.assert_called()
-        saved_data = detector.redis_client.hset.call_args[1]['mapping']
-        assert saved_data['user_id'] == "lifecycle_user"
-        assert saved_data['total_transactions'] == 2
-        assert saved_data['total_amount'] == 300.0
+        saved_data = detector.redis_client.hset.call_args[1]["mapping"]
+        assert saved_data["user_id"] == "lifecycle_user"
+        assert saved_data["total_transactions"] == 2
+        assert saved_data["total_amount"] == 300.0
 
     def test_bulk_transaction_scoring_consistency(self):
         """Test that scoring is consistent across a batch of transactions."""
@@ -461,14 +458,14 @@ class TestFraudDetectionWorkflows:
             daily_transaction_count=3,
             daily_amount=150.0,
             last_transaction_time="2023-08-15T12:00:00",
-            last_transaction_amount=50.0
+            last_transaction_amount=50.0,
         )
 
         # Score the same transaction 10 times -- should be deterministic
         txn = create_ieee_transaction(
             card1="bulk_user",
             transaction_amt=50.0,
-            generated_timestamp="2023-08-15T14:00:00"
+            generated_timestamp="2023-08-15T14:00:00",
         )
 
         scores = []
@@ -477,9 +474,7 @@ class TestFraudDetectionWorkflows:
             scores.append(features.fraud_score)
 
         # All scores should be identical (deterministic scoring)
-        assert all(s == scores[0] for s in scores), (
-            f"Scores should be deterministic, got varying scores: {set(scores)}"
-        )
+        assert all(s == scores[0] for s in scores), f"Scores should be deterministic, got varying scores: {set(scores)}"
 
     def test_daily_stats_reset_on_new_day(self):
         """Test that UserProfile daily stats reset when day changes."""
@@ -487,7 +482,7 @@ class TestFraudDetectionWorkflows:
             user_id="reset_user",
             daily_transaction_count=10,
             daily_amount=500.0,
-            last_reset_date="2023-08-14"
+            last_reset_date="2023-08-14",
         )
 
         # Transaction on a new day
@@ -510,7 +505,7 @@ class TestFraudDetectionWorkflows:
             "user_id": "e2e_user",
             "fraud_score": 0.5,
             "transaction_details": {"amount": 500.0},
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         # Should not raise

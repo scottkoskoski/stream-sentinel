@@ -108,16 +108,16 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    parser = argparse.ArgumentParser(
-        description="Export pickled XGBoost model to native JSON format for C++ inference"
-    )
+    parser = argparse.ArgumentParser(description="Export pickled XGBoost model to native JSON format for C++ inference")
     parser.add_argument(
-        "--input", "-i",
+        "--input",
+        "-i",
         default="models/ieee_fraud_model_production.pkl",
         help="Path to the pickled model (.pkl)",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         default=None,
         help="Output path for native JSON model (default: <input>_cpp.json)",
     )

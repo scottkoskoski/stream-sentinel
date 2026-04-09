@@ -118,9 +118,7 @@ class DeadLetterQueuePublisher:
                 "failed_message": value_str,
                 "error_type": type(error).__name__,
                 "error_message": str(error),
-                "error_traceback": traceback.format_exception(
-                    type(error), error, error.__traceback__
-                ),
+                "error_traceback": traceback.format_exception(type(error), error, error.__traceback__),
                 "failure_reason": failure_reason,
                 "source_topic": source_topic,
                 "consumer_group": consumer_group,

@@ -14,12 +14,13 @@ Design goals:
 """
 
 import json
-import time
 import logging
-import numpy as np
+import time
 from collections import deque
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +72,7 @@ class LiveDriftMonitor:
         self._kafka_available = False
 
         # Internal score buffer
-        self._score_buffer: deque = deque(
-            maxlen=self.config["check_interval"] * 2
-        )
+        self._score_buffer: deque = deque(maxlen=self.config["check_interval"] * 2)
         self._scores_since_last_check = 0
         self._total_scores = 0
         self._last_psi: Optional[float] = None
@@ -114,8 +113,10 @@ class LiveDriftMonitor:
             self._redis.ping()
             self._redis_available = True
         except Exception as exc:
-            logger.warning("LiveDriftMonitor: Redis unavailable (%s); "
-                           "baseline will be computed in-memory only.", exc)
+            logger.warning(
+                "LiveDriftMonitor: Redis unavailable (%s); " "baseline will be computed in-memory only.",
+                exc,
+            )
             self._redis = None
             self._redis_available = False
 
@@ -123,15 +124,19 @@ class LiveDriftMonitor:
         try:
             from confluent_kafka import Producer
 
-            self._producer = Producer({
-                "bootstrap.servers": self.config["kafka_servers"],
-                "linger.ms": 10,
-                "compression.type": "lz4",
-            })
+            self._producer = Producer(
+                {
+                    "bootstrap.servers": self.config["kafka_servers"],
+                    "linger.ms": 10,
+                    "compression.type": "lz4",
+                }
+            )
             self._kafka_available = True
         except Exception as exc:
-            logger.warning("LiveDriftMonitor: Kafka producer unavailable (%s); "
-                           "drift alerts will be logged only.", exc)
+            logger.warning(
+                "LiveDriftMonitor: Kafka producer unavailable (%s); " "drift alerts will be logged only.",
+                exc,
+            )
             self._producer = None
             self._kafka_available = False
 
@@ -196,7 +201,9 @@ class LiveDriftMonitor:
 
         logger.info(
             "Drift check: PSI=%.4f (threshold=%.4f, scores=%d)",
-            psi, self.config["psi_threshold"], len(current_scores),
+            psi,
+            self.config["psi_threshold"],
+            len(current_scores),
         )
 
         # Expose metric for Prometheus scraping (if prometheus_client available)
@@ -220,7 +227,8 @@ class LiveDriftMonitor:
 
         logger.info(
             "Baseline calibrated from %d scores (bins=%d)",
-            len(scores), n_bins,
+            len(scores),
+            n_bins,
         )
 
         # Persist to Redis
@@ -237,8 +245,10 @@ class LiveDriftMonitor:
                 payload = json.loads(data)
                 self._baseline_distribution = np.array(payload["distribution"])
                 self._bin_edges = np.array(payload["bin_edges"])
-                logger.info("Loaded baseline from Redis (%d bins)",
-                            len(self._baseline_distribution))
+                logger.info(
+                    "Loaded baseline from Redis (%d bins)",
+                    len(self._baseline_distribution),
+                )
         except Exception as exc:
             logger.warning("Failed to load baseline from Redis: %s", exc)
 
@@ -308,7 +318,8 @@ class LiveDriftMonitor:
         """Publish drift alert to Kafka and log."""
         logger.warning(
             "DRIFT DETECTED: PSI=%.4f severity=%s",
-            alert["psi_score"], alert["severity"],
+            alert["psi_score"],
+            alert["severity"],
         )
 
         if self._kafka_available and self._producer is not None:
@@ -335,6 +346,7 @@ class LiveDriftMonitor:
         try:
             if LiveDriftMonitor._psi_gauge is None:
                 from prometheus_client import Gauge
+
                 LiveDriftMonitor._psi_gauge = Gauge(
                     "fraud_model_drift_psi",
                     "Population Stability Index for fraud score distribution",

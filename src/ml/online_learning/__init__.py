@@ -26,24 +26,23 @@ Architecture:
 - Production-ready error handling and monitoring
 """
 
+from .ab_test_manager import ABTestManager
 from .config import (
-    OnlineLearningConfig,
-    ModelConfig, 
+    FEATURE_CONFIG,
+    MODEL_REGISTRY_CONFIG,
+    ABTestingConfig,
     DriftDetectionConfig,
     FeedbackConfig,
-    ABTestingConfig,
+    ModelConfig,
+    OnlineLearningConfig,
     get_online_learning_config,
-    MODEL_REGISTRY_CONFIG,
-    FEATURE_CONFIG
 )
-
-from .feedback_processor import FeedbackProcessor
 from .drift_detector import DriftDetector, PerformanceMetrics
-from .live_drift_monitor import LiveDriftMonitor
-from .retraining_trigger import RetrainingTrigger, RetrainingConfig
+from .feedback_processor import FeedbackProcessor
 from .incremental_learner import IncrementalLearner
+from .live_drift_monitor import LiveDriftMonitor
 from .model_registry import ModelRegistry
-from .ab_test_manager import ABTestManager
+from .retraining_trigger import RetrainingConfig, RetrainingTrigger
 
 __version__ = "1.0.0"
 __author__ = "Stream-Sentinel Development Team"
@@ -52,13 +51,12 @@ __all__ = [
     # Configuration
     "OnlineLearningConfig",
     "ModelConfig",
-    "DriftDetectionConfig", 
+    "DriftDetectionConfig",
     "FeedbackConfig",
     "ABTestingConfig",
     "get_online_learning_config",
     "MODEL_REGISTRY_CONFIG",
     "FEATURE_CONFIG",
-    
     # Core components
     "FeedbackProcessor",
     "DriftDetector",
@@ -68,23 +66,22 @@ __all__ = [
     "RetrainingConfig",
     "IncrementalLearner",
     "ModelRegistry",
-    "ABTestManager"
+    "ABTestManager",
 ]
 
 
 # Package-level logging configuration
 import logging
 
+
 def setup_logging(level: str = "INFO") -> None:
     """Setup logging for the online learning package."""
     logging.basicConfig(
         level=getattr(logging, level.upper()),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('online_learning.log')
-        ]
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(), logging.FileHandler("online_learning.log")],
     )
+
 
 # Initialize logging
 setup_logging()

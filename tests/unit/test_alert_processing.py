@@ -2,24 +2,25 @@
 Unit Tests for Alert Processing System
 
 Tests the alert processing pipeline including:
-- Alert severity classification 
+- Alert severity classification
 - Alert context enrichment
 - Response action execution
 - Audit trail management
 - User risk profile updates
 """
 
-import pytest
 import json
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
-from dataclasses import asdict
-from pathlib import Path
-
 import sys
+from dataclasses import asdict
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from consumers.alert_processor import AlertProcessor, AlertSeverity, AlertContext, AlertResponse, ResponseAction
+from consumers.alert_processor import AlertContext, AlertProcessor, AlertResponse, AlertSeverity, ResponseAction
 
 
 class TestAlertProcessing:
@@ -33,12 +34,12 @@ class TestAlertProcessing:
         self.mock_config.logger = Mock()
         self.mock_config.get_consumer_config.return_value = {"group.id": "test-group"}
         self.mock_config.get_producer_config.return_value = {}
-        
+
         # Create alert processor with mocked dependencies
-        with patch('consumers.alert_processor.get_kafka_config', return_value=self.mock_config):
-            with patch('consumers.alert_processor.redis.Redis', return_value=self.mock_redis):
-                with patch('consumers.alert_processor.Consumer'):
-                    with patch('consumers.alert_processor.Producer'):
+        with patch("consumers.alert_processor.get_kafka_config", return_value=self.mock_config):
+            with patch("consumers.alert_processor.redis.Redis", return_value=self.mock_redis):
+                with patch("consumers.alert_processor.Consumer"):
+                    with patch("consumers.alert_processor.Producer"):
                         self.alert_processor = AlertProcessor()
                         self.alert_processor.redis_client = self.mock_redis
 
@@ -50,9 +51,9 @@ class TestAlertProcessing:
             "user_id": "user_123",
             "fraud_score": 0.15,  # Low score
             "transaction_amount": 25.0,
-            "timestamp": "2023-08-15T14:30:00"
+            "timestamp": "2023-08-15T14:30:00",
         }
-        
+
         severity = self.alert_processor.classify_alert_severity(alert)
         assert severity == AlertSeverity.LOW
 
@@ -67,10 +68,10 @@ class TestAlertProcessing:
             "risk_factors": {
                 "is_high_amount": True,
                 "is_unusual_hour": True,  # 2 risk factors trigger medium
-                "velocity_score": 3
-            }
+                "velocity_score": 3,
+            },
         }
-        
+
         severity = self.alert_processor.classify_alert_severity(alert)
         assert severity == AlertSeverity.MEDIUM
 
@@ -84,10 +85,10 @@ class TestAlertProcessing:
             "timestamp": "2023-08-15T14:30:00",
             "risk_factors": {
                 "is_rapid_transaction": True,  # Required for HIGH classification
-                "velocity_score": 20
-            }
+                "velocity_score": 20,
+            },
         }
-        
+
         severity = self.alert_processor.classify_alert_severity(alert)
         assert severity == AlertSeverity.HIGH
 
@@ -98,9 +99,9 @@ class TestAlertProcessing:
             "user_id": "user_999",
             "fraud_score": 0.95,  # Critical score
             "transaction_amount": 5000.0,
-            "timestamp": "2023-08-15T14:30:00"
+            "timestamp": "2023-08-15T14:30:00",
         }
-        
+
         severity = self.alert_processor.classify_alert_severity(alert)
         assert severity == AlertSeverity.CRITICAL
 
@@ -110,25 +111,25 @@ class TestAlertProcessing:
         self.mock_redis.hgetall.return_value = {
             "user_id": "user_123",
             "total_transactions": "50",
-            "suspicious_activity_count": "2"
+            "suspicious_activity_count": "2",
         }
-        
+
         # Mock Redis data for alert history
         self.mock_redis.lrange.return_value = [
             json.dumps({"alert_id": "prev_001", "fraud_score": 0.3}),
-            json.dumps({"alert_id": "prev_002", "fraud_score": 0.2})
+            json.dumps({"alert_id": "prev_002", "fraud_score": 0.2}),
         ]
-        
+
         alert = {
             "alert_id": "test_context_001",
             "user_id": "user_123",
             "fraud_score": 0.6,
             "transaction_amount": 200.0,
-            "timestamp": "2023-08-15T14:30:00"
+            "timestamp": "2023-08-15T14:30:00",
         }
-        
+
         context = self.alert_processor.get_alert_context(alert)
-        
+
         assert isinstance(context, AlertContext)
         assert context.original_alert == alert
         assert "user_id" in context.user_risk_profile
@@ -145,11 +146,11 @@ class TestAlertProcessing:
             transaction_pattern={"normal": True},
             recommended_action=ResponseAction.LOG_ONLY,
             confidence_score=0.8,
-            enrichment_timestamp="2023-08-15T14:30:00"
+            enrichment_timestamp="2023-08-15T14:30:00",
         )
-        
+
         response = self.alert_processor.execute_response_action(alert_context, ResponseAction.LOG_ONLY)
-        
+
         assert isinstance(response, AlertResponse)
         assert response.action == ResponseAction.LOG_ONLY
         assert response.status == "completed"
@@ -157,17 +158,21 @@ class TestAlertProcessing:
     def test_execute_response_action_notify_team(self):
         """Test execution of team notification action."""
         alert_context = AlertContext(
-            original_alert={"alert_id": "test_002", "user_id": "user_456", "fraud_score": 0.6},
+            original_alert={
+                "alert_id": "test_002",
+                "user_id": "user_456",
+                "fraud_score": 0.6,
+            },
             user_risk_profile={"risk_level": "medium"},
             historical_alerts=[],
             transaction_pattern={"suspicious": True},
             recommended_action=ResponseAction.NOTIFY_TEAM,
             confidence_score=0.7,
-            enrichment_timestamp="2023-08-15T14:30:00"
+            enrichment_timestamp="2023-08-15T14:30:00",
         )
-        
+
         response = self.alert_processor.execute_response_action(alert_context, ResponseAction.NOTIFY_TEAM)
-        
+
         assert isinstance(response, AlertResponse)
         assert response.action == ResponseAction.NOTIFY_TEAM
         assert response.status in ["completed", "pending"]
@@ -175,15 +180,19 @@ class TestAlertProcessing:
     def test_execute_response_action_immediate_block(self):
         """Test execution of immediate block action."""
         alert_context = AlertContext(
-            original_alert={"alert_id": "test_003", "user_id": "user_789", "fraud_score": 0.9},
+            original_alert={
+                "alert_id": "test_003",
+                "user_id": "user_789",
+                "fraud_score": 0.9,
+            },
             user_risk_profile={"risk_level": "high"},
             historical_alerts=[],
             transaction_pattern={"fraud_indicators": True},
             recommended_action=ResponseAction.IMMEDIATE_BLOCK,
             confidence_score=0.95,
-            enrichment_timestamp="2023-08-15T14:30:00"
+            enrichment_timestamp="2023-08-15T14:30:00",
         )
-        
+
         response = self.alert_processor.execute_response_action(alert_context, ResponseAction.IMMEDIATE_BLOCK)
 
         assert isinstance(response, AlertResponse)
@@ -202,14 +211,17 @@ class TestAlertProcessing:
             severity=AlertSeverity.HIGH,
             action=ResponseAction.IMMEDIATE_BLOCK,
             response_time_ms=150.0,
-            details={"blocked": True}
+            details={"blocked": True},
         )
-        
+
         user_id = "user_123"
-        
+
+        # Configure hgetall to return empty dict so default profile is used
+        self.mock_redis.hgetall.return_value = {}
+
         # Should not raise exception
         self.alert_processor.update_user_risk_profile(user_id, alert_response)
-        
+
         # Verify Redis operations were called
         assert self.mock_redis.hincrby.called or self.mock_redis.hset.called
 
@@ -223,12 +235,12 @@ class TestAlertProcessing:
             action=ResponseAction.MANUAL_REVIEW,
             response_time_ms=200.0,
             details={"review_assigned": True},
-            assignee="fraud_analyst_1"
+            assignee="fraud_analyst_1",
         )
-        
+
         # Should not raise exception
         self.alert_processor.store_audit_trail(alert_response)
-        
+
         # Verify Redis operations were called for audit storage
         assert self.mock_redis.lpush.called or self.mock_redis.hset.called
 
@@ -241,40 +253,43 @@ class TestAlertProcessing:
             severity=AlertSeverity.LOW,
             action=ResponseAction.LOG_ONLY,
             response_time_ms=50.0,
-            details={"logged": True}
+            details={"logged": True},
         )
-        
+
         # Mock producer
         mock_producer = Mock()
         self.alert_processor.producer = mock_producer
-        
+
         # Should not raise exception
         self.alert_processor.publish_response(alert_response)
-        
+
         # Verify producer was called
         assert mock_producer.produce.called
 
     def test_process_alert_integration(self):
         """Test complete alert processing workflow."""
         # Mock Redis responses for user profile and history
-        self.mock_redis.hgetall.return_value = {"user_id": "user_123", "total_transactions": "10"}
+        self.mock_redis.hgetall.return_value = {
+            "user_id": "user_123",
+            "total_transactions": "10",
+        }
         self.mock_redis.lrange.return_value = []
-        
+
         # Mock producer
         mock_producer = Mock()
         self.alert_processor.producer = mock_producer
-        
+
         alert = {
             "alert_id": "test_integration_001",
             "user_id": "user_123",
             "fraud_score": 0.4,
             "transaction_amount": 100.0,
-            "timestamp": "2023-08-15T14:30:00"
+            "timestamp": "2023-08-15T14:30:00",
         }
-        
+
         # Should not raise exception
         self.alert_processor.process_alert(alert)
-        
+
         # Verify the workflow executed (producer should be called)
         assert mock_producer.produce.called
 
@@ -287,11 +302,11 @@ class TestAlertProcessing:
             severity=AlertSeverity.HIGH,
             action=ResponseAction.AUTO_INVESTIGATE,
             response_time_ms=300.0,
-            details={"investigation_started": True}
+            details={"investigation_started": True},
         )
-        
+
         response_dict = response.to_dict()
-        
+
         assert isinstance(response_dict, dict)
         assert response_dict["alert_id"] == "test_serialization_001"
         assert response_dict["severity"] == "high"  # Enum converted to string
@@ -321,7 +336,7 @@ class TestAlertProcessing:
             "alert_id": "test_invalid_001"
             # Missing fraud_score and other required fields
         }
-        
+
         # Should handle gracefully and return a default severity
         severity = self.alert_processor.classify_alert_severity(invalid_alert)
         assert severity in AlertSeverity
@@ -330,13 +345,13 @@ class TestAlertProcessing:
         """Test exception handling in alert context retrieval."""
         # Mock Redis to raise exception
         self.mock_redis.hgetall.side_effect = Exception("Redis connection error")
-        
+
         alert = {
             "alert_id": "test_exception_001",
             "user_id": "user_123",
-            "fraud_score": 0.5
+            "fraud_score": 0.5,
         }
-        
+
         # Should handle gracefully
         context = self.alert_processor.get_alert_context(alert)
         assert isinstance(context, AlertContext)

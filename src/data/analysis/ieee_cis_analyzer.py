@@ -19,16 +19,17 @@ The output creates a detailed specification for realistic synthetic data generat
 that matches real-world fraud detection scenarios.
 """
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from typing import Dict, List, Tuple, Any, Optional
 import json
 import logging
-from pathlib import Path
-from datetime import datetime, timedelta
 import warnings
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 warnings.filterwarnings("ignore")
 
@@ -98,9 +99,7 @@ class IEEECISAnalyzer:
 
         if not logger.handlers:
             handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             handler.setFormatter(formatter)
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
@@ -126,13 +125,9 @@ class IEEECISAnalyzer:
                 # Read header first to get column names
                 header = pd.read_csv(self.data_path, nrows=0)
                 # Read sample
-                self.transaction_df = pd.read_csv(
-                    self.data_path, nrows=sample_size, dtype={"TransactionID": "int64"}
-                )
+                self.transaction_df = pd.read_csv(self.data_path, nrows=sample_size, dtype={"TransactionID": "int64"})
             else:
-                self.transaction_df = pd.read_csv(
-                    self.data_path, dtype={"TransactionID": "int64"}
-                )
+                self.transaction_df = pd.read_csv(self.data_path, dtype={"TransactionID": "int64"})
 
             self.logger.info(
                 f"Loaded {len(self.transaction_df):,} transactions with {len(self.transaction_df.columns)} features"
@@ -141,9 +136,7 @@ class IEEECISAnalyzer:
             # Load identity dataset if available
             if self.identity_path and self.identity_path.exists():
                 self.logger.info(f"Loading identity data from {self.identity_path}")
-                self.identity_df = pd.read_csv(
-                    self.identity_path, dtype={"TransactionID": "int64"}
-                )
+                self.identity_df = pd.read_csv(self.identity_path, dtype={"TransactionID": "int64"})
                 self.logger.info(
                     f"Loaded {len(self.identity_df):,} identity records with {len(self.identity_df.columns)} features"
                 )
@@ -177,15 +170,9 @@ class IEEECISAnalyzer:
 
         # Print key findings
         self.logger.info(f"Dataset Overview:")
-        self.logger.info(
-            f"  - Total transactions: {schema_info['total_transactions']:,}"
-        )
-        self.logger.info(
-            f"  - Fraud rate: {schema_info['fraud_rate']:.4f} ({schema_info['fraud_rate']*100:.2f}%)"
-        )
-        self.logger.info(
-            f"  - Date range: {schema_info['date_range']['days']:.1f} days"
-        )
+        self.logger.info(f"  - Total transactions: {schema_info['total_transactions']:,}")
+        self.logger.info(f"  - Fraud rate: {schema_info['fraud_rate']:.4f} ({schema_info['fraud_rate']*100:.2f}%)")
+        self.logger.info(f"  - Date range: {schema_info['date_range']['days']:.1f} days")
         self.logger.info(
             f"  - Features with >50% missing: {len([f for f, p in schema_info['missing_patterns'].items() if p > 0.5])}"
         )
@@ -198,9 +185,7 @@ class IEEECISAnalyzer:
         max_dt = self.transaction_df["TransactionDT"].max()
 
         # Convert to approximate dates (TransactionDT is seconds from reference point)
-        reference_date = datetime(
-            2017, 12, 1
-        )  # Approximate reference based on competition
+        reference_date = datetime(2017, 12, 1)  # Approximate reference based on competition
         min_date = reference_date + timedelta(seconds=int(min_dt))
         max_date = reference_date + timedelta(seconds=int(max_dt))
 
@@ -254,18 +239,14 @@ class IEEECISAnalyzer:
                 if missing_pct > 0:
                     missing_percentages[col] = missing_pct
 
-        return dict(
-            sorted(missing_percentages.items(), key=lambda x: x[1], reverse=True)
-        )
+        return dict(sorted(missing_percentages.items(), key=lambda x: x[1], reverse=True))
 
     def _analyze_categorical_features(self) -> Dict[str, Dict[str, Any]]:
         """Analyze categorical features and their value distributions."""
         categorical_info = {}
 
         # Key categorical features to analyze
-        categorical_features = ["ProductCD", "P_emaildomain", "R_emaildomain"] + [
-            f"M{i}" for i in range(1, 10)
-        ]
+        categorical_features = ["ProductCD", "P_emaildomain", "R_emaildomain"] + [f"M{i}" for i in range(1, 10)]
 
         for col in categorical_features:
             if col in self.transaction_df.columns:
@@ -315,12 +296,8 @@ class IEEECISAnalyzer:
 
     def _analyze_fraud_amounts(self) -> Dict[str, Any]:
         """Analyze transaction amount patterns for fraud vs legitimate."""
-        fraud_amounts = self.transaction_df[self.transaction_df["isFraud"] == 1][
-            "TransactionAmt"
-        ]
-        legit_amounts = self.transaction_df[self.transaction_df["isFraud"] == 0][
-            "TransactionAmt"
-        ]
+        fraud_amounts = self.transaction_df[self.transaction_df["isFraud"] == 1]["TransactionAmt"]
+        legit_amounts = self.transaction_df[self.transaction_df["isFraud"] == 0]["TransactionAmt"]
 
         return {
             "fraud_amount_stats": {
@@ -357,9 +334,7 @@ class IEEECISAnalyzer:
             include_lowest=True,
         )
 
-        fraud_by_range = self.transaction_df.groupby("amount_range")["isFraud"].agg(
-            ["count", "sum", "mean"]
-        )
+        fraud_by_range = self.transaction_df.groupby("amount_range")["isFraud"].agg(["count", "sum", "mean"])
 
         return {
             range_name: {
@@ -376,20 +351,12 @@ class IEEECISAnalyzer:
         seconds_per_hour = 3600
         seconds_per_day = 24 * seconds_per_hour
 
-        self.transaction_df["hour_approx"] = (
-            self.transaction_df["TransactionDT"] // seconds_per_hour
-        ) % 24
-        self.transaction_df["day_approx"] = (
-            self.transaction_df["TransactionDT"] // seconds_per_day
-        ) % 7
+        self.transaction_df["hour_approx"] = (self.transaction_df["TransactionDT"] // seconds_per_hour) % 24
+        self.transaction_df["day_approx"] = (self.transaction_df["TransactionDT"] // seconds_per_day) % 7
 
         # Analyze fraud rates by time patterns
-        fraud_by_hour = self.transaction_df.groupby("hour_approx")["isFraud"].agg(
-            ["count", "sum", "mean"]
-        )
-        fraud_by_day = self.transaction_df.groupby("day_approx")["isFraud"].agg(
-            ["count", "sum", "mean"]
-        )
+        fraud_by_hour = self.transaction_df.groupby("hour_approx")["isFraud"].agg(["count", "sum", "mean"])
+        fraud_by_day = self.transaction_df.groupby("day_approx")["isFraud"].agg(["count", "sum", "mean"])
 
         return {
             "hourly_patterns": {
@@ -418,11 +385,7 @@ class IEEECISAnalyzer:
         feature_differences = {}
 
         # Analyze numeric features with sufficient data
-        numeric_features = (
-            ["TransactionAmt"]
-            + [f"C{i}" for i in range(1, 15)]
-            + [f"D{i}" for i in range(1, 16)]
-        )
+        numeric_features = ["TransactionAmt"] + [f"C{i}" for i in range(1, 15)] + [f"D{i}" for i in range(1, 16)]
 
         for feature in numeric_features:
             if feature in self.transaction_df.columns:
@@ -440,9 +403,7 @@ class IEEECISAnalyzer:
                         feature_differences[feature] = pct_difference
 
         # Return top differing features
-        return dict(
-            sorted(feature_differences.items(), key=lambda x: x[1], reverse=True)[:20]
-        )
+        return dict(sorted(feature_differences.items(), key=lambda x: x[1], reverse=True)[:20])
 
     def generate_synthetic_spec(self) -> Dict[str, Any]:
         """
@@ -480,19 +441,11 @@ class IEEECISAnalyzer:
                 "mean_log": np.log(legit_df["TransactionAmt"]).mean(),
                 "std_log": np.log(legit_df["TransactionAmt"]).std(),
                 "min_amount": float(legit_df["TransactionAmt"].min()),
-                "max_amount": float(
-                    legit_df["TransactionAmt"].quantile(0.95)
-                ),  # Cap at 95th percentile
+                "max_amount": float(legit_df["TransactionAmt"].quantile(0.95)),  # Cap at 95th percentile
             },
-            "product_codes": legit_df["ProductCD"]
-            .value_counts(normalize=True)
-            .to_dict(),
-            "hourly_distribution": dict(
-                legit_df["hour_approx"].value_counts(normalize=True)
-            ),
-            "daily_distribution": dict(
-                legit_df["day_approx"].value_counts(normalize=True)
-            ),
+            "product_codes": legit_df["ProductCD"].value_counts(normalize=True).to_dict(),
+            "hourly_distribution": dict(legit_df["hour_approx"].value_counts(normalize=True)),
+            "daily_distribution": dict(legit_df["day_approx"].value_counts(normalize=True)),
         }
 
     def _generate_fraud_generation_rules(self) -> Dict[str, Any]:
@@ -503,23 +456,18 @@ class IEEECISAnalyzer:
             "base_fraud_rate": float(self.analysis_results["schema"]["fraud_rate"]),
             "amount_patterns": {
                 "high_amount_bias": fraud_df["TransactionAmt"].quantile(0.75)
-                / self.transaction_df[self.transaction_df["isFraud"] == 0][
-                    "TransactionAmt"
-                ].quantile(0.75),
+                / self.transaction_df[self.transaction_df["isFraud"] == 0]["TransactionAmt"].quantile(0.75),
                 "common_ranges": list(
-                    self.analysis_results["fraud_patterns"]["amount_patterns"][
-                        "amount_ranges"
-                    ].keys()
+                    self.analysis_results["fraud_patterns"]["amount_patterns"]["amount_ranges"].keys()
                 ),
             },
             "temporal_bias": {
                 "high_risk_hours": [
                     hour
-                    for hour, data in self.analysis_results["fraud_patterns"][
-                        "temporal_patterns"
-                    ]["hourly_patterns"].items()
-                    if data["fraud_rate"]
-                    > self.analysis_results["schema"]["fraud_rate"] * 1.2
+                    for hour, data in self.analysis_results["fraud_patterns"]["temporal_patterns"][
+                        "hourly_patterns"
+                    ].items()
+                    if data["fraud_rate"] > self.analysis_results["schema"]["fraud_rate"] * 1.2
                 ]
             },
         }
@@ -552,9 +500,7 @@ class IEEECISAnalyzer:
                         "q25": float(series.quantile(0.25)),
                         "median": float(series.median()),
                         "q75": float(series.quantile(0.75)),
-                        "missing_rate": float(
-                            self.transaction_df[feature].isna().mean()
-                        ),
+                        "missing_rate": float(self.transaction_df[feature].isna().mean()),
                     }
 
         return distributions
@@ -584,16 +530,12 @@ class IEEECISAnalyzer:
         for feature in key_categoricals:
             if feature in self.transaction_df.columns:
                 # Get value counts and normalize
-                value_counts = self.transaction_df[feature].value_counts(
-                    normalize=True, dropna=False
-                )
+                value_counts = self.transaction_df[feature].value_counts(normalize=True, dropna=False)
                 categorical_distributions[feature] = value_counts.to_dict()
 
         return categorical_distributions
 
-    def save_analysis_results(
-        self, output_path: str = "data/processed/ieee_cis_analysis.json"
-    ) -> bool:
+    def save_analysis_results(self, output_path: str = "data/processed/ieee_cis_analysis.json") -> bool:
         """
         Save analysis results to JSON file.
 
@@ -642,9 +584,7 @@ class IEEECISAnalyzer:
             self.logger.error(f"Failed to save analysis results: {e}")
             return False
 
-    def run_complete_analysis(
-        self, sample_size: Optional[int] = None, save_results: bool = True
-    ) -> Dict[str, Any]:
+    def run_complete_analysis(self, sample_size: Optional[int] = None, save_results: bool = True) -> Dict[str, Any]:
         """
         Run the complete analysis pipeline.
 
@@ -705,22 +645,14 @@ def main():
     fraud_patterns = results["fraud_patterns"]
 
     print(f"Dataset Overview:")
-    print(
-        f"  - Fraud Rate: {schema['fraud_rate']:.4f} ({schema['fraud_rate']*100:.2f}%)"
-    )
-    print(
-        f"  - Average Fraud Amount: ${fraud_patterns['basic_stats']['avg_fraud_amount']:.2f}"
-    )
-    print(
-        f"  - Average Legit Amount: ${fraud_patterns['basic_stats']['avg_legit_amount']:.2f}"
-    )
+    print(f"  - Fraud Rate: {schema['fraud_rate']:.4f} ({schema['fraud_rate']*100:.2f}%)")
+    print(f"  - Average Fraud Amount: ${fraud_patterns['basic_stats']['avg_fraud_amount']:.2f}")
+    print(f"  - Average Legit Amount: ${fraud_patterns['basic_stats']['avg_legit_amount']:.2f}")
 
     print(f"\nTemporal Patterns:")
     hourly = fraud_patterns["temporal_patterns"]["hourly_patterns"]
     peak_fraud_hour = max(hourly.items(), key=lambda x: x[1]["fraud_rate"])
-    print(
-        f"  - Peak Fraud Hour: {peak_fraud_hour[0]}:00 ({peak_fraud_hour[1]['fraud_rate']:.4f} fraud rate)"
-    )
+    print(f"  - Peak Fraud Hour: {peak_fraud_hour[0]}:00 ({peak_fraud_hour[1]['fraud_rate']:.4f} fraud rate)")
 
     print(f"\nAmount Range Analysis:")
     for range_name, data in fraud_patterns["amount_patterns"]["amount_ranges"].items():

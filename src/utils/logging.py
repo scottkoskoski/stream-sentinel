@@ -29,6 +29,7 @@ from typing import Any, Dict, Optional
 
 try:
     from pythonjsonlogger import jsonlogger
+
     JSON_LOGGER_AVAILABLE = True
 except ImportError:
     JSON_LOGGER_AVAILABLE = False
@@ -122,9 +123,7 @@ class ContextLogger(logging.LoggerAdapter):
     def __init__(self, logger: logging.Logger, **context: Any) -> None:
         super().__init__(logger, context)
 
-    def process(
-        self, msg: str, kwargs: Dict[str, Any]
-    ) -> tuple:
+    def process(self, msg: str, kwargs: Dict[str, Any]) -> tuple:
         # Merge adapter-level context with per-call extra, per-call wins
         extra = kwargs.get("extra", {})
         merged = {**self.extra, **extra}

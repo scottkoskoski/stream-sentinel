@@ -2,7 +2,4 @@
 
 from .cross_service_validator import CrossServiceValidator, ValidationResult
 
-__all__ = [
-    "CrossServiceValidator",
-    "ValidationResult"
-]
+__all__ = ["CrossServiceValidator", "ValidationResult"]

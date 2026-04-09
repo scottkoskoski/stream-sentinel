@@ -9,45 +9,31 @@ Validates that the contracts between system components are maintained:
 These tests do NOT require infrastructure -- they test data shape contracts only.
 """
 
-import pytest
 import json
 import sys
-from dataclasses import fields, asdict
+from dataclasses import asdict, fields
 from datetime import datetime
-from typing import get_type_hints
-from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
+from typing import get_type_hints
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from producers.synthetic_transaction_producer import (
-    SyntheticTransactionProducer,
-    Transaction,
-)
-from consumers.fraud_detector import (
-    FraudDetector,
-    FraudFeatures,
-    UserProfile,
-)
-from consumers.alert_processor import (
-    AlertProcessor,
-    AlertSeverity,
-    ResponseAction,
-    AlertContext,
-    AlertResponse,
-)
-from persistence.schemas import (
-    FraudAlert,
-    TransactionRecord,
-    SchemaManager,
-)
+from consumers.alert_processor import AlertContext, AlertProcessor, AlertResponse, AlertSeverity, ResponseAction
+from consumers.fraud_detector import FraudDetector, FraudFeatures, UserProfile
+from persistence.schemas import FraudAlert, SchemaManager, TransactionRecord
+from producers.synthetic_transaction_producer import SyntheticTransactionProducer, Transaction
 
 
 def make_producer():
     """Create a SyntheticTransactionProducer with mocked Kafka."""
-    with patch('producers.synthetic_transaction_producer.get_kafka_config') as mock_cfg, \
-         patch('producers.synthetic_transaction_producer.Producer') as mock_prod, \
-         patch.object(SyntheticTransactionProducer, '_load_analysis_results') as mock_load:
+    with (
+        patch("producers.synthetic_transaction_producer.get_kafka_config") as mock_cfg,
+        patch("producers.synthetic_transaction_producer.Producer") as mock_prod,
+        patch.object(SyntheticTransactionProducer, "_load_analysis_results") as mock_load,
+    ):
         mock_kafka = Mock()
         mock_kafka.get_producer_config.return_value = {"bootstrap.servers": "localhost:9092"}
         mock_cfg.return_value = mock_kafka
@@ -56,15 +42,25 @@ def make_producer():
             "schema": {"fraud_rate": 0.027},
             "synthetic_spec": {
                 "transaction_patterns": {
-                    "amount_distribution": {"mean_log": 4.0, "std_log": 1.2,
-                                            "min_amount": 1.0, "max_amount": 1000.0},
-                    "product_codes": {"W": 0.7, "C": 0.15, "R": 0.1, "H": 0.03, "S": 0.02},
+                    "amount_distribution": {
+                        "mean_log": 4.0,
+                        "std_log": 1.2,
+                        "min_amount": 1.0,
+                        "max_amount": 1000.0,
+                    },
+                    "product_codes": {
+                        "W": 0.7,
+                        "C": 0.15,
+                        "R": 0.1,
+                        "H": 0.03,
+                        "S": 0.02,
+                    },
                 },
                 "fraud_patterns": {
                     "base_fraud_rate": 0.027,
                     "amount_patterns": {"high_amount_bias": 1.2},
-                }
-            }
+                },
+            },
         }
 
         producer = SyntheticTransactionProducer()
@@ -80,15 +76,16 @@ def make_detector():
     mock_redis = MagicMock()
     mock_config = Mock()
     mock_config.get_consumer_config.return_value = {
-        'group.id': 'contract-test', 'bootstrap.servers': 'localhost:9092',
-        'auto.offset.reset': 'earliest',
+        "group.id": "contract-test",
+        "bootstrap.servers": "localhost:9092",
+        "auto.offset.reset": "earliest",
     }
-    mock_config.get_producer_config.return_value = {'bootstrap.servers': 'localhost:9092'}
+    mock_config.get_producer_config.return_value = {"bootstrap.servers": "localhost:9092"}
 
-    with patch('consumers.fraud_detector.get_kafka_config', return_value=mock_config):
-        with patch('consumers.fraud_detector.redis.Redis', return_value=mock_redis):
-            with patch('consumers.fraud_detector.Consumer'):
-                with patch('consumers.fraud_detector.Producer'):
+    with patch("consumers.fraud_detector.get_kafka_config", return_value=mock_config):
+        with patch("consumers.fraud_detector.redis.Redis", return_value=mock_redis):
+            with patch("consumers.fraud_detector.Consumer"):
+                with patch("consumers.fraud_detector.Producer"):
                     detector = FraudDetector(use_ml_model=False)
                     detector.redis_client = mock_redis
     return detector
@@ -97,6 +94,7 @@ def make_detector():
 # ---------------------------------------------------------------------------
 # Contract 1: Producer fields match consumer expectations
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestProducerConsumerFieldContract:
@@ -108,34 +106,38 @@ class TestProducerConsumerFieldContract:
         """
         # Fields accessed by extract_features():
         consumer_required = {
-            'transaction_amt',      # amount = float(transaction['transaction_amt'])
-            'generated_timestamp',  # timestamp = transaction['generated_timestamp']
-            'card1',                # user_id = str(transaction['card1'])
-            'transaction_id',       # transaction.get('transaction_id', 'unknown')
+            "transaction_amt",  # amount = float(transaction['transaction_amt'])
+            "generated_timestamp",  # timestamp = transaction['generated_timestamp']
+            "card1",  # user_id = str(transaction['card1'])
+            "transaction_id",  # transaction.get('transaction_id', 'unknown')
         }
 
         producer_fields = {f.name for f in fields(Transaction)}
 
         missing = consumer_required - producer_fields
-        assert not missing, (
-            f"Consumer requires fields {missing} that Transaction dataclass is missing"
-        )
+        assert not missing, f"Consumer requires fields {missing} that Transaction dataclass is missing"
 
     def test_ml_feature_extraction_fields_present(self):
         """The _extract_ml_features() method reads additional fields.  Verify
         the producer generates them.
         """
         ml_expected_keys = {
-            'transaction_amt', 'product_cd', 'card1', 'card2', 'card3',
-            'card5', 'card6', 'addr1', 'addr2', 'r_emaildomain',
+            "transaction_amt",
+            "product_cd",
+            "card1",
+            "card2",
+            "card3",
+            "card5",
+            "card6",
+            "addr1",
+            "addr2",
+            "r_emaildomain",
         }
 
         producer_fields = {f.name for f in fields(Transaction)}
 
         missing = ml_expected_keys - producer_fields
-        assert not missing, (
-            f"ML feature extraction expects fields {missing} missing from Transaction"
-        )
+        assert not missing, f"ML feature extraction expects fields {missing} missing from Transaction"
 
     def test_alert_processor_reads_fraud_detector_output(self):
         """AlertProcessor.classify_alert_severity() expects specific keys in
@@ -144,54 +146,56 @@ class TestProducerConsumerFieldContract:
         """
         # Keys the alert processor reads
         alert_fields_read = {
-            'fraud_score',          # alert.get('fraud_score', 0.0)
-            'risk_factors',         # alert.get('risk_factors', {})
-            'transaction_details',  # alert.get('transaction_details', {})
+            "fraud_score",  # alert.get('fraud_score', 0.0)
+            "risk_factors",  # alert.get('risk_factors', {})
+            "transaction_details",  # alert.get('transaction_details', {})
         }
 
         # Keys that publish_fraud_alert() writes to the alert dict
         # (verified from source: lines 648-668 of fraud_detector.py)
         alert_fields_written = {
-            'alert_id', 'timestamp', 'user_id', 'transaction_id',
-            'fraud_score', 'risk_factors', 'transaction_details',
-            'original_transaction',
+            "alert_id",
+            "timestamp",
+            "user_id",
+            "transaction_id",
+            "fraud_score",
+            "risk_factors",
+            "transaction_details",
+            "original_transaction",
         }
 
         missing = alert_fields_read - alert_fields_written
-        assert not missing, (
-            f"AlertProcessor reads {missing} but FraudDetector alert doesn't provide them"
-        )
+        assert not missing, f"AlertProcessor reads {missing} but FraudDetector alert doesn't provide them"
 
     def test_risk_factors_sub_fields_match(self):
         """Verify the specific risk_factors keys that classify_alert_severity
         checks are populated by publish_fraud_alert.
         """
         risk_factor_keys_read = {
-            'is_rapid_transaction',
-            'velocity_score',
-            'is_high_amount',
-            'is_unusual_hour',
+            "is_rapid_transaction",
+            "velocity_score",
+            "is_high_amount",
+            "is_unusual_hour",
         }
 
         # From FraudDetector.publish_fraud_alert risk_factors dict
         risk_factor_keys_written = {
-            'is_high_amount',
-            'is_unusual_hour',
-            'is_rapid_transaction',
-            'amount_vs_avg_ratio',
-            'velocity_score',
-            'daily_transaction_count',
+            "is_high_amount",
+            "is_unusual_hour",
+            "is_rapid_transaction",
+            "amount_vs_avg_ratio",
+            "velocity_score",
+            "daily_transaction_count",
         }
 
         missing = risk_factor_keys_read - risk_factor_keys_written
-        assert not missing, (
-            f"AlertProcessor reads risk_factors keys {missing} that FraudDetector omits"
-        )
+        assert not missing, f"AlertProcessor reads risk_factors keys {missing} that FraudDetector omits"
 
 
 # ---------------------------------------------------------------------------
 # Contract 2: Feature vector compatibility
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestFeatureVectorContract:
@@ -200,20 +204,18 @@ class TestFeatureVectorContract:
     def test_fraud_features_dataclass_has_all_scoring_inputs(self):
         """FraudFeatures must contain all fields that _calculate_fraud_score reads."""
         scoring_inputs = {
-            'amount_vs_avg_ratio',
-            'is_high_amount',
-            'is_unusual_hour',
-            'is_rapid_transaction',
-            'velocity_score',
-            'daily_transaction_count',
+            "amount_vs_avg_ratio",
+            "is_high_amount",
+            "is_unusual_hour",
+            "is_rapid_transaction",
+            "velocity_score",
+            "daily_transaction_count",
         }
 
         feature_fields = {f.name for f in fields(FraudFeatures)}
 
         missing = scoring_inputs - feature_fields
-        assert not missing, (
-            f"_calculate_fraud_score needs {missing} missing from FraudFeatures"
-        )
+        assert not missing, f"_calculate_fraud_score needs {missing} missing from FraudFeatures"
 
     def test_extract_features_produces_valid_fraud_features(self):
         """Run extract_features with a producer-generated transaction
@@ -254,14 +256,15 @@ class TestFeatureVectorContract:
         json_str = json.dumps(features_dict)
         decoded = json.loads(json_str)
 
-        assert decoded['user_id'] == features.user_id
-        assert decoded['transaction_id'] == features.transaction_id
-        assert decoded['fraud_score'] == pytest.approx(features.fraud_score, abs=0.0001)
+        assert decoded["user_id"] == features.user_id
+        assert decoded["transaction_id"] == features.transaction_id
+        assert decoded["fraud_score"] == pytest.approx(features.fraud_score, abs=0.0001)
 
 
 # ---------------------------------------------------------------------------
 # Contract 3: Message serialization roundtrip
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestMessageSerializationContract:
@@ -276,19 +279,19 @@ class TestMessageSerializationContract:
         txn_dict = asdict(txn)
 
         # Serialize to JSON (as Kafka producer would)
-        json_bytes = json.dumps(txn_dict).encode('utf-8')
+        json_bytes = json.dumps(txn_dict).encode("utf-8")
 
         # Deserialize (as Kafka consumer would)
-        deserialized = json.loads(json_bytes.decode('utf-8'))
+        deserialized = json.loads(json_bytes.decode("utf-8"))
 
         # Verify key fields survive roundtrip
-        assert deserialized['transaction_id'] == txn.transaction_id
-        assert deserialized['transaction_amt'] == txn.transaction_amt
-        assert deserialized['card1'] == txn.card1
-        assert deserialized['generated_timestamp'] == txn.generated_timestamp
+        assert deserialized["transaction_id"] == txn.transaction_id
+        assert deserialized["transaction_amt"] == txn.transaction_amt
+        assert deserialized["card1"] == txn.card1
+        assert deserialized["generated_timestamp"] == txn.generated_timestamp
 
         # Consumer should be able to process the deserialized dict
-        user_profile = UserProfile(user_id=str(deserialized['card1']))
+        user_profile = UserProfile(user_id=str(deserialized["card1"]))
         features = detector.extract_features(deserialized, user_profile)
 
         assert isinstance(features, FraudFeatures)
@@ -313,21 +316,21 @@ class TestMessageSerializationContract:
         }
 
         # Serialize and deserialize
-        json_bytes = json.dumps(alert).encode('utf-8')
-        deserialized = json.loads(json_bytes.decode('utf-8'))
+        json_bytes = json.dumps(alert).encode("utf-8")
+        deserialized = json.loads(json_bytes.decode("utf-8"))
 
         # Alert processor should handle deserialized dict
         mock_redis = MagicMock()
         mock_redis.hgetall.return_value = {}
         mock_redis.zrangebyscore.return_value = []
         mock_config = Mock()
-        mock_config.get_consumer_config.return_value = {'group.id': 'contract-test'}
+        mock_config.get_consumer_config.return_value = {"group.id": "contract-test"}
         mock_config.get_producer_config.return_value = {}
 
-        with patch('consumers.alert_processor.get_kafka_config', return_value=mock_config):
-            with patch('consumers.alert_processor.redis.Redis', return_value=mock_redis):
-                with patch('consumers.alert_processor.Consumer'):
-                    with patch('consumers.alert_processor.Producer'):
+        with patch("consumers.alert_processor.get_kafka_config", return_value=mock_config):
+            with patch("consumers.alert_processor.redis.Redis", return_value=mock_redis):
+                with patch("consumers.alert_processor.Consumer"):
+                    with patch("consumers.alert_processor.Producer"):
                         processor = AlertProcessor()
                         processor.redis_client = mock_redis
 
@@ -337,9 +340,9 @@ class TestMessageSerializationContract:
         assert severity == AlertSeverity.HIGH
 
         # Verify field types survived serialization
-        assert isinstance(deserialized['fraud_score'], float)
-        assert isinstance(deserialized['risk_factors']['is_high_amount'], bool)
-        assert isinstance(deserialized['risk_factors']['velocity_score'], float)
+        assert isinstance(deserialized["fraud_score"], float)
+        assert isinstance(deserialized["risk_factors"]["is_high_amount"], bool)
+        assert isinstance(deserialized["risk_factors"]["velocity_score"], float)
 
     def test_alert_response_serialization(self):
         """AlertResponse.to_dict() should produce JSON-serializable output."""
@@ -357,10 +360,10 @@ class TestMessageSerializationContract:
         json_str = json.dumps(response_dict)
         decoded = json.loads(json_str)
 
-        assert decoded['alert_id'] == "serial_001"
-        assert decoded['severity'] == "high"
-        assert decoded['action'] == "immediate_block"
-        assert decoded['response_time_ms'] == 150.0
+        assert decoded["alert_id"] == "serial_001"
+        assert decoded["severity"] == "high"
+        assert decoded["action"] == "immediate_block"
+        assert decoded["response_time_ms"] == 150.0
 
     def test_persistence_data_model_serialization(self):
         """FraudAlert and TransactionRecord should serialize for DB insertion."""
@@ -375,9 +378,9 @@ class TestMessageSerializationContract:
         )
 
         alert_dict = alert.to_dict()
-        assert alert_dict['severity'] == 'HIGH'
-        assert alert_dict['status'] == 'PENDING'
-        assert isinstance(alert_dict['business_rules_triggered'], list)
+        assert alert_dict["severity"] == "HIGH"
+        assert alert_dict["status"] == "PENDING"
+        assert isinstance(alert_dict["business_rules_triggered"], list)
 
         # Should be JSON-serializable
         json_str = json.dumps(alert_dict, default=str)
@@ -394,6 +397,6 @@ class TestMessageSerializationContract:
         decoded = json.loads(json_str)
 
         # None -> null -> None roundtrip
-        for key in ['dist1', 'dist2']:
+        for key in ["dist1", "dist2"]:
             if txn_dict[key] is None:
                 assert decoded[key] is None

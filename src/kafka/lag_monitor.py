@@ -20,15 +20,15 @@ Usage:
 """
 
 import logging
+import sys
 import threading
 import time
-from typing import Dict, List, Optional, Any
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from confluent_kafka import Consumer, TopicPartition
 from confluent_kafka.admin import AdminClient
 
-import sys
-from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
 
@@ -106,9 +106,7 @@ class LagMonitor:
         if self._running:
             return
         self._running = True
-        self._thread = threading.Thread(
-            target=self._monitor_loop, daemon=True, name="lag-monitor"
-        )
+        self._thread = threading.Thread(target=self._monitor_loop, daemon=True, name="lag-monitor")
         self._thread.start()
         logger.info(
             "Lag monitor started for group '%s' (threshold=%d, interval=%.1fs)",
@@ -139,14 +137,15 @@ class LagMonitor:
         ]
         for (topic, part), pl in self.partition_lags.items():
             lines.append(
-                f'kafka_consumer_lag{{group="{self.group_id}",'
-                f'topic="{topic}",partition="{part}"}} {pl.lag}'
+                f'kafka_consumer_lag{{group="{self.group_id}",' f'topic="{topic}",partition="{part}"}} {pl.lag}'
             )
-        lines.extend([
-            "# HELP kafka_consumer_lag_total Total consumer group lag",
-            "# TYPE kafka_consumer_lag_total gauge",
-            f'kafka_consumer_lag_total{{group="{self.group_id}"}} {self.total_lag}',
-        ])
+        lines.extend(
+            [
+                "# HELP kafka_consumer_lag_total Total consumer group lag",
+                "# TYPE kafka_consumer_lag_total gauge",
+                f'kafka_consumer_lag_total{{group="{self.group_id}"}} {self.total_lag}',
+            ]
+        )
         return "\n".join(lines) + "\n"
 
     # ------------------------------------------------------------------
@@ -196,10 +195,7 @@ class LagMonitor:
                     logger.warning("Cannot get metadata for topic '%s'", topic)
                     continue
 
-                partitions = [
-                    TopicPartition(topic, pid)
-                    for pid in topic_meta.partitions.keys()
-                ]
+                partitions = [TopicPartition(topic, pid) for pid in topic_meta.partitions.keys()]
             except Exception as e:
                 logger.error("Error listing topic '%s': %s", topic, e)
                 continue
@@ -208,16 +204,12 @@ class LagMonitor:
             try:
                 committed = self._consumer.committed(partitions, timeout=10)
             except Exception as e:
-                logger.error(
-                    "Error fetching committed offsets for '%s': %s", topic, e
-                )
+                logger.error("Error fetching committed offsets for '%s': %s", topic, e)
                 continue
 
             for tp in committed:
                 try:
-                    low, high = self._consumer.get_watermark_offsets(
-                        tp, timeout=10
-                    )
+                    low, high = self._consumer.get_watermark_offsets(tp, timeout=10)
                 except Exception as e:
                     logger.warning(
                         "Cannot get watermark for %s-%d: %s",
@@ -279,6 +271,7 @@ class LagMonitor:
 # Flow control mixin for consumers
 # ---------------------------------------------------------------------------
 
+
 class FlowController:
     """Adaptive flow control that reduces batch size when processing is slow.
 
@@ -311,14 +304,13 @@ class FlowController:
         ms = seconds * 1000.0
         self._processing_times.append(ms)
         if len(self._processing_times) > self._window_size:
-            self._processing_times = self._processing_times[-self._window_size:]
+            self._processing_times = self._processing_times[-self._window_size :]
 
         if ms > self.slow_message_threshold_ms:
             self._slow_count += 1
             if self._slow_count % 10 == 1:
                 self._logger.warning(
-                    "Slow message processing: %.1fms (threshold: %.1fms, "
-                    "slow count: %d)",
+                    "Slow message processing: %.1fms (threshold: %.1fms, " "slow count: %d)",
                     ms,
                     self.slow_message_threshold_ms,
                     self._slow_count,
@@ -359,6 +351,7 @@ class FlowController:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     import argparse
 
@@ -367,16 +360,16 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    parser = argparse.ArgumentParser(
-        description="Monitor Kafka consumer group lag"
-    )
+    parser = argparse.ArgumentParser(description="Monitor Kafka consumer group lag")
     parser.add_argument(
-        "--group", "-g",
+        "--group",
+        "-g",
         default="fraud-detection-group",
         help="Consumer group ID to monitor",
     )
     parser.add_argument(
-        "--topic", "-t",
+        "--topic",
+        "-t",
         default="synthetic-transactions",
         help="Topic to monitor (default: synthetic-transactions)",
     )

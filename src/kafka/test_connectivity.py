@@ -14,14 +14,14 @@ for the producer/consumer patterns used in the fraud detection system.
 """
 
 import json
-import time
 import sys
-from typing import List, Dict, Any
-from confluent_kafka import Producer, Consumer, KafkaError, KafkaException
-from confluent_kafka.admin import AdminClient, NewTopic, ConfigResource, ResourceType
+import time
+from typing import Any, Dict, List
 
 # Import our configuration module
 from config import get_kafka_config
+from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
+from confluent_kafka.admin import AdminClient, ConfigResource, NewTopic, ResourceType
 
 
 class KafkaConnectivityTester:
@@ -87,9 +87,7 @@ class KafkaConnectivityTester:
             # Check if test topic already exists
             existing_topics = self.admin_client.list_topics(timeout=10)
             if self.test_topic in existing_topics.topics:
-                self.logger.info(
-                    f"Topic '{self.test_topic}' already exists, deleting first..."
-                )
+                self.logger.info(f"Topic '{self.test_topic}' already exists, deleting first...")
                 self.cleanup_test_topic()
                 time.sleep(2)  # Wait for deletion to complete
 
@@ -121,15 +119,11 @@ class KafkaConnectivityTester:
             # Validate topic was created with correct configuration
             topic_metadata = self.admin_client.list_topics(timeout=10)
             if self.test_topic not in topic_metadata.topics:
-                self.logger.error(
-                    f"Topic '{self.test_topic}' not found after creation"
-                )
+                self.logger.error(f"Topic '{self.test_topic}' not found after creation")
                 return False
 
             topic_info = topic_metadata.topics[self.test_topic]
-            self.logger.info(
-                f"Topic validation: {len(topic_info.partitions)} partitions created"
-            )
+            self.logger.info(f"Topic validation: {len(topic_info.partitions)} partitions created")
 
             return True
 
@@ -184,9 +178,7 @@ class KafkaConnectivityTester:
 
                 self.logger.info(f"{producer_type} producer test completed")
 
-            self.logger.info(
-                f"All {len(self.test_messages)} test messages produced successfully"
-            )
+            self.logger.info(f"All {len(self.test_messages)} test messages produced successfully")
             return True
 
         except Exception as e:
@@ -249,9 +241,7 @@ class KafkaConnectivityTester:
                     message_key = msg.key().decode("utf-8") if msg.key() else None
                     message_value = json.loads(msg.value().decode("utf-8"))
 
-                    self.logger.debug(
-                        f"Consumed message: {message_key} -> {message_value}"
-                    )
+                    self.logger.debug(f"Consumed message: {message_key} -> {message_value}")
 
                     consumed_messages.append(
                         {
@@ -274,32 +264,22 @@ class KafkaConnectivityTester:
 
             # Validate results
             if len(consumed_messages) == max_messages:
-                self.logger.info(
-                    f"Successfully consumed all {len(consumed_messages)} test messages"
-                )
+                self.logger.info(f"Successfully consumed all {len(consumed_messages)} test messages")
 
                 # Verify message content
                 for consumed in consumed_messages:
                     original_msg_id = consumed["value"]["message_id"]
-                    original_msg = self.test_messages[
-                        original_msg_id - 1
-                    ]  # Adjust for 0-based indexing
+                    original_msg = self.test_messages[original_msg_id - 1]  # Adjust for 0-based indexing
 
                     if consumed["value"]["type"] == original_msg["type"]:
-                        self.logger.debug(
-                            f"Message {original_msg_id} content validated"
-                        )
+                        self.logger.debug(f"Message {original_msg_id} content validated")
                     else:
-                        self.logger.error(
-                            f"Message {original_msg_id} content mismatch"
-                        )
+                        self.logger.error(f"Message {original_msg_id} content mismatch")
                         return False
 
                 return True
             else:
-                self.logger.error(
-                    f"Only consumed {len(consumed_messages)} out of {max_messages} messages"
-                )
+                self.logger.error(f"Only consumed {len(consumed_messages)} out of {max_messages} messages")
                 return False
 
         except Exception as e:
@@ -391,9 +371,7 @@ class KafkaConnectivityTester:
 
         if all_passed:
             self.logger.info("\nAll Kafka connectivity tests PASSED!")
-            self.logger.info(
-                "Stream-Sentinel is ready for fraud detection pipeline development."
-            )
+            self.logger.info("Stream-Sentinel is ready for fraud detection pipeline development.")
         else:
             self.logger.error("\nSome tests FAILED!")
             self.logger.error("Please check Kafka cluster status and configuration.")

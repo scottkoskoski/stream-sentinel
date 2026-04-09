@@ -10,22 +10,22 @@ and AlertProcessor code paths:
 4. Malformed transaction data -- proper error handling without crash
 """
 
-import pytest
 import json
-import time
-from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock, PropertyMock
-from dataclasses import asdict
-
 import sys
+import time
+from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
+
+import pytest
+
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
 import redis as redis_module
+
+from consumers.alert_processor import AlertContext, AlertProcessor, AlertResponse, AlertSeverity, ResponseAction
 from consumers.fraud_detector import FraudDetector, FraudFeatures, UserProfile
-from consumers.alert_processor import (
-    AlertProcessor, AlertSeverity, AlertContext, ResponseAction, AlertResponse,
-)
 
 
 def make_fraud_detector(**kwargs):
@@ -36,15 +36,16 @@ def make_fraud_detector(**kwargs):
 
     mock_config = Mock()
     mock_config.get_consumer_config.return_value = {
-        'group.id': 'chaos-test', 'bootstrap.servers': 'localhost:9092',
-        'auto.offset.reset': 'earliest',
+        "group.id": "chaos-test",
+        "bootstrap.servers": "localhost:9092",
+        "auto.offset.reset": "earliest",
     }
-    mock_config.get_producer_config.return_value = {'bootstrap.servers': 'localhost:9092'}
+    mock_config.get_producer_config.return_value = {"bootstrap.servers": "localhost:9092"}
 
-    with patch('consumers.fraud_detector.get_kafka_config', return_value=mock_config):
-        with patch('consumers.fraud_detector.redis.Redis', return_value=mock_redis):
-            with patch('consumers.fraud_detector.Consumer'):
-                with patch('consumers.fraud_detector.Producer'):
+    with patch("consumers.fraud_detector.get_kafka_config", return_value=mock_config):
+        with patch("consumers.fraud_detector.redis.Redis", return_value=mock_redis):
+            with patch("consumers.fraud_detector.Consumer"):
+                with patch("consumers.fraud_detector.Producer"):
                     detector = FraudDetector(use_ml_model=False, **kwargs)
                     detector.redis_client = mock_redis
     return detector
@@ -56,13 +57,13 @@ def make_alert_processor():
     mock_redis.hgetall.return_value = {}
     mock_redis.zrangebyscore.return_value = []
     mock_config = Mock()
-    mock_config.get_consumer_config.return_value = {'group.id': 'chaos-alert-test'}
+    mock_config.get_consumer_config.return_value = {"group.id": "chaos-alert-test"}
     mock_config.get_producer_config.return_value = {}
 
-    with patch('consumers.alert_processor.get_kafka_config', return_value=mock_config):
-        with patch('consumers.alert_processor.redis.Redis', return_value=mock_redis):
-            with patch('consumers.alert_processor.Consumer'):
-                with patch('consumers.alert_processor.Producer'):
+    with patch("consumers.alert_processor.get_kafka_config", return_value=mock_config):
+        with patch("consumers.alert_processor.redis.Redis", return_value=mock_redis):
+            with patch("consumers.alert_processor.Consumer"):
+                with patch("consumers.alert_processor.Producer"):
                     processor = AlertProcessor()
                     processor.redis_client = mock_redis
     return processor
@@ -86,6 +87,7 @@ def create_valid_transaction(**overrides):
 # Test 1: Redis unavailable -- stateless scoring fallback
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.chaos
 class TestRedisUnavailable:
     """Test fraud detection when Redis is completely unavailable."""
@@ -95,9 +97,7 @@ class TestRedisUnavailable:
         detector = make_fraud_detector()
 
         # Make Redis throw ConnectionError on every call
-        detector.redis_client.hgetall.side_effect = redis_module.ConnectionError(
-            "Connection refused"
-        )
+        detector.redis_client.hgetall.side_effect = redis_module.ConnectionError("Connection refused")
 
         profile = detector.get_user_profile("any_user")
 
@@ -110,9 +110,7 @@ class TestRedisUnavailable:
         """save_user_profile should log error but not raise when Redis is down."""
         detector = make_fraud_detector()
 
-        detector.redis_client.hset.side_effect = redis_module.ConnectionError(
-            "Connection refused"
-        )
+        detector.redis_client.hset.side_effect = redis_module.ConnectionError("Connection refused")
 
         profile = UserProfile(
             user_id="save_fail_user",
@@ -127,9 +125,7 @@ class TestRedisUnavailable:
         """Feature extraction should work even when Redis returns a default profile."""
         detector = make_fraud_detector()
 
-        detector.redis_client.hgetall.side_effect = redis_module.ConnectionError(
-            "Redis down"
-        )
+        detector.redis_client.hgetall.side_effect = redis_module.ConnectionError("Redis down")
 
         txn = create_valid_transaction(
             transaction_amt=500.0,
@@ -172,6 +168,7 @@ class TestRedisUnavailable:
 # Test 2: ML model corrupted -- fallback to rule-based
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.chaos
 class TestMLModelCorrupted:
     """Test fraud detection when the ML model is broken."""
@@ -185,7 +182,7 @@ class TestMLModelCorrupted:
 
         class NaNModel:
             def predict_proba(self, features):
-                return [[0.0, float('nan')]]
+                return [[0.0, float("nan")]]
 
         detector.ml_model = NaNModel()
 
@@ -215,7 +212,10 @@ class TestMLModelCorrupted:
                 raise RuntimeError("Model file corrupted")
 
         detector.ml_model = CrashingModel()
-        detector.model_features = ["feature1", "feature2"]  # Required for _extract_ml_features
+        detector.model_features = [
+            "feature1",
+            "feature2",
+        ]  # Required for _extract_ml_features
 
         txn = create_valid_transaction(
             transaction_amt=1500.0,  # High amount -> +0.2
@@ -281,6 +281,7 @@ class TestMLModelCorrupted:
 # ---------------------------------------------------------------------------
 # Test 3: Kafka producer buffer full -- graceful backpressure
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.chaos
 class TestKafkaBackpressure:
@@ -375,6 +376,7 @@ class TestKafkaBackpressure:
 # ---------------------------------------------------------------------------
 # Test 4: Malformed transaction data -- graceful error handling
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.chaos
 class TestMalformedTransactionData:

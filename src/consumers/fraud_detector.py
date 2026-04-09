@@ -17,31 +17,33 @@ Key distributed systems concepts:
 """
 
 import json
-import time
+import logging
+import pickle
 import signal
 import sys
-import pickle
 import threading
-import numpy as np
+import time
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass, asdict, field
-from confluent_kafka import Consumer, Producer, KafkaError, KafkaException
-import redis
-import logging
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import redis
+from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
 
 # Import our configuration system
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
-from utils.logging import get_logger, configure_logging, ContextLogger
-from monitoring.metrics import get_metrics as get_prometheus_metrics
 from kafka.dlq import get_dlq_publisher
 from kafka.lag_monitor import FlowController
+from monitoring.metrics import get_metrics as get_prometheus_metrics
+from utils.logging import ContextLogger, configure_logging, get_logger
 
 # Schema Registry integration (optional -- falls back to plain JSON)
 try:
-    from kafka.schema_utils import get_schema_helper, deserialize_message
+    from kafka.schema_utils import deserialize_message, get_schema_helper
+
     SCHEMA_UTILS_AVAILABLE = True
 except ImportError:
     SCHEMA_UTILS_AVAILABLE = False
@@ -49,6 +51,7 @@ except ImportError:
 # Import optional C++ accelerated inference
 try:
     from inference.fast_inference import FastInferenceEngine
+
     CPP_INFERENCE_AVAILABLE = True
 except ImportError:
     CPP_INFERENCE_AVAILABLE = False
@@ -56,11 +59,13 @@ except ImportError:
 # Import unified feature engineering module
 try:
     from ml.features.feature_engineer import FeatureEngineer
+
     FEATURE_ENGINEER_AVAILABLE = True
 except ImportError:
     try:
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from ml.features.feature_engineer import FeatureEngineer
+
         FEATURE_ENGINEER_AVAILABLE = True
     except ImportError:
         FEATURE_ENGINEER_AVAILABLE = False
@@ -68,10 +73,12 @@ except ImportError:
 # Import live drift monitor
 try:
     from ml.online_learning.live_drift_monitor import LiveDriftMonitor
+
     DRIFT_MONITOR_AVAILABLE = True
 except ImportError:
     try:
         from src.ml.online_learning.live_drift_monitor import LiveDriftMonitor
+
         DRIFT_MONITOR_AVAILABLE = True
     except ImportError:
         DRIFT_MONITOR_AVAILABLE = False
@@ -79,10 +86,12 @@ except ImportError:
 # Import model registry for optional registry-based model loading
 try:
     from ml.online_learning.model_registry import ModelRegistry
+
     MODEL_REGISTRY_AVAILABLE = True
 except ImportError:
     try:
         from src.ml.online_learning.model_registry import ModelRegistry
+
         MODEL_REGISTRY_AVAILABLE = True
     except ImportError:
         MODEL_REGISTRY_AVAILABLE = False
@@ -91,6 +100,7 @@ except ImportError:
 @dataclass
 class UserProfile:
     """User profile for fraud detection state management."""
+
     user_id: str
     total_transactions: int = 0
     total_amount: float = 0.0
@@ -101,19 +111,19 @@ class UserProfile:
     daily_amount: float = 0.0
     last_reset_date: Optional[str] = None
     suspicious_activity_count: int = 0
-    
+
     def update_daily_stats(self, amount: float, timestamp: str) -> None:
         """Update daily statistics, resetting if new day."""
         current_date = datetime.fromisoformat(timestamp).date().isoformat()
-        
+
         if self.last_reset_date != current_date:
             self.daily_transaction_count = 0
             self.daily_amount = 0.0
             self.last_reset_date = current_date
-            
+
         self.daily_transaction_count += 1
         self.daily_amount += amount
-        
+
     def update_transaction_stats(self, amount: float, timestamp: str) -> None:
         """Update overall transaction statistics."""
         self.total_transactions += 1
@@ -123,30 +133,31 @@ class UserProfile:
         self.last_transaction_amount = amount
 
 
-@dataclass 
+@dataclass
 class FraudFeatures:
     """Engineered features for fraud detection."""
+
     user_id: str
     transaction_id: str
-    
+
     # Basic transaction features
     amount: float
     transaction_hour: int
     transaction_day: int
-    
+
     # User behavior features
     amount_vs_avg_ratio: float
     daily_transaction_count: int
     daily_amount_total: float
     time_since_last_transaction: float  # seconds
     amount_vs_last_ratio: float
-    
+
     # Risk indicators
     is_high_amount: bool
     is_unusual_hour: bool
     is_rapid_transaction: bool
     velocity_score: float
-    
+
     # Fraud score
     fraud_score: float
     is_fraud_alert: bool
@@ -159,13 +170,12 @@ class FraudFeatures:
 @dataclass
 class BatchMetrics:
     """Tracks batch processing metrics for monitoring."""
+
     batch_sizes: List[int] = field(default_factory=list)
     batch_durations_seconds: List[float] = field(default_factory=list)
     total_batches: int = 0
     total_messages_in_batches: int = 0
-    flush_reasons: Dict[str, int] = field(default_factory=lambda: {
-        "full": 0, "timeout": 0, "shutdown": 0
-    })
+    flush_reasons: Dict[str, int] = field(default_factory=lambda: {"full": 0, "timeout": 0, "shutdown": 0})
 
     def record_batch(self, size: int, duration_seconds: float, reason: str) -> None:
         """Record a completed batch for metrics."""
@@ -197,10 +207,9 @@ class BatchMetrics:
             "avg_batch_size": sum(self.batch_sizes) / len(self.batch_sizes),
             "p50_batch_size": sorted(self.batch_sizes)[len(self.batch_sizes) // 2],
             "max_batch_size": max(self.batch_sizes),
-            "avg_batch_duration_ms": (sum(self.batch_durations_seconds)
-                                      / len(self.batch_durations_seconds)) * 1000,
-            "p99_batch_duration_ms": sorted(self.batch_durations_seconds)[
-                int(len(self.batch_durations_seconds) * 0.99)] * 1000,
+            "avg_batch_duration_ms": (sum(self.batch_durations_seconds) / len(self.batch_durations_seconds)) * 1000,
+            "p99_batch_duration_ms": sorted(self.batch_durations_seconds)[int(len(self.batch_durations_seconds) * 0.99)]
+            * 1000,
             "flush_reasons": self.flush_reasons,
         }
 
@@ -208,22 +217,24 @@ class BatchMetrics:
 class FraudDetector:
     """
     Real-time fraud detection consumer with Redis state management.
-    
+
     This consumer processes transaction streams, maintains user profiles in Redis,
     performs feature engineering, and publishes fraud alerts for suspicious
     transactions.
     """
-    
-    def __init__(self,
-                 consumer_group: str = "fraud-detection-group",
-                 fraud_threshold: float = 0.3,
-                 use_ml_model: bool = True,
-                 model_path: str = "models/synthetic_fraud_model_production.pkl",
-                 enable_cpp_acceleration: bool = True,
-                 drift_check_interval: int = 1000,
-                 batch_mode: bool = False,
-                 batch_size: int = 32,
-                 batch_timeout_ms: int = 100):
+
+    def __init__(
+        self,
+        consumer_group: str = "fraud-detection-group",
+        fraud_threshold: float = 0.3,
+        use_ml_model: bool = True,
+        model_path: str = "models/synthetic_fraud_model_production.pkl",
+        enable_cpp_acceleration: bool = True,
+        drift_check_interval: int = 1000,
+        batch_mode: bool = False,
+        batch_size: int = 32,
+        batch_timeout_ms: int = 100,
+    ):
         """
         Initialize fraud detection consumer.
 
@@ -279,9 +290,11 @@ class FraudDetector:
         self.drift_monitor = None
         if DRIFT_MONITOR_AVAILABLE:
             try:
-                self.drift_monitor = LiveDriftMonitor({
-                    "check_interval": drift_check_interval,
-                })
+                self.drift_monitor = LiveDriftMonitor(
+                    {
+                        "check_interval": drift_check_interval,
+                    }
+                )
                 self.logger.info(
                     "LiveDriftMonitor loaded (check every %d transactions)",
                     drift_check_interval,
@@ -295,7 +308,7 @@ class FraudDetector:
         self.batch_timeout_ms = batch_timeout_ms
         self.batch_metrics = BatchMetrics()
         self.flow_controller = FlowController(
-            max_poll_interval_ms=60_000,     # matches dev config
+            max_poll_interval_ms=60_000,  # matches dev config
             slow_message_threshold_ms=500.0,
         )
 
@@ -313,8 +326,7 @@ class FraudDetector:
         else:
             self.model_status = "rules_fallback"
             self.logger.warning(
-                "Model status: rules_fallback - ML model unavailable, "
-                "using rule-based scoring (DEGRADED MODE)"
+                "Model status: rules_fallback - ML model unavailable, " "using rule-based scoring (DEGRADED MODE)"
             )
         try:
             prom = get_prometheus_metrics("fraud-detector")
@@ -363,61 +375,56 @@ class FraudDetector:
 
         mode_label = "batch" if batch_mode else "single-message"
         self.logger.info(
-            f"FraudDetector initialized - group: {consumer_group}, "
-            f"threshold: {fraud_threshold}, mode: {mode_label}"
+            f"FraudDetector initialized - group: {consumer_group}, " f"threshold: {fraud_threshold}, mode: {mode_label}"
         )
         if batch_mode:
-            self.logger.info(
-                f"Batch config: size={batch_size}, timeout={batch_timeout_ms}ms"
-            )
-    
+            self.logger.info(f"Batch config: size={batch_size}, timeout={batch_timeout_ms}ms")
+
     @staticmethod
     def _setup_logging() -> logging.Logger:
         """Legacy stub -- logging is now configured by utils.logging."""
         return get_logger("stream_sentinel.fraud_detector")
-    
+
     def _create_consumer(self) -> Consumer:
         """Create Kafka consumer for transaction processing."""
-        consumer_config = self.kafka_config.get_consumer_config(
-            self.consumer_group, "fraud_detector"
-        )
+        consumer_config = self.kafka_config.get_consumer_config(self.consumer_group, "fraud_detector")
         consumer = Consumer(consumer_config)
-        
+
         # Subscribe to transactions topic
         consumer.subscribe([self.input_topic])
         self.logger.info(f"Consumer subscribed to {self.input_topic}")
-        
+
         return consumer
-    
+
     def _create_producer(self) -> Producer:
         """Create Kafka producer for fraud alerts."""
         producer_config = self.kafka_config.get_producer_config("transaction")
         producer = Producer(producer_config)
-        
+
         self.logger.info("Producer created for fraud alerts")
         return producer
-    
+
     def _create_redis_client(self) -> redis.Redis:
         """Create Redis client for state management."""
         try:
             client = redis.Redis(
-                host='localhost',
+                host="localhost",
                 port=6379,
                 db=0,
                 decode_responses=True,
                 socket_connect_timeout=5,
-                socket_timeout=5
+                socket_timeout=5,
             )
-            
+
             # Test connection
             client.ping()
             self.logger.info("Redis client connected successfully")
             return client
-            
+
         except redis.ConnectionError as e:
             self.logger.error(f"Failed to connect to Redis: {e}")
             raise
-    
+
     def _resolve_model_path(self, model_path: str) -> Optional[Path]:
         """
         Resolve the model file path, trying multiple locations relative
@@ -443,9 +450,7 @@ class FraudDetector:
                 self.logger.info(f"Resolved model path: {resolved}")
                 return resolved
 
-        self.logger.error(
-            f"Model file not found. Tried: {[str(c.resolve()) for c in candidates]}"
-        )
+        self.logger.error(f"Model file not found. Tried: {[str(c.resolve()) for c in candidates]}")
         return None
 
     def _load_ml_model(self, model_path: str) -> None:
@@ -480,10 +485,7 @@ class FraudDetector:
         model_source = "filesystem"
         resolved_path = self._resolve_model_path(model_path)
         if resolved_path is None:
-            self.logger.error(
-                f"ML model not found at {model_path} -- "
-                "will use rule-based scoring (DEGRADED)"
-            )
+            self.logger.error(f"ML model not found at {model_path} -- " "will use rule-based scoring (DEGRADED)")
             self.use_ml_model = False
             return
 
@@ -493,41 +495,31 @@ class FraudDetector:
             # Attempt C++ accelerated inference first
             if self.enable_cpp_acceleration:
                 try:
-                    self.fast_inference_engine = FastInferenceEngine(
-                        model_path_str, enable_cpp=True
-                    )
+                    self.fast_inference_engine = FastInferenceEngine(model_path_str, enable_cpp=True)
                     status = self.fast_inference_engine.get_status()
 
-                    if status['using_cpp']:
-                        self.logger.info(
-                            "C++ accelerated inference engine loaded successfully"
-                        )
+                    if status["using_cpp"]:
+                        self.logger.info("C++ accelerated inference engine loaded successfully")
                     else:
-                        self.logger.info(
-                            "C++ inference not available, using Python fallback "
-                            "in FastInferenceEngine"
-                        )
+                        self.logger.info("C++ inference not available, using Python fallback " "in FastInferenceEngine")
                 except Exception as e:
                     self.logger.warning(
-                        f"Failed to initialize FastInferenceEngine: {e} -- "
-                        "falling back to standard Python XGBoost"
+                        f"Failed to initialize FastInferenceEngine: {e} -- " "falling back to standard Python XGBoost"
                     )
                     self.fast_inference_engine = None
 
             # Load Python model (always needed for feature extraction
             # compatibility and as the standard inference path)
-            with open(model_path_str, 'rb') as f:
+            with open(model_path_str, "rb") as f:
                 model_data = pickle.load(f)
 
             # Extract model and preprocessing components
             if isinstance(model_data, dict):
-                self.ml_model = model_data.get('model')
-                self.scaler = model_data.get('scaler')
-                self.label_encoders = model_data.get('label_encoders', {})
-                self.model_features = model_data.get('feature_names', [])
-                self.logger.info(
-                    f"Loaded model components: {list(model_data.keys())}"
-                )
+                self.ml_model = model_data.get("model")
+                self.scaler = model_data.get("scaler")
+                self.label_encoders = model_data.get("label_encoders", {})
+                self.model_features = model_data.get("feature_names", [])
+                self.logger.info(f"Loaded model components: {list(model_data.keys())}")
                 if self.label_encoders:
                     self.logger.info(
                         "Loaded %d label encoders for categorical features: %s",
@@ -540,7 +532,7 @@ class FraudDetector:
 
             # Attempt to read feature_names_in_ directly from the model
             # object (scikit-learn / XGBoost convention) for validation
-            if hasattr(self.ml_model, 'feature_names_in_'):
+            if hasattr(self.ml_model, "feature_names_in_"):
                 model_native_features = list(self.ml_model.feature_names_in_)
                 if self.model_features and model_native_features != self.model_features:
                     self.logger.warning(
@@ -549,7 +541,7 @@ class FraudDetector:
                         "as the authoritative source."
                     )
                 self.model_features = model_native_features
-            elif hasattr(self.ml_model, 'get_booster'):
+            elif hasattr(self.ml_model, "get_booster"):
                 # XGBoost Booster-level feature names
                 try:
                     booster = self.ml_model.get_booster()
@@ -560,34 +552,29 @@ class FraudDetector:
                     pass  # Not critical -- fall through to metadata
 
             # Load model metadata for supplementary info
-            metadata_path = model_path_str.replace('.pkl', '_metadata.json')
+            metadata_path = model_path_str.replace(".pkl", "_metadata.json")
             if not Path(metadata_path).exists():
-                metadata_path = str(
-                    resolved_path.parent / 'ieee_fraud_model_metadata.json'
-                )
+                metadata_path = str(resolved_path.parent / "ieee_fraud_model_metadata.json")
 
             if Path(metadata_path).exists():
-                with open(metadata_path, 'r') as f:
+                with open(metadata_path, "r") as f:
                     metadata = json.load(f)
                     # Only use metadata features if not already loaded
                     if not self.model_features:
-                        self.model_features = metadata.get('feature_names', [])
-                    model_metrics = metadata.get('model_metrics', {})
-                    model_type = metadata.get('model_type', 'unknown')
-                    model_version = metadata.get('version', 'unknown')
+                        self.model_features = metadata.get("feature_names", [])
+                    model_metrics = metadata.get("model_metrics", {})
+                    model_type = metadata.get("model_type", "unknown")
+                    model_version = metadata.get("version", "unknown")
                     self.logger.info(
-                        f"Loaded ML model: type={model_type}, "
-                        f"version={model_version}, path={resolved_path}"
+                        f"Loaded ML model: type={model_type}, " f"version={model_version}, path={resolved_path}"
                     )
-                    val_auc = model_metrics.get('val_auc')
+                    val_auc = model_metrics.get("val_auc")
                     if val_auc is not None and isinstance(val_auc, (int, float)):
                         self.logger.info(f"Model validation AUC: {val_auc:.4f}")
                     else:
                         self.logger.info("Model validation AUC: unknown")
             else:
-                self.logger.warning(
-                    "Model metadata not found, using pickle feature names"
-                )
+                self.logger.warning("Model metadata not found, using pickle feature names")
 
             feature_count = len(self.model_features) if self.model_features else 0
             self.logger.info(
@@ -597,18 +584,11 @@ class FraudDetector:
             )
 
             if feature_count == 0:
-                self.logger.warning(
-                    "No feature names found -- feature validation at inference "
-                    "time will be skipped"
-                )
+                self.logger.warning("No feature names found -- feature validation at inference " "time will be skipped")
 
         except Exception as e:
-            self.logger.error(
-                f"Failed to load ML model from {resolved_path}: {e}"
-            )
-            self.logger.warning(
-                "Falling back to rule-based fraud detection (DEGRADED MODE)"
-            )
+            self.logger.error(f"Failed to load ML model from {resolved_path}: {e}")
+            self.logger.warning("Falling back to rule-based fraud detection (DEGRADED MODE)")
             self.ml_model = None
             self.use_ml_model = False
 
@@ -618,13 +598,15 @@ class FraudDetector:
         Sets self.ml_model, self.scaler, self.label_encoders, and self.model_features.
         """
         if isinstance(model_data, dict):
-            self.ml_model = model_data.get('model')
-            self.scaler = model_data.get('scaler')
-            self.label_encoders = model_data.get('label_encoders', {})
-            self.model_features = model_data.get('feature_names', [])
+            self.ml_model = model_data.get("model")
+            self.scaler = model_data.get("scaler")
+            self.label_encoders = model_data.get("label_encoders", {})
+            self.model_features = model_data.get("feature_names", [])
             self.logger.info(
                 "Unpacked model from %s: keys=%s, features=%d, label_encoders=%d",
-                source, list(model_data.keys()), len(self.model_features),
+                source,
+                list(model_data.keys()),
+                len(self.model_features),
                 len(self.label_encoders),
             )
         else:
@@ -637,46 +619,46 @@ class FraudDetector:
         """Handle graceful shutdown signals."""
         self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         self.running = False
-    
+
     def get_user_profile(self, user_id: str) -> UserProfile:
         """
         Retrieve or create user profile from Redis.
-        
+
         Args:
             user_id: User identifier
-            
+
         Returns:
             UserProfile object with current state
         """
         try:
             profile_data = self.redis_client.hgetall(f"user_profile:{user_id}")
-            
+
             if profile_data:
                 # Convert Redis strings back to appropriate types
                 return UserProfile(
-                    user_id=profile_data['user_id'],
-                    total_transactions=int(profile_data.get('total_transactions', 0)),
-                    total_amount=float(profile_data.get('total_amount', 0.0)),
-                    avg_transaction_amount=float(profile_data.get('avg_transaction_amount', 0.0)),
-                    last_transaction_time=profile_data.get('last_transaction_time'),
-                    last_transaction_amount=float(profile_data.get('last_transaction_amount', 0.0)),
-                    daily_transaction_count=int(profile_data.get('daily_transaction_count', 0)),
-                    daily_amount=float(profile_data.get('daily_amount', 0.0)),
-                    last_reset_date=profile_data.get('last_reset_date'),
-                    suspicious_activity_count=int(profile_data.get('suspicious_activity_count', 0))
+                    user_id=profile_data["user_id"],
+                    total_transactions=int(profile_data.get("total_transactions", 0)),
+                    total_amount=float(profile_data.get("total_amount", 0.0)),
+                    avg_transaction_amount=float(profile_data.get("avg_transaction_amount", 0.0)),
+                    last_transaction_time=profile_data.get("last_transaction_time"),
+                    last_transaction_amount=float(profile_data.get("last_transaction_amount", 0.0)),
+                    daily_transaction_count=int(profile_data.get("daily_transaction_count", 0)),
+                    daily_amount=float(profile_data.get("daily_amount", 0.0)),
+                    last_reset_date=profile_data.get("last_reset_date"),
+                    suspicious_activity_count=int(profile_data.get("suspicious_activity_count", 0)),
                 )
             else:
                 # Create new profile for first-time user
                 return UserProfile(user_id=user_id)
-                
+
         except Exception as e:
             self.logger.error(f"Error retrieving user profile for {user_id}: {e}")
             return UserProfile(user_id=user_id)
-    
+
     def save_user_profile(self, profile: UserProfile) -> None:
         """
         Save user profile to Redis.
-        
+
         Args:
             profile: UserProfile to save
         """
@@ -684,70 +666,63 @@ class FraudDetector:
             profile_dict = asdict(profile)
             # Remove None values for cleaner Redis storage
             profile_dict = {k: v for k, v in profile_dict.items() if v is not None}
-            
-            self.redis_client.hset(
-                f"user_profile:{profile.user_id}",
-                mapping=profile_dict
-            )
-            
+
+            self.redis_client.hset(f"user_profile:{profile.user_id}", mapping=profile_dict)
+
             # Set TTL for user profiles (30 days)
             self.redis_client.expire(f"user_profile:{profile.user_id}", 2592000)
-            
+
         except Exception as e:
             self.logger.error(f"Error saving user profile for {profile.user_id}: {e}")
-    
-    def extract_features(self, transaction: Dict[str, Any], 
-                        user_profile: UserProfile) -> FraudFeatures:
+
+    def extract_features(self, transaction: Dict[str, Any], user_profile: UserProfile) -> FraudFeatures:
         """
         Extract fraud detection features from transaction and user state.
-        
+
         Args:
             transaction: Raw transaction data
             user_profile: Current user profile state
-            
+
         Returns:
             FraudFeatures object with engineered features
         """
         # Parse transaction data
-        amount = float(transaction['transaction_amt'])
-        timestamp = transaction['generated_timestamp']  # Use generated timestamp instead
-        user_id = str(transaction['card1'])  # Using card1 as user identifier, convert to string
-        transaction_id = transaction.get('transaction_id', 'unknown')
-        
+        amount = float(transaction["transaction_amt"])
+        timestamp = transaction["generated_timestamp"]  # Use generated timestamp instead
+        user_id = str(transaction["card1"])  # Using card1 as user identifier, convert to string
+        transaction_id = transaction.get("transaction_id", "unknown")
+
         # Parse timestamp for temporal features
         dt = datetime.fromisoformat(timestamp)
         transaction_hour = dt.hour
         transaction_day = dt.weekday()
-        
+
         # Calculate behavioral features
         amount_vs_avg_ratio = (
-            amount / user_profile.avg_transaction_amount 
-            if user_profile.avg_transaction_amount > 0 else 1.0
+            amount / user_profile.avg_transaction_amount if user_profile.avg_transaction_amount > 0 else 1.0
         )
-        
+
         # Time since last transaction (in seconds)
         time_since_last = 0.0
         if user_profile.last_transaction_time:
             last_dt = datetime.fromisoformat(user_profile.last_transaction_time)
             time_since_last = (dt - last_dt).total_seconds()
-        
+
         # Amount comparison with last transaction
         amount_vs_last_ratio = (
-            amount / user_profile.last_transaction_amount
-            if user_profile.last_transaction_amount > 0 else 1.0
+            amount / user_profile.last_transaction_amount if user_profile.last_transaction_amount > 0 else 1.0
         )
-        
+
         # Risk indicators
         is_high_amount = amount > 1000.0  # High amount threshold
         is_unusual_hour = transaction_hour < 6 or transaction_hour > 22  # Night hours
         is_rapid_transaction = time_since_last < 300  # Less than 5 minutes
-        
+
         # Calculate velocity score (transactions per hour)
         velocity_score = (
-            user_profile.daily_transaction_count / 24.0
-            if user_profile.daily_transaction_count > 0 else 0.0
+            user_profile.daily_transaction_count / 24.0 if user_profile.daily_transaction_count > 0 else 0.0
         )
-        
+
         # ---- Scoring path selection ----
         # Primary: ML model.  Fallback: rule-based scoring.
         # The rule-based path only activates when the model is genuinely
@@ -769,9 +744,9 @@ class FraudDetector:
                 is_unusual_hour,
                 is_rapid_transaction,
                 velocity_score,
-                user_profile.daily_transaction_count
+                user_profile.daily_transaction_count,
             )
-        
+
         return FraudFeatures(
             user_id=user_id,
             transaction_id=transaction_id,
@@ -788,19 +763,21 @@ class FraudDetector:
             is_rapid_transaction=is_rapid_transaction,
             velocity_score=velocity_score,
             fraud_score=fraud_score,
-            is_fraud_alert=fraud_score >= self.fraud_threshold
+            is_fraud_alert=fraud_score >= self.fraud_threshold,
         )
-    
-    def _calculate_fraud_score(self, 
-                              amount_vs_avg_ratio: float,
-                              is_high_amount: bool,
-                              is_unusual_hour: bool,
-                              is_rapid_transaction: bool,
-                              velocity_score: float,
-                              daily_count: int) -> float:
+
+    def _calculate_fraud_score(
+        self,
+        amount_vs_avg_ratio: float,
+        is_high_amount: bool,
+        is_unusual_hour: bool,
+        is_rapid_transaction: bool,
+        velocity_score: float,
+        daily_count: int,
+    ) -> float:
         """
         Calculate fraud score using rule-based approach.
-        
+
         Args:
             amount_vs_avg_ratio: Transaction amount vs user average
             is_high_amount: Whether transaction is high amount
@@ -808,12 +785,12 @@ class FraudDetector:
             is_rapid_transaction: Whether transaction is rapid
             velocity_score: User transaction velocity
             daily_count: Daily transaction count
-            
+
         Returns:
             Fraud score between 0.0 and 1.0
         """
         score = 0.0
-        
+
         # Amount-based scoring
         if amount_vs_avg_ratio > 5.0:
             score += 0.3
@@ -821,36 +798,35 @@ class FraudDetector:
             score += 0.2
         elif amount_vs_avg_ratio > 2.0:
             score += 0.1
-        
+
         # High amount transactions
         if is_high_amount:
             score += 0.2
-        
+
         # Unusual hour transactions
         if is_unusual_hour:
             score += 0.15
-        
+
         # Rapid transactions (potential velocity fraud)
         if is_rapid_transaction:
             score += 0.25
-        
+
         # High velocity users
         if velocity_score > 10:  # More than 10 transactions per hour average
             score += 0.2
         elif velocity_score > 5:
             score += 0.1
-        
+
         # Excessive daily transactions
         if daily_count > 50:
             score += 0.15
         elif daily_count > 25:
             score += 0.1
-        
+
         # Ensure score is between 0 and 1
         return min(score, 1.0)
-    
-    def _calculate_ml_fraud_score(self, transaction: Dict[str, Any],
-                                 user_profile: UserProfile) -> float:
+
+    def _calculate_ml_fraud_score(self, transaction: Dict[str, Any], user_profile: UserProfile) -> float:
         """
         Calculate fraud score using trained ML model.
 
@@ -874,7 +850,7 @@ class FraudDetector:
             features = self._extract_ml_features(transaction, user_profile)
 
             # Use FastInferenceEngine if available, otherwise fall back to Python XGBoost
-            if hasattr(self, 'fast_inference_engine') and self.fast_inference_engine:
+            if hasattr(self, "fast_inference_engine") and self.fast_inference_engine:
                 fraud_probability, performance_info = self.fast_inference_engine.predict_fraud_probability(features)
 
                 # Log performance info periodically for monitoring
@@ -886,23 +862,20 @@ class FraudDetector:
                 # Standard Python XGBoost inference
                 fraud_probability = self.ml_model.predict_proba([features])[0][1]
                 return float(fraud_probability)
-            
+
         except Exception as e:
-            self.logger.error(
-                f"ML inference failed: {e} -- switching to rules_fallback mode"
-            )
+            self.logger.error(f"ML inference failed: {e} -- switching to rules_fallback mode")
             # Transition to degraded mode so subsequent transactions use
             # the rules path directly (avoids repeated inference failures).
             self.model_status = "rules_fallback"
 
             # Compute rule-based score for this transaction
-            amount = float(transaction['transaction_amt'])
-            timestamp = transaction['generated_timestamp']
+            amount = float(transaction["transaction_amt"])
+            timestamp = transaction["generated_timestamp"]
             dt = datetime.fromisoformat(timestamp)
 
             amount_vs_avg_ratio = (
-                amount / user_profile.avg_transaction_amount
-                if user_profile.avg_transaction_amount > 0 else 1.0
+                amount / user_profile.avg_transaction_amount if user_profile.avg_transaction_amount > 0 else 1.0
             )
             is_high_amount = amount > 1000.0
             is_unusual_hour = dt.hour < 6 or dt.hour > 22
@@ -916,10 +889,14 @@ class FraudDetector:
             velocity_score = user_profile.daily_transaction_count / 24.0
 
             return self._calculate_fraud_score(
-                amount_vs_avg_ratio, is_high_amount, is_unusual_hour,
-                is_rapid_transaction, velocity_score, user_profile.daily_transaction_count
+                amount_vs_avg_ratio,
+                is_high_amount,
+                is_unusual_hour,
+                is_rapid_transaction,
+                velocity_score,
+                user_profile.daily_transaction_count,
             )
-    
+
     # ------------------------------------------------------------------
     # Mapping from snake_case producer keys to PascalCase model feature
     # names.  Only entries where the names differ are needed; features
@@ -936,8 +913,7 @@ class FraudDetector:
         "device_info": "DeviceInfo",
     }
 
-    def _extract_ml_features(self, transaction: Dict[str, Any],
-                            user_profile: UserProfile) -> List[float]:
+    def _extract_ml_features(self, transaction: Dict[str, Any], user_profile: UserProfile) -> List[float]:
         """Extract features compatible with the trained ML model.
 
         Builds a feature vector of exactly ``len(self.model_features)``
@@ -955,11 +931,11 @@ class FraudDetector:
         """
 
         # -- helpers --------------------------------------------------
-        _nan = float('nan')
+        _nan = float("nan")
 
         def safe_float(value):
             """Convert to float; return NaN for missing / unconvertible."""
-            if value is None or value == '':
+            if value is None or value == "":
                 return _nan
             try:
                 return float(value)
@@ -988,7 +964,7 @@ class FraudDetector:
                 # M-features: producer sends "m1", model expects "M1"
                 # C-features: producer sends "c4", model expects "C4"
                 # D-features: producer sends "d8", model expects "D8"
-                if len(raw_key) >= 2 and raw_key[0].isalpha() and raw_key[1:].replace('_', '').isdigit():
+                if len(raw_key) >= 2 and raw_key[0].isalpha() and raw_key[1:].replace("_", "").isdigit():
                     txn_by_model_key[raw_key[0].upper() + raw_key[1:]] = raw_value
 
         # -- collect numeric features ---------------------------------
@@ -996,12 +972,25 @@ class FraudDetector:
 
         # Numeric features that come directly from the transaction
         _NUMERIC_FEATURES = [
-            'TransactionDT', 'TransactionAmt',
-            'card1', 'card2', 'card3', 'card5',
-            'addr1', 'addr2',
-            'C4', 'C7', 'C8', 'C10', 'C12',
-            'D8',
-            'id_11', 'id_13', 'id_17', 'id_19', 'id_20',
+            "TransactionDT",
+            "TransactionAmt",
+            "card1",
+            "card2",
+            "card3",
+            "card5",
+            "addr1",
+            "addr2",
+            "C4",
+            "C7",
+            "C8",
+            "C10",
+            "C12",
+            "D8",
+            "id_11",
+            "id_13",
+            "id_17",
+            "id_19",
+            "id_20",
         ]
         for feat in _NUMERIC_FEATURES:
             val = txn_by_model_key.get(feat)
@@ -1010,7 +999,7 @@ class FraudDetector:
 
         # V-features (147 specific V columns used by the model)
         for feat_name in self.model_features:
-            if feat_name.startswith('V'):
+            if feat_name.startswith("V"):
                 val = txn_by_model_key.get(feat_name)
                 if val is not None:
                     available[feat_name] = safe_float(val)
@@ -1018,51 +1007,45 @@ class FraudDetector:
         # -- encode categoricals with saved LabelEncoders -------------
         for feat_name, encoder in self.label_encoders.items():
             raw_value = txn_by_model_key.get(feat_name)
-            if raw_value is None or raw_value == '':
+            if raw_value is None or raw_value == "":
                 # Feature not present -- use 'unknown' if the encoder
                 # supports it, otherwise NaN.
-                if 'unknown' in encoder.classes_:
-                    available[feat_name] = float(
-                        encoder.transform(['unknown'])[0]
-                    )
+                if "unknown" in encoder.classes_:
+                    available[feat_name] = float(encoder.transform(["unknown"])[0])
                 else:
                     available[feat_name] = _nan
             else:
                 str_value = str(raw_value)
                 if str_value in encoder.classes_:
-                    available[feat_name] = float(
-                        encoder.transform([str_value])[0]
-                    )
-                elif 'unknown' in encoder.classes_:
-                    available[feat_name] = float(
-                        encoder.transform(['unknown'])[0]
-                    )
+                    available[feat_name] = float(encoder.transform([str_value])[0])
+                elif "unknown" in encoder.classes_:
+                    available[feat_name] = float(encoder.transform(["unknown"])[0])
                 else:
                     # No 'unknown' class and value unseen -- use NaN
                     available[feat_name] = _nan
 
         # -- derived / engineered features ----------------------------
-        amt_raw = txn_by_model_key.get('TransactionAmt')
+        amt_raw = txn_by_model_key.get("TransactionAmt")
         amt = safe_float(amt_raw) if amt_raw is not None else _nan
 
         if amt == amt:  # not NaN
-            available['TransactionAmt_log'] = float(np.log1p(amt))
-            available['TransactionAmt_decimal'] = amt - int(amt)
+            available["TransactionAmt_log"] = float(np.log1p(amt))
+            available["TransactionAmt_decimal"] = amt - int(amt)
             # Amount bin: 0=<50, 1=<100, 2=<200, 3=<500, 4=>=500
             if amt < 50:
-                available['TransactionAmt_bin'] = 0.0
+                available["TransactionAmt_bin"] = 0.0
             elif amt < 100:
-                available['TransactionAmt_bin'] = 1.0
+                available["TransactionAmt_bin"] = 1.0
             elif amt < 200:
-                available['TransactionAmt_bin'] = 2.0
+                available["TransactionAmt_bin"] = 2.0
             elif amt < 500:
-                available['TransactionAmt_bin'] = 3.0
+                available["TransactionAmt_bin"] = 3.0
             else:
-                available['TransactionAmt_bin'] = 4.0
+                available["TransactionAmt_bin"] = 4.0
         else:
-            available['TransactionAmt_log'] = _nan
-            available['TransactionAmt_decimal'] = _nan
-            available['TransactionAmt_bin'] = _nan
+            available["TransactionAmt_log"] = _nan
+            available["TransactionAmt_decimal"] = _nan
+            available["TransactionAmt_bin"] = _nan
 
         # -- assemble feature vector in model order -------------------
         features: List[float] = []
@@ -1078,8 +1061,7 @@ class FraudDetector:
         actual_len = len(features)
         if expected_len > 0 and actual_len != expected_len:
             raise ValueError(
-                f"Feature vector length mismatch: model expects "
-                f"{expected_len} features but got {actual_len}"
+                f"Feature vector length mismatch: model expects " f"{expected_len} features but got {actual_len}"
             )
 
         # -- apply scaler if present ----------------------------------
@@ -1087,17 +1069,14 @@ class FraudDetector:
             try:
                 features = self.scaler.transform([features])[0].tolist()
             except Exception as e:
-                self.logger.debug(
-                    f"Scaler transform failed, using raw features: {e}"
-                )
+                self.logger.debug(f"Scaler transform failed, using raw features: {e}")
 
         return features
-    
-    def publish_fraud_alert(self, features: FraudFeatures, 
-                           original_transaction: Dict[str, Any]) -> None:
+
+    def publish_fraud_alert(self, features: FraudFeatures, original_transaction: Dict[str, Any]) -> None:
         """
         Publish fraud alert to Kafka topic.
-        
+
         Args:
             features: Fraud features for the transaction
             original_transaction: Original transaction data
@@ -1115,23 +1094,20 @@ class FraudDetector:
                     "is_rapid_transaction": features.is_rapid_transaction,
                     "amount_vs_avg_ratio": features.amount_vs_avg_ratio,
                     "velocity_score": features.velocity_score,
-                    "daily_transaction_count": features.daily_transaction_count
+                    "daily_transaction_count": features.daily_transaction_count,
                 },
                 "transaction_details": {
                     "amount": features.amount,
                     "hour": features.transaction_hour,
-                    "day": features.transaction_day
+                    "day": features.transaction_day,
                 },
-                "original_transaction": original_transaction
+                "original_transaction": original_transaction,
             }
-            
+
             # Serialize alert (Avro when Schema Registry is available, JSON otherwise)
-            if (
-                self._schema_helper is not None
-                and self._schema_helper.is_available
-                and SCHEMA_UTILS_AVAILABLE
-            ):
+            if self._schema_helper is not None and self._schema_helper.is_available and SCHEMA_UTILS_AVAILABLE:
                 from kafka.schema_utils import serialize_message
+
                 alert_bytes = serialize_message(
                     self._schema_helper,
                     "fraud_alert",
@@ -1146,12 +1122,12 @@ class FraudDetector:
                 self.output_topic,
                 key=features.user_id,
                 value=alert_bytes,
-                callback=self._delivery_callback
+                callback=self._delivery_callback,
             )
-            
+
             # Poll for delivery callbacks
             self.producer.poll(0)
-            
+
             self.fraud_alerts_count += 1
             self.logger.warning(
                 "Fraud alert generated",
@@ -1162,25 +1138,26 @@ class FraudDetector:
                     "amount": round(features.amount, 2),
                 },
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error publishing fraud alert: {e}")
-    
+
     def _delivery_callback(self, err, msg):
         """Callback for message delivery confirmation."""
         if err is not None:
             self.logger.error(f"Failed to deliver fraud alert: {err}")
         else:
-            self.logger.debug(
-                f"Fraud alert delivered to {msg.topic()} [partition {msg.partition()}]"
-            )
-    
-    def publish_fraud_detection_result(self, features: FraudFeatures, 
-                                     original_transaction: Dict[str, Any],
-                                     processing_start_time: float) -> None:
+            self.logger.debug(f"Fraud alert delivered to {msg.topic()} [partition {msg.partition()}]")
+
+    def publish_fraud_detection_result(
+        self,
+        features: FraudFeatures,
+        original_transaction: Dict[str, Any],
+        processing_start_time: float,
+    ) -> None:
         """
         Publish complete fraud detection result for persistence.
-        
+
         Args:
             features: Fraud features for the transaction
             original_transaction: Original transaction data
@@ -1188,7 +1165,7 @@ class FraudDetector:
         """
         try:
             processing_time_ms = int((time.time() - processing_start_time) * 1000)
-            
+
             # Determine severity based on fraud score
             severity = "MINIMAL"
             if features.fraud_score >= 0.9:
@@ -1199,19 +1176,19 @@ class FraudDetector:
                 severity = "MEDIUM"
             elif features.fraud_score >= 0.4:
                 severity = "LOW"
-            
+
             # Create comprehensive fraud detection result
             detection_result = {
                 "transaction": {
                     "transaction_id": features.transaction_id,
                     "user_id": features.user_id,
-                    "timestamp": original_transaction.get('generated_timestamp'),
+                    "timestamp": original_transaction.get("generated_timestamp"),
                     "amount": features.amount,
-                    "merchant_category": original_transaction.get('ProductCD', 'unknown'),
-                    "payment_method": original_transaction.get('card4', 'unknown'),
-                    "device_info": original_transaction.get('DeviceType', 'unknown'),
-                    "location_country": original_transaction.get('card3', 'unknown'),
-                    "location_state": original_transaction.get('addr1', 'unknown')
+                    "merchant_category": original_transaction.get("ProductCD", "unknown"),
+                    "payment_method": original_transaction.get("card4", "unknown"),
+                    "device_info": original_transaction.get("DeviceType", "unknown"),
+                    "location_country": original_transaction.get("card3", "unknown"),
+                    "location_state": original_transaction.get("addr1", "unknown"),
                 },
                 "is_fraud": features.is_fraud_alert,
                 "fraud_score": features.fraud_score,
@@ -1224,37 +1201,37 @@ class FraudDetector:
                     "is_unusual_hour": features.is_unusual_hour,
                     "is_rapid_transaction": features.is_rapid_transaction,
                     "velocity_score": features.velocity_score,
-                    "daily_transaction_count": features.daily_transaction_count
+                    "daily_transaction_count": features.daily_transaction_count,
                 },
                 "features": features.to_dict(),
                 "processing_time_ms": processing_time_ms,
                 "detection_metadata": {
-                    "ml_model_version": "ieee_fraud_model_production_v1.0" if self.use_ml_model else None,
-                    "ml_prediction": features.fraud_score if self.use_ml_model else None,
+                    "ml_model_version": ("ieee_fraud_model_production_v1.0" if self.use_ml_model else None),
+                    "ml_prediction": (features.fraud_score if self.use_ml_model else None),
                     "ml_confidence": 0.85 if self.use_ml_model else None,  # Placeholder
-                    "business_rules_score": features.fraud_score if not self.use_ml_model else None,
+                    "business_rules_score": (features.fraud_score if not self.use_ml_model else None),
                     "features_used": list(features.to_dict().keys()),
-                    "model_features": features.to_dict()
-                }
+                    "model_features": features.to_dict(),
+                },
             }
-            
+
             # Publish to fraud detection results topic for persistence
             self.producer.produce(
                 "fraud-detection-results",
                 key=features.user_id,
                 value=json.dumps(detection_result),
-                callback=self._delivery_callback
+                callback=self._delivery_callback,
             )
-            
+
             self.producer.poll(0)
-            
+
         except Exception as e:
             self.logger.error(f"Error publishing fraud detection result for persistence: {e}")
-    
+
     def _get_triggered_rules(self, features: FraudFeatures) -> List[str]:
         """Get list of business rules that were triggered."""
         triggered_rules = []
-        
+
         if features.is_high_amount:
             triggered_rules.append("high_amount_transaction")
         if features.is_unusual_hour:
@@ -1267,19 +1244,19 @@ class FraudDetector:
             triggered_rules.append("high_velocity_user")
         if features.daily_transaction_count > 25:
             triggered_rules.append("excessive_daily_transactions")
-        
+
         return triggered_rules
-    
+
     def publish_performance_metrics(self, processing_time_ms: float) -> None:
         """
         Publish performance metrics for monitoring.
-        
+
         Args:
             processing_time_ms: Processing time in milliseconds
         """
         try:
             current_time = datetime.now().isoformat()
-            
+
             metrics = [
                 {
                     "timestamp": current_time,
@@ -1289,8 +1266,8 @@ class FraudDetector:
                     "instance_id": f"fraud_detector_{self.consumer_group}",
                     "labels": {
                         "consumer_group": self.consumer_group,
-                        "use_ml_model": str(self.use_ml_model)
-                    }
+                        "use_ml_model": str(self.use_ml_model),
+                    },
                 },
                 {
                     "timestamp": current_time,
@@ -1298,25 +1275,23 @@ class FraudDetector:
                     "metric_value": self.processed_count / max((time.time() - self.start_time), 1),
                     "component": "fraud_detector",
                     "instance_id": f"fraud_detector_{self.consumer_group}",
-                    "labels": {
-                        "consumer_group": self.consumer_group
-                    }
-                }
+                    "labels": {"consumer_group": self.consumer_group},
+                },
             ]
-            
+
             for metric in metrics:
                 self.producer.produce(
                     "performance-metrics",
                     key=metric["instance_id"],
                     value=json.dumps(metric),
-                    callback=self._delivery_callback
+                    callback=self._delivery_callback,
                 )
-            
+
             self.producer.poll(0)
-            
+
         except Exception as e:
             self.logger.error(f"Error publishing performance metrics: {e}")
-    
+
     def _is_user_blocked(self, user_id: str) -> bool:
         """
         Check whether a user is on the blocked_users set in Redis.
@@ -1342,9 +1317,7 @@ class FraudDetector:
             )
             return False
 
-    def _publish_blocked_transaction(
-        self, transaction: Dict[str, Any], user_id: str
-    ) -> None:
+    def _publish_blocked_transaction(self, transaction: Dict[str, Any], user_id: str) -> None:
         """
         Emit a blocked transaction to the blocked-transactions Kafka topic.
 
@@ -1371,9 +1344,7 @@ class FraudDetector:
             self.producer.poll(0)
 
         except Exception as e:
-            self.logger.error(
-                f"Failed to publish blocked transaction for user {user_id}: {e}"
-            )
+            self.logger.error(f"Failed to publish blocked transaction for user {user_id}: {e}")
 
     def process_transaction(self, transaction: Dict[str, Any]) -> None:
         """
@@ -1393,7 +1364,7 @@ class FraudDetector:
         processing_start_time = time.time()
 
         try:
-            user_id = transaction['card1']  # Using card1 as user identifier
+            user_id = transaction["card1"]  # Using card1 as user identifier
 
             # ---- Blocking enforcement (P1.2) ----
             # Check *before* scoring to save compute on known-blocked users.
@@ -1433,8 +1404,8 @@ class FraudDetector:
                     self.logger.debug(f"Drift monitor error (non-fatal): {e}")
 
             # Update user profile with new transaction
-            user_profile.update_daily_stats(features.amount, transaction['generated_timestamp'])
-            user_profile.update_transaction_stats(features.amount, transaction['generated_timestamp'])
+            user_profile.update_daily_stats(features.amount, transaction["generated_timestamp"])
+            user_profile.update_transaction_stats(features.amount, transaction["generated_timestamp"])
 
             # Update suspicious activity count if fraud detected
             if features.is_fraud_alert:
@@ -1493,7 +1464,7 @@ class FraudDetector:
         except Exception as e:
             self.logger.error(f"Error processing transaction: {e}")
             self.logger.error(f"Transaction data: {transaction}")
-    
+
     # ------------------------------------------------------------------
     # Batch inference helpers
     # ------------------------------------------------------------------
@@ -1508,10 +1479,7 @@ class FraudDetector:
         Returns a list of feature vectors, one per transaction, suitable for
         passing to ``model.predict_proba()`` as a 2-D array.
         """
-        return [
-            self._extract_ml_features(txn, profile)
-            for txn, profile in zip(transactions, user_profiles)
-        ]
+        return [self._extract_ml_features(txn, profile) for txn, profile in zip(transactions, user_profiles)]
 
     def _calculate_ml_fraud_scores_batch(
         self,
@@ -1523,21 +1491,14 @@ class FraudDetector:
         Falls back to per-message scoring if batch prediction fails.
         """
         try:
-            feature_matrix = self._extract_ml_features_batch(
-                transactions, user_profiles
-            )
+            feature_matrix = self._extract_ml_features_batch(transactions, user_profiles)
             # XGBoost predict_proba on the full batch is much faster than
             # calling it once per row.
             probabilities = self.ml_model.predict_proba(feature_matrix)
             return [float(row[1]) for row in probabilities]
         except Exception as e:
-            self.logger.warning(
-                f"Batch ML inference failed ({e}), falling back to per-message"
-            )
-            return [
-                self._calculate_ml_fraud_score(txn, profile)
-                for txn, profile in zip(transactions, user_profiles)
-            ]
+            self.logger.warning(f"Batch ML inference failed ({e}), falling back to per-message")
+            return [self._calculate_ml_fraud_score(txn, profile) for txn, profile in zip(transactions, user_profiles)]
 
     def _process_batch(
         self,
@@ -1565,16 +1526,12 @@ class FraudDetector:
         batch_len = len(messages)
 
         # -- Step 1: gather user profiles --------------------------------
-        user_ids = [
-            str(txn.get("card1", "unknown")) for txn in transactions
-        ]
+        user_ids = [str(txn.get("card1", "unknown")) for txn in transactions]
         user_profiles = [self.get_user_profile(uid) for uid in user_ids]
 
         # -- Step 2: batch ML inference ----------------------------------
         if self.use_ml_model and self.ml_model:
-            fraud_scores = self._calculate_ml_fraud_scores_batch(
-                transactions, user_profiles
-            )
+            fraud_scores = self._calculate_ml_fraud_scores_batch(transactions, user_profiles)
         else:
             fraud_scores = [None] * batch_len  # signals per-message rule scoring
 
@@ -1598,12 +1555,8 @@ class FraudDetector:
                     self._batch_override_score = None
 
                 # Update user profile
-                profile.update_daily_stats(
-                    features.amount, txn["generated_timestamp"]
-                )
-                profile.update_transaction_stats(
-                    features.amount, txn["generated_timestamp"]
-                )
+                profile.update_daily_stats(features.amount, txn["generated_timestamp"])
+                profile.update_transaction_stats(features.amount, txn["generated_timestamp"])
                 if features.is_fraud_alert:
                     profile.suspicious_activity_count += 1
                 self.save_user_profile(profile)
@@ -1611,9 +1564,7 @@ class FraudDetector:
                 # Publish alerts and results
                 if features.is_fraud_alert:
                     self.publish_fraud_alert(features, txn)
-                self.publish_fraud_detection_result(
-                    features, txn, processing_start
-                )
+                self.publish_fraud_detection_result(features, txn, processing_start)
 
                 self.processed_count += 1
 
@@ -1625,9 +1576,7 @@ class FraudDetector:
                 if self.processed_count % 1000 == 0:
                     elapsed = time.time() - self.start_time
                     tps = self.processed_count / elapsed
-                    fraud_rate = (
-                        self.fraud_alerts_count / self.processed_count * 100
-                    )
+                    fraud_rate = self.fraud_alerts_count / self.processed_count * 100
                     self.logger.info(
                         f"Processed: {self.processed_count}, "
                         f"Fraud alerts: {self.fraud_alerts_count} "
@@ -1638,9 +1587,7 @@ class FraudDetector:
                         self.logger.info(f"Flow control: {fc_stats}")
             except Exception as e:
                 failed_indices.append(idx)
-                self.logger.error(
-                    f"Error processing message {idx} in batch: {e}"
-                )
+                self.logger.error(f"Error processing message {idx} in batch: {e}")
 
         # -- Step 4: commit offsets for the entire batch -----------------
         # We commit the *last* message offset which implicitly covers all
@@ -1653,21 +1600,16 @@ class FraudDetector:
                 self.logger.error(f"Failed to commit batch offsets: {e}")
 
         batch_duration = time.time() - batch_start
-        self.batch_metrics.record_batch(
-            batch_len, batch_duration, flush_reason
-        )
+        self.batch_metrics.record_batch(batch_len, batch_duration, flush_reason)
 
         if failed_indices:
             self.logger.warning(
-                f"Batch completed with {len(failed_indices)}/{batch_len} "
-                f"failures (indices: {failed_indices})"
+                f"Batch completed with {len(failed_indices)}/{batch_len} " f"failures (indices: {failed_indices})"
             )
 
         # Log batch metrics periodically
         if self.batch_metrics.total_batches % 100 == 0:
-            self.logger.info(
-                f"Batch metrics: {self.batch_metrics.get_summary()}"
-            )
+            self.logger.info(f"Batch metrics: {self.batch_metrics.get_summary()}")
 
     # ------------------------------------------------------------------
     # Main processing loops
@@ -1706,11 +1648,7 @@ class FraudDetector:
 
                 try:
                     # Parse transaction from message (Avro if available, JSON fallback)
-                    if (
-                        self._schema_helper is not None
-                        and self._schema_helper.is_available
-                        and SCHEMA_UTILS_AVAILABLE
-                    ):
+                    if self._schema_helper is not None and self._schema_helper.is_available and SCHEMA_UTILS_AVAILABLE:
                         transaction = deserialize_message(
                             self._schema_helper,
                             "transaction",
@@ -1718,7 +1656,7 @@ class FraudDetector:
                             self.input_topic,
                         )
                     else:
-                        transaction = json.loads(msg.value().decode('utf-8'))
+                        transaction = json.loads(msg.value().decode("utf-8"))
 
                     # Process transaction for fraud detection
                     self.process_transaction(transaction)
@@ -1777,8 +1715,8 @@ class FraudDetector:
             f"size={self.batch_size}, timeout={self.batch_timeout_ms}ms)..."
         )
 
-        msg_buffer: list = []          # raw Kafka messages
-        txn_buffer: List[Dict] = []    # parsed transactions
+        msg_buffer: list = []  # raw Kafka messages
+        txn_buffer: List[Dict] = []  # parsed transactions
         batch_start_time: Optional[float] = None
         timeout_seconds = self.batch_timeout_ms / 1000.0
 
@@ -1798,9 +1736,7 @@ class FraudDetector:
 
                 if msg is not None and not msg.error():
                     try:
-                        transaction = json.loads(
-                            msg.value().decode("utf-8")
-                        )
+                        transaction = json.loads(msg.value().decode("utf-8"))
                         msg_buffer.append(msg)
                         txn_buffer.append(transaction)
 
@@ -1808,9 +1744,7 @@ class FraudDetector:
                             batch_start_time = time.time()
 
                     except json.JSONDecodeError as e:
-                        self.logger.error(
-                            f"Failed to parse transaction JSON: {e}"
-                        )
+                        self.logger.error(f"Failed to parse transaction JSON: {e}")
                         # Publish to DLQ before committing the bad message
                         if self._dlq_publisher is not None:
                             try:
@@ -1834,16 +1768,12 @@ class FraudDetector:
                 # The flow controller may reduce the effective batch size
                 # if per-message processing is slow, providing backpressure.
                 flush_reason: Optional[str] = None
-                effective_size = self.flow_controller.effective_batch_size(
-                    self.batch_size
-                )
+                effective_size = self.flow_controller.effective_batch_size(self.batch_size)
 
                 if len(msg_buffer) >= effective_size:
                     flush_reason = "full"
                 elif (
-                    batch_start_time is not None
-                    and (time.time() - batch_start_time) >= timeout_seconds
-                    and msg_buffer
+                    batch_start_time is not None and (time.time() - batch_start_time) >= timeout_seconds and msg_buffer
                 ):
                     flush_reason = "timeout"
 
@@ -1859,13 +1789,11 @@ class FraudDetector:
         finally:
             # Flush any remaining messages on shutdown
             if msg_buffer:
-                self.logger.info(
-                    f"Flushing {len(msg_buffer)} remaining messages on shutdown"
-                )
+                self.logger.info(f"Flushing {len(msg_buffer)} remaining messages on shutdown")
                 self._process_batch(msg_buffer, txn_buffer, "shutdown")
 
             self._cleanup()
-    
+
     def _cleanup(self) -> None:
         """Cleanup resources during shutdown."""
         self.logger.info("Shutting down fraud detection consumer...")
@@ -1873,10 +1801,7 @@ class FraudDetector:
         # Final statistics
         elapsed = time.time() - self.start_time
         tps = self.processed_count / elapsed if elapsed > 0 else 0
-        fraud_rate = (
-            self.fraud_alerts_count / self.processed_count * 100
-            if self.processed_count > 0 else 0
-        )
+        fraud_rate = self.fraud_alerts_count / self.processed_count * 100 if self.processed_count > 0 else 0
 
         self.logger.info(
             f"Final statistics - Processed: {self.processed_count}, "
@@ -1886,19 +1811,19 @@ class FraudDetector:
             f"Model status: {self.model_status}, "
             f"Average TPS: {tps:.1f}"
         )
-        
+
         # Flush remaining messages
         if self.producer:
             self.producer.flush(timeout=10)
-            
+
         # Close Kafka connections
         if self.consumer:
             self.consumer.close()
-            
+
         # Close Redis connection
         if self.redis_client:
             self.redis_client.close()
-        
+
         self.logger.info("Fraud detection consumer shutdown complete")
 
 
@@ -1911,19 +1836,26 @@ def main():
 
     parser = argparse.ArgumentParser(description="Stream-Sentinel Fraud Detector")
     parser.add_argument(
-        "--batch", action="store_true",
+        "--batch",
+        action="store_true",
         help="Enable batch inference mode (higher throughput, slightly higher latency)",
     )
     parser.add_argument(
-        "--batch-size", type=int, default=32,
+        "--batch-size",
+        type=int,
+        default=32,
         help="Maximum messages per batch (default: 32)",
     )
     parser.add_argument(
-        "--batch-timeout-ms", type=int, default=100,
+        "--batch-timeout-ms",
+        type=int,
+        default=100,
         help="Max ms to wait before flushing a partial batch (default: 100)",
     )
     parser.add_argument(
-        "--threshold", type=float, default=0.3,
+        "--threshold",
+        type=float,
+        default=0.3,
         help="Fraud score threshold for alerting (default: 0.3)",
     )
     args = parser.parse_args()
@@ -1932,9 +1864,8 @@ def main():
         # Start combined Prometheus metrics + health check server on port 8000
         health_server = None
         try:
-            from monitoring.health import (
-                HealthCheckServer, make_kafka_check, make_redis_check, make_model_check,
-            )
+            from monitoring.health import HealthCheckServer, make_kafka_check, make_model_check, make_redis_check
+
             metrics = get_prometheus_metrics(component_name="fraud-detector")
             health_server = HealthCheckServer(registry=metrics.registry)
             metrics.set_health_server(health_server)

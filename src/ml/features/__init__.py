@@ -7,6 +7,6 @@ Provides unified feature computation for both offline training (batch)
 and online inference (streaming) contexts.
 """
 
-from .feature_engineer import FeatureEngineer, FeatureConfig
+from .feature_engineer import FeatureConfig, FeatureEngineer
 
 __all__ = ["FeatureEngineer", "FeatureConfig"]

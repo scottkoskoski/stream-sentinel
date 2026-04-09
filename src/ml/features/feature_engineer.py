@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FeatureConfig:
     """Tunable knobs for the feature engineering module."""
@@ -40,23 +41,47 @@ class FeatureConfig:
     # Merchant category risk scores (configurable lookup table).
     # Keys are ProductCD values from IEEE-CIS dataset; values are baseline
     # fraud-rate estimates.  Callers can override with empirical rates.
-    merchant_risk_table: Dict[str, float] = field(default_factory=lambda: {
-        "W": 0.035,   # most common, moderate risk
-        "C": 0.055,   # card-present, slightly higher
-        "H": 0.045,   # hospitality
-        "R": 0.065,   # recurring / subscription
-        "S": 0.080,   # services -- highest risk
-    })
+    merchant_risk_table: Dict[str, float] = field(
+        default_factory=lambda: {
+            "W": 0.035,  # most common, moderate risk
+            "C": 0.055,  # card-present, slightly higher
+            "H": 0.045,  # hospitality
+            "R": 0.065,  # recurring / subscription
+            "S": 0.080,  # services -- highest risk
+        }
+    )
     default_merchant_risk: float = 0.04
 
     # Hour-of-day risk multipliers (0-23).
     # Higher multipliers for late-night / early-morning hours.
-    hour_risk_multipliers: Dict[int, float] = field(default_factory=lambda: {
-        0: 1.8, 1: 2.0, 2: 2.2, 3: 2.3, 4: 2.1, 5: 1.7,
-        6: 1.2, 7: 1.0, 8: 0.9, 9: 0.8, 10: 0.8, 11: 0.8,
-        12: 0.9, 13: 0.9, 14: 0.9, 15: 0.9, 16: 1.0, 17: 1.0,
-        18: 1.1, 19: 1.2, 20: 1.3, 21: 1.4, 22: 1.5, 23: 1.7,
-    })
+    hour_risk_multipliers: Dict[int, float] = field(
+        default_factory=lambda: {
+            0: 1.8,
+            1: 2.0,
+            2: 2.2,
+            3: 2.3,
+            4: 2.1,
+            5: 1.7,
+            6: 1.2,
+            7: 1.0,
+            8: 0.9,
+            9: 0.8,
+            10: 0.8,
+            11: 0.8,
+            12: 0.9,
+            13: 0.9,
+            14: 0.9,
+            15: 0.9,
+            16: 1.0,
+            17: 1.0,
+            18: 1.1,
+            19: 1.2,
+            20: 1.3,
+            21: 1.4,
+            22: 1.5,
+            23: 1.7,
+        }
+    )
 
     # Business hours definition
     business_hours_start: int = 9
@@ -75,6 +100,7 @@ DEFAULT_FEATURE_CONFIG = FeatureConfig()
 # Streaming (single-record) helpers
 # ---------------------------------------------------------------------------
 
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     if value is None or value == "":
         return default
@@ -87,6 +113,7 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 # ---------------------------------------------------------------------------
 # FeatureEngineer
 # ---------------------------------------------------------------------------
+
 
 class FeatureEngineer:
     """
@@ -107,8 +134,10 @@ class FeatureEngineer:
 
     def __init__(self, config: Optional[FeatureConfig] = None):
         self.config = config or DEFAULT_FEATURE_CONFIG
-        logger.info("FeatureEngineer initialised with %d merchant categories",
-                     len(self.config.merchant_risk_table))
+        logger.info(
+            "FeatureEngineer initialised with %d merchant categories",
+            len(self.config.merchant_risk_table),
+        )
 
     # ------------------------------------------------------------------
     # Public API -- streaming context
@@ -142,8 +171,7 @@ class FeatureEngineer:
 
         amount = _safe_float(transaction.get("transaction_amt"))
         timestamp_str = transaction.get("generated_timestamp", "")
-        product_cd = str(transaction.get("ProductCD",
-                         transaction.get("product_cd", "W")) or "W")
+        product_cd = str(transaction.get("ProductCD", transaction.get("product_cd", "W")) or "W")
 
         # Parse timestamp safely
         hour, day_of_week, is_weekend, ts_epoch = self._parse_timestamp(timestamp_str)
@@ -178,8 +206,7 @@ class FeatureEngineer:
         features["day_of_week"] = float(day_of_week)
         features["is_weekend"] = float(is_weekend)
         features["is_business_hours"] = float(
-            self.config.business_hours_start <= hour < self.config.business_hours_end
-            and not is_weekend
+            self.config.business_hours_start <= hour < self.config.business_hours_end and not is_weekend
         )
 
         last_ts_str = user_profile.get("last_transaction_time")
@@ -253,9 +280,7 @@ class FeatureEngineer:
         # --- Merchant risk score ------------------------------------------
         if "ProductCD" in df.columns:
             df["feat_merchant_risk_score"] = (
-                df["ProductCD"]
-                .map(self.config.merchant_risk_table)
-                .fillna(self.config.default_merchant_risk)
+                df["ProductCD"].map(self.config.merchant_risk_table).fillna(self.config.default_merchant_risk)
             )
         else:
             df["feat_merchant_risk_score"] = self.config.default_merchant_risk
@@ -278,16 +303,12 @@ class FeatureEngineer:
 
             # Amount z-score
             std_safe = df["feat_user_std_amt"].replace(0, np.nan)
-            df["feat_amount_zscore"] = (
-                (amount - df["feat_user_mean_amt"]) / std_safe
-            ).fillna(0.0)
+            df["feat_amount_zscore"] = ((amount - df["feat_user_mean_amt"]) / std_safe).fillna(0.0)
 
             # Time since last transaction (within sorted data)
             if dt_col is not None:
                 df_sorted = df.sort_values([user_col, dt_col])
-                df["feat_time_since_last_txn"] = (
-                    df_sorted.groupby(user_col)[dt_col].diff().fillna(0.0)
-                )
+                df["feat_time_since_last_txn"] = df_sorted.groupby(user_col)[dt_col].diff().fillna(0.0)
             else:
                 df["feat_time_since_last_txn"] = 0.0
         else:
@@ -297,9 +318,7 @@ class FeatureEngineer:
             df["feat_user_mean_amt"] = amount.mean()
             df["feat_user_std_amt"] = amount.std()
             overall_std = amount.std()
-            df["feat_amount_zscore"] = (
-                (amount - amount.mean()) / overall_std if overall_std > 0 else 0.0
-            )
+            df["feat_amount_zscore"] = (amount - amount.mean()) / overall_std if overall_std > 0 else 0.0
             df["feat_time_since_last_txn"] = 0.0
 
         # --- Interaction features -----------------------------------------
@@ -337,6 +356,7 @@ class FeatureEngineer:
             return 0, 0, False, 0.0
         try:
             from datetime import datetime
+
             dt = datetime.fromisoformat(str(ts_str))
             return (
                 dt.hour,

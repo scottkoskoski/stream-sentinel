@@ -45,14 +45,8 @@ logger = logging.getLogger("stream_sentinel.schema_utils")
 # ---------------------------------------------------------------------------
 try:
     from confluent_kafka.schema_registry import SchemaRegistryClient
-    from confluent_kafka.schema_registry.avro import (
-        AvroDeserializer,
-        AvroSerializer,
-    )
-    from confluent_kafka.serialization import (
-        MessageField,
-        SerializationContext,
-    )
+    from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
+    from confluent_kafka.serialization import MessageField, SerializationContext
 
     SCHEMA_REGISTRY_AVAILABLE = True
 except ImportError:
@@ -79,6 +73,7 @@ SCHEMA_FILES: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Helper class
 # ---------------------------------------------------------------------------
+
 
 class SchemaHelper:
     """
@@ -222,6 +217,7 @@ class SchemaHelper:
 # ---------------------------------------------------------------------------
 # Convenience helpers for producing / consuming
 # ---------------------------------------------------------------------------
+
 
 def serialize_message(
     schema_helper: SchemaHelper,

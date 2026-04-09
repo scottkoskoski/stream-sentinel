@@ -6,16 +6,17 @@ meaningful assertions on actual computed values, verifying that features
 differ based on input data.
 """
 
-import pytest
-import numpy as np
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
-
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
+
+import numpy as np
+import pytest
+
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from consumers.fraud_detector import FraudDetector, UserProfile, FraudFeatures
+from consumers.fraud_detector import FraudDetector, FraudFeatures, UserProfile
 
 
 class TestFeatureEngineering:
@@ -27,18 +28,16 @@ class TestFeatureEngineering:
         self.mock_config = Mock()
         self.mock_config.logger = Mock()
         self.mock_config.get_consumer_config.return_value = {
-            'group.id': 'test-fraud-detector',
-            'bootstrap.servers': 'localhost:9092',
-            'auto.offset.reset': 'earliest'
+            "group.id": "test-fraud-detector",
+            "bootstrap.servers": "localhost:9092",
+            "auto.offset.reset": "earliest",
         }
-        self.mock_config.get_producer_config.return_value = {
-            'bootstrap.servers': 'localhost:9092'
-        }
+        self.mock_config.get_producer_config.return_value = {"bootstrap.servers": "localhost:9092"}
 
-        with patch('consumers.fraud_detector.get_kafka_config', return_value=self.mock_config):
-            with patch('consumers.fraud_detector.redis.Redis', return_value=self.mock_redis):
-                with patch('consumers.fraud_detector.Consumer'):
-                    with patch('consumers.fraud_detector.Producer'):
+        with patch("consumers.fraud_detector.get_kafka_config", return_value=self.mock_config):
+            with patch("consumers.fraud_detector.redis.Redis", return_value=self.mock_redis):
+                with patch("consumers.fraud_detector.Consumer"):
+                    with patch("consumers.fraud_detector.Producer"):
                         self.fraud_detector = FraudDetector(use_ml_model=False)
                         self.fraud_detector.redis_client = self.mock_redis
 
@@ -50,7 +49,7 @@ class TestFeatureEngineering:
             "transaction_amt": 250.50,
             "generated_timestamp": "2023-08-15T14:30:00",
             "product_cd": "W",
-            "card6": "credit"
+            "card6": "credit",
         }
         defaults.update(kwargs)
         return defaults
@@ -65,17 +64,14 @@ class TestFeatureEngineering:
             "daily_transaction_count": 2,
             "daily_amount": 200.0,
             "last_transaction_time": "2023-08-14T14:30:00",
-            "last_transaction_amount": 150.0
+            "last_transaction_amount": 150.0,
         }
         defaults.update(kwargs)
         return UserProfile(**defaults)
 
     def test_basic_transaction_features_values(self):
         """Test that basic transaction features contain correct values."""
-        transaction = self.create_ieee_transaction(
-            transaction_amt=123.45,
-            generated_timestamp="2023-08-15T16:45:00"
-        )
+        transaction = self.create_ieee_transaction(transaction_amt=123.45, generated_timestamp="2023-08-15T16:45:00")
         user_profile = self.create_user_profile()
 
         features = self.fraud_detector.extract_features(transaction, user_profile)
@@ -88,15 +84,13 @@ class TestFeatureEngineering:
 
     def test_temporal_features_peak_vs_normal(self):
         """Test that temporal features differ between unusual and normal hours."""
-        user_profile = self.create_user_profile(
-            last_transaction_time="2023-08-14T14:00:00"
-        )
+        user_profile = self.create_user_profile(last_transaction_time="2023-08-14T14:00:00")
 
         # Unusual hour: 3 AM
         unusual_txn = self.create_ieee_transaction(
             transaction_id="txn_unusual",
             transaction_amt=100.0,
-            generated_timestamp="2023-08-15T03:00:00"
+            generated_timestamp="2023-08-15T03:00:00",
         )
         unusual_features = self.fraud_detector.extract_features(unusual_txn, user_profile)
 
@@ -104,7 +98,7 @@ class TestFeatureEngineering:
         normal_txn = self.create_ieee_transaction(
             transaction_id="txn_normal",
             transaction_amt=100.0,
-            generated_timestamp="2023-08-15T14:00:00"
+            generated_timestamp="2023-08-15T14:00:00",
         )
         normal_features = self.fraud_detector.extract_features(normal_txn, user_profile)
 
@@ -120,39 +114,26 @@ class TestFeatureEngineering:
     def test_temporal_features_boundary_hours(self):
         """Test the boundary between normal and unusual hours (6 and 22)."""
         user_profile = self.create_user_profile(
-            avg_transaction_amount=100.0,
-            last_transaction_time="2023-08-14T14:00:00"
+            avg_transaction_amount=100.0, last_transaction_time="2023-08-14T14:00:00"
         )
 
         # Hour 5 = unusual (< 6)
-        txn_5am = self.create_ieee_transaction(
-            transaction_amt=100.0,
-            generated_timestamp="2023-08-15T05:00:00"
-        )
+        txn_5am = self.create_ieee_transaction(transaction_amt=100.0, generated_timestamp="2023-08-15T05:00:00")
         features_5am = self.fraud_detector.extract_features(txn_5am, user_profile)
         assert features_5am.is_unusual_hour is True
 
         # Hour 6 = normal (not < 6 and not > 22)
-        txn_6am = self.create_ieee_transaction(
-            transaction_amt=100.0,
-            generated_timestamp="2023-08-15T06:00:00"
-        )
+        txn_6am = self.create_ieee_transaction(transaction_amt=100.0, generated_timestamp="2023-08-15T06:00:00")
         features_6am = self.fraud_detector.extract_features(txn_6am, user_profile)
         assert features_6am.is_unusual_hour is False
 
         # Hour 22 = normal
-        txn_10pm = self.create_ieee_transaction(
-            transaction_amt=100.0,
-            generated_timestamp="2023-08-15T22:00:00"
-        )
+        txn_10pm = self.create_ieee_transaction(transaction_amt=100.0, generated_timestamp="2023-08-15T22:00:00")
         features_10pm = self.fraud_detector.extract_features(txn_10pm, user_profile)
         assert features_10pm.is_unusual_hour is False
 
         # Hour 23 = unusual (> 22)
-        txn_11pm = self.create_ieee_transaction(
-            transaction_amt=100.0,
-            generated_timestamp="2023-08-15T23:00:00"
-        )
+        txn_11pm = self.create_ieee_transaction(transaction_amt=100.0, generated_timestamp="2023-08-15T23:00:00")
         features_11pm = self.fraud_detector.extract_features(txn_11pm, user_profile)
         assert features_11pm.is_unusual_hour is True
 
@@ -161,13 +142,10 @@ class TestFeatureEngineering:
         user_profile = self.create_user_profile(
             avg_transaction_amount=100.0,
             last_transaction_time="2023-08-14T14:00:00",
-            last_transaction_amount=100.0
+            last_transaction_amount=100.0,
         )
 
-        transaction = self.create_ieee_transaction(
-            transaction_amt=350.0,
-            generated_timestamp="2023-08-15T14:00:00"
-        )
+        transaction = self.create_ieee_transaction(transaction_amt=350.0, generated_timestamp="2023-08-15T14:00:00")
 
         features = self.fraud_detector.extract_features(transaction, user_profile)
 
@@ -181,7 +159,7 @@ class TestFeatureEngineering:
         transaction = self.create_ieee_transaction(
             card1="new_user",
             transaction_amt=500.0,
-            generated_timestamp="2023-08-15T14:00:00"
+            generated_timestamp="2023-08-15T14:00:00",
         )
 
         features = self.fraud_detector.extract_features(transaction, new_user)
@@ -194,48 +172,33 @@ class TestFeatureEngineering:
     def test_high_amount_threshold(self):
         """Test the $1000 high amount threshold boundary."""
         user_profile = self.create_user_profile(
-            avg_transaction_amount=1000.0,
-            last_transaction_time="2023-08-14T14:00:00"
+            avg_transaction_amount=1000.0, last_transaction_time="2023-08-14T14:00:00"
         )
 
         # Exactly $1000 is NOT high (threshold is >1000)
-        txn_1000 = self.create_ieee_transaction(
-            transaction_amt=1000.0,
-            generated_timestamp="2023-08-15T14:00:00"
-        )
+        txn_1000 = self.create_ieee_transaction(transaction_amt=1000.0, generated_timestamp="2023-08-15T14:00:00")
         features_1000 = self.fraud_detector.extract_features(txn_1000, user_profile)
         assert features_1000.is_high_amount is False
 
         # $1001 IS high
-        txn_1001 = self.create_ieee_transaction(
-            transaction_amt=1001.0,
-            generated_timestamp="2023-08-15T14:00:00"
-        )
+        txn_1001 = self.create_ieee_transaction(transaction_amt=1001.0, generated_timestamp="2023-08-15T14:00:00")
         features_1001 = self.fraud_detector.extract_features(txn_1001, user_profile)
         assert features_1001.is_high_amount is True
 
     def test_rapid_transaction_threshold(self):
         """Test the 300-second rapid transaction threshold."""
-        user_profile = self.create_user_profile(
-            avg_transaction_amount=100.0
-        )
+        user_profile = self.create_user_profile(avg_transaction_amount=100.0)
 
         # 299 seconds = rapid
         user_profile.last_transaction_time = "2023-08-15T14:25:01"
-        txn_rapid = self.create_ieee_transaction(
-            transaction_amt=100.0,
-            generated_timestamp="2023-08-15T14:30:00"
-        )
+        txn_rapid = self.create_ieee_transaction(transaction_amt=100.0, generated_timestamp="2023-08-15T14:30:00")
         features_rapid = self.fraud_detector.extract_features(txn_rapid, user_profile)
         assert features_rapid.is_rapid_transaction is True
         assert features_rapid.time_since_last_transaction == pytest.approx(299.0, abs=1.0)
 
         # 301 seconds = not rapid
         user_profile.last_transaction_time = "2023-08-15T14:24:59"
-        txn_not_rapid = self.create_ieee_transaction(
-            transaction_amt=100.0,
-            generated_timestamp="2023-08-15T14:30:00"
-        )
+        txn_not_rapid = self.create_ieee_transaction(transaction_amt=100.0, generated_timestamp="2023-08-15T14:30:00")
         features_not_rapid = self.fraud_detector.extract_features(txn_not_rapid, user_profile)
         assert features_not_rapid.is_rapid_transaction is False
         assert features_not_rapid.time_since_last_transaction == pytest.approx(301.0, abs=1.0)
@@ -245,13 +208,10 @@ class TestFeatureEngineering:
         user_profile = self.create_user_profile(
             daily_transaction_count=48,
             avg_transaction_amount=100.0,
-            last_transaction_time="2023-08-14T14:00:00"
+            last_transaction_time="2023-08-14T14:00:00",
         )
 
-        transaction = self.create_ieee_transaction(
-            transaction_amt=100.0,
-            generated_timestamp="2023-08-15T14:00:00"
-        )
+        transaction = self.create_ieee_transaction(transaction_amt=100.0, generated_timestamp="2023-08-15T14:00:00")
 
         features = self.fraud_detector.extract_features(transaction, user_profile)
 
@@ -264,7 +224,7 @@ class TestFeatureEngineering:
         transaction = self.create_ieee_transaction(
             card1="new_user",
             transaction_amt=100.0,
-            generated_timestamp="2023-08-15T14:00:00"
+            generated_timestamp="2023-08-15T14:00:00",
         )
 
         features = self.fraud_detector.extract_features(transaction, new_user)
@@ -277,20 +237,20 @@ class TestFeatureEngineering:
         user_profile = self.create_user_profile(
             avg_transaction_amount=100.0,
             last_transaction_time="2023-08-14T14:00:00",
-            last_transaction_amount=100.0
+            last_transaction_amount=100.0,
         )
 
         small_txn = self.create_ieee_transaction(
             transaction_id="txn_small",
             transaction_amt=5.99,
-            generated_timestamp="2023-08-15T14:00:00"
+            generated_timestamp="2023-08-15T14:00:00",
         )
         small_features = self.fraud_detector.extract_features(small_txn, user_profile)
 
         large_txn = self.create_ieee_transaction(
             transaction_id="txn_large",
             transaction_amt=2500.00,
-            generated_timestamp="2023-08-15T14:00:00"
+            generated_timestamp="2023-08-15T14:00:00",
         )
         large_features = self.fraud_detector.extract_features(large_txn, user_profile)
 
@@ -317,17 +277,12 @@ class TestFeatureEngineering:
             daily_transaction_count=5,
             daily_amount=250.0,
             last_transaction_time="2023-08-15T13:00:00",
-            last_transaction_amount=50.0
+            last_transaction_amount=50.0,
         )
 
-        transaction = self.create_ieee_transaction(
-            transaction_amt=250.50,
-            generated_timestamp="2023-08-15T14:00:00"
-        )
+        transaction = self.create_ieee_transaction(transaction_amt=250.50, generated_timestamp="2023-08-15T14:00:00")
 
-        new_features = self.fraud_detector.extract_features(
-            {**transaction, "card1": "new_user"}, new_user
-        )
+        new_features = self.fraud_detector.extract_features({**transaction, "card1": "new_user"}, new_user)
         exp_features = self.fraud_detector.extract_features(
             {**transaction, "card1": "experienced_user"}, experienced_user
         )
@@ -347,10 +302,7 @@ class TestFeatureEngineering:
         """Test time_since_last when user has no prior transactions."""
         new_user = UserProfile(user_id="no_history_user")
 
-        transaction = self.create_ieee_transaction(
-            card1="no_history_user",
-            generated_timestamp="2023-08-15T14:00:00"
-        )
+        transaction = self.create_ieee_transaction(card1="no_history_user", generated_timestamp="2023-08-15T14:00:00")
 
         features = self.fraud_detector.extract_features(transaction, new_user)
 
@@ -361,13 +313,9 @@ class TestFeatureEngineering:
 
     def test_daily_amount_total_tracked(self):
         """Test that daily_amount_total reflects user profile daily amount."""
-        user_profile = self.create_user_profile(
-            daily_amount=350.75
-        )
+        user_profile = self.create_user_profile(daily_amount=350.75)
 
-        transaction = self.create_ieee_transaction(
-            generated_timestamp="2023-08-15T14:00:00"
-        )
+        transaction = self.create_ieee_transaction(generated_timestamp="2023-08-15T14:00:00")
 
         features = self.fraud_detector.extract_features(transaction, user_profile)
 
@@ -377,14 +325,10 @@ class TestFeatureEngineering:
     def test_various_amounts_produce_valid_features(self, amount):
         """Test that feature extraction works for a range of amounts."""
         user_profile = self.create_user_profile(
-            avg_transaction_amount=100.0,
-            last_transaction_time="2023-08-14T14:00:00"
+            avg_transaction_amount=100.0, last_transaction_time="2023-08-14T14:00:00"
         )
 
-        transaction = self.create_ieee_transaction(
-            transaction_amt=amount,
-            generated_timestamp="2023-08-15T14:00:00"
-        )
+        transaction = self.create_ieee_transaction(transaction_amt=amount, generated_timestamp="2023-08-15T14:00:00")
 
         features = self.fraud_detector.extract_features(transaction, user_profile)
 
@@ -394,17 +338,20 @@ class TestFeatureEngineering:
 
     def test_weekday_extraction(self):
         """Test that transaction_day correctly maps to weekday."""
-        user_profile = self.create_user_profile(
-            last_transaction_time="2023-08-10T14:00:00"
-        )
+        user_profile = self.create_user_profile(last_transaction_time="2023-08-10T14:00:00")
 
         # 2023-08-14 = Monday (0), 2023-08-15 = Tuesday (1), etc.
-        for day, expected_weekday in [(14, 0), (15, 1), (16, 2), (17, 3), (18, 4), (19, 5), (20, 6)]:
-            txn = self.create_ieee_transaction(
-                transaction_amt=100.0,
-                generated_timestamp=f"2023-08-{day}T14:00:00"
-            )
+        for day, expected_weekday in [
+            (14, 0),
+            (15, 1),
+            (16, 2),
+            (17, 3),
+            (18, 4),
+            (19, 5),
+            (20, 6),
+        ]:
+            txn = self.create_ieee_transaction(transaction_amt=100.0, generated_timestamp=f"2023-08-{day}T14:00:00")
             features = self.fraud_detector.extract_features(txn, user_profile)
-            assert features.transaction_day == expected_weekday, (
-                f"2023-08-{day} should be weekday {expected_weekday}, got {features.transaction_day}"
-            )
+            assert (
+                features.transaction_day == expected_weekday
+            ), f"2023-08-{day} should be weekday {expected_weekday}, got {features.transaction_day}"

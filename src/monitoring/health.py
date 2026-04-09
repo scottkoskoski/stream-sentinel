@@ -23,10 +23,10 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Callable, Dict, Optional
 
-from prometheus_client import CollectorRegistry, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 
 logger = logging.getLogger(__name__)
 
@@ -177,10 +177,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         """
         hs = self.health_server
         checks_result = hs.run_all_checks()
-        all_ok = all(
-            v.get("status") not in ("error", "timeout")
-            for v in checks_result.values()
-        )
+        all_ok = all(v.get("status") not in ("error", "timeout") for v in checks_result.values())
 
         body = {
             "status": "ready" if all_ok else "not_ready",
@@ -196,10 +193,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         uptime = now - hs.start_time
 
         checks_result = hs.run_all_checks()
-        all_ok = all(
-            v.get("status") not in ("error", "timeout")
-            for v in checks_result.values()
-        )
+        all_ok = all(v.get("status") not in ("error", "timeout") for v in checks_result.values())
 
         last_hb = hs.last_heartbeat
         stale = (now - last_hb) > _LIVENESS_STALE_THRESHOLD if last_hb else False

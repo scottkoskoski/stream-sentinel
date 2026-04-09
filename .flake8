@@ -1,0 +1,17 @@
+[flake8]
+max-line-length = 120
+extend-ignore = E203, W503
+exclude =
+    .git,
+    __pycache__,
+    venv,
+    .venv,
+    build,
+    dist,
+    *.egg-info,
+    src/inference/cpp,
+    .claude
+per-file-ignores =
+    src/testing/*:F821,F401
+    src/ml/serving/tests/*:F821,F401
+    tests/*:E501

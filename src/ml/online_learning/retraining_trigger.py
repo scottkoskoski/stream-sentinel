@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RetrainingConfig:
     """All tunables for the retraining trigger."""
@@ -80,6 +81,7 @@ _SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 # RetrainingTrigger
 # ---------------------------------------------------------------------------
 
+
 class RetrainingTrigger:
     """
     Listens for model drift alerts and conditionally publishes retraining
@@ -111,8 +113,7 @@ class RetrainingTrigger:
         self._load_state()
 
         logger.info(
-            "RetrainingTrigger initialised "
-            "(cooldown=%sh, min_samples=%d, min_psi=%.2f, auc_delta=%.4f)",
+            "RetrainingTrigger initialised " "(cooldown=%sh, min_samples=%d, min_psi=%.2f, auc_delta=%.4f)",
             self.config.cooldown_hours,
             self.config.min_labeled_samples,
             self.config.min_psi_for_retrain,
@@ -136,11 +137,13 @@ class RetrainingTrigger:
             self._consumer = Consumer(consumer_config)
             self._consumer.subscribe([self.config.drift_alerts_topic])
 
-            self._producer = Producer({
-                "bootstrap.servers": self.config.kafka_servers,
-                "linger.ms": 10,
-                "compression.type": "lz4",
-            })
+            self._producer = Producer(
+                {
+                    "bootstrap.servers": self.config.kafka_servers,
+                    "linger.ms": 10,
+                    "compression.type": "lz4",
+                }
+            )
             logger.info(
                 "Kafka consumer/producer ready (topic=%s)",
                 self.config.drift_alerts_topic,
@@ -183,9 +186,7 @@ class RetrainingTrigger:
             if data:
                 state = json.loads(data)
                 if state.get("last_retrain_time"):
-                    self._last_retrain_time = datetime.fromisoformat(
-                        state["last_retrain_time"]
-                    )
+                    self._last_retrain_time = datetime.fromisoformat(state["last_retrain_time"])
                 self._labeled_sample_count = state.get("labeled_sample_count", 0)
                 self._current_production_auc = state.get("current_production_auc", 0.0)
                 self._retrains_triggered = state.get("retrains_triggered", 0)
@@ -200,11 +201,7 @@ class RetrainingTrigger:
         try:
             prefix = self.config.redis_key_prefix
             state = {
-                "last_retrain_time": (
-                    self._last_retrain_time.isoformat()
-                    if self._last_retrain_time
-                    else None
-                ),
+                "last_retrain_time": (self._last_retrain_time.isoformat() if self._last_retrain_time else None),
                 "labeled_sample_count": self._labeled_sample_count,
                 "current_production_auc": self._current_production_auc,
                 "retrains_triggered": self._retrains_triggered,
@@ -255,11 +252,7 @@ class RetrainingTrigger:
             "retrains_triggered": self._retrains_triggered,
             "labeled_sample_count": self._labeled_sample_count,
             "current_production_auc": self._current_production_auc,
-            "last_retrain_time": (
-                self._last_retrain_time.isoformat()
-                if self._last_retrain_time
-                else None
-            ),
+            "last_retrain_time": (self._last_retrain_time.isoformat() if self._last_retrain_time else None),
             "cooldown_remaining_hours": self._cooldown_remaining_hours(),
             "redis_available": self._redis_available,
         }
@@ -374,10 +367,11 @@ class RetrainingTrigger:
 
         if psi < self.config.min_psi_for_retrain and severity_rank < min_rank:
             logger.info(
-                "Retrain skipped: drift not severe enough "
-                "(psi=%.4f < %.4f, severity=%s < %s)",
-                psi, self.config.min_psi_for_retrain,
-                severity, self.config.min_severity_for_retrain,
+                "Retrain skipped: drift not severe enough " "(psi=%.4f < %.4f, severity=%s < %s)",
+                psi,
+                self.config.min_psi_for_retrain,
+                severity,
+                self.config.min_severity_for_retrain,
             )
             return False
 
@@ -396,7 +390,7 @@ class RetrainingTrigger:
                 "min_auc_improvement": self.config.auc_improvement_threshold,
                 "current_auc": self._current_production_auc,
             },
-            "priority": "high" if alert.get("severity") in ("high", "critical") else "medium",
+            "priority": ("high" if alert.get("severity") in ("high", "critical") else "medium"),
         }
 
         try:
@@ -447,6 +441,7 @@ class RetrainingTrigger:
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main():
     """Run the retraining trigger as a standalone service."""

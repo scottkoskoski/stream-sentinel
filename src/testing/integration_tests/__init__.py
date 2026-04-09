@@ -11,6 +11,6 @@ from .test_performance_integration import TestPerformanceIntegration
 
 __all__ = [
     "TestFraudDetectionPipeline",
-    "TestMultiServiceIntegration", 
-    "TestPerformanceIntegration"
+    "TestMultiServiceIntegration",
+    "TestPerformanceIntegration",
 ]
