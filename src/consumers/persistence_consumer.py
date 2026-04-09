@@ -62,6 +62,9 @@ class PersistenceConsumer:
         self.current_batch = []
         self.last_batch_time = time.time()
         
+        # Health check server reference (set by main() after construction)
+        self._health_server = None
+
         self._initialize_consumer()
         self._setup_signal_handlers()
     
@@ -127,6 +130,10 @@ class PersistenceConsumer:
         
         try:
             while self.running:
+                # Signal liveness to health check server
+                if self._health_server is not None:
+                    self._health_server.heartbeat()
+
                 self._process_messages()
                 self._check_batch_timeout()
                 self._log_metrics()
@@ -495,12 +502,18 @@ def main():
     logger = get_logger(__name__)
     logger.info("Starting Stream-Sentinel Persistence Consumer")
 
-    # Start Prometheus metrics server on port 8002 (daemon thread, non-blocking)
+    # Start combined Prometheus metrics + health check server on port 8002
+    health_server = None
     if METRICS_AVAILABLE:
         try:
+            from monitoring.health import (
+                HealthCheckServer, make_kafka_check, make_database_check,
+            )
             metrics = get_prometheus_metrics(component_name="persistence-consumer")
+            health_server = HealthCheckServer(registry=metrics.registry)
+            metrics.set_health_server(health_server)
             metrics.start_metrics_server(port=8002)
-            logger.info("Prometheus metrics server started on port 8002")
+            logger.info("Combined metrics + health server started on port 8002")
         except Exception as e:
             logger.warning(
                 f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
@@ -510,6 +523,32 @@ def main():
 
     try:
         consumer = PersistenceConsumer()
+
+        # Register health checks now that the consumer is fully initialised
+        if health_server is not None:
+            consumer._health_server = health_server
+            health_server.register_check(
+                "kafka", make_kafka_check(consumer.consumer)
+            )
+            health_server.register_check(
+                "database", make_database_check(consumer.persistence_layer)
+            )
+
+            def _metrics_summary():
+                uptime = time.time() - consumer.start_time
+                mps = consumer.messages_processed / max(uptime, 1)
+                error_rate = (
+                    consumer.processing_errors / max(consumer.messages_processed, 1)
+                )
+                return {
+                    "messages_processed": consumer.messages_processed,
+                    "processing_errors": consumer.processing_errors,
+                    "error_rate": round(error_rate, 4),
+                    "throughput_mps": round(mps, 2),
+                }
+
+            health_server.set_metrics_summary_fn(_metrics_summary)
+
         consumer.start()
     except Exception as e:
         logger.error("Failed to start persistence consumer", extra={"error": str(e)})

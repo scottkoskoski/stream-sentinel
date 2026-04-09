@@ -345,6 +345,9 @@ class FraudDetector:
             except Exception as e:
                 self.logger.warning(f"Schema helper init failed: {e}")
 
+        # Health check server reference (set by main() after construction)
+        self._health_server = None
+
         # Graceful shutdown
         self.running = True
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -1675,6 +1678,10 @@ class FraudDetector:
 
         try:
             while self.running:
+                # Signal liveness to health check server
+                if self._health_server is not None:
+                    self._health_server.heartbeat()
+
                 # Poll for messages with timeout
                 msg = self.consumer.poll(timeout=1.0)
 
@@ -1769,6 +1776,10 @@ class FraudDetector:
 
         try:
             while self.running:
+                # Signal liveness to health check server
+                if self._health_server is not None:
+                    self._health_server.heartbeat()
+
                 # Use a short poll timeout so we can check the batch timer
                 remaining = 0.05  # 50ms default poll
                 if batch_start_time is not None:
@@ -1910,12 +1921,18 @@ def main():
     args = parser.parse_args()
 
     try:
-        # Start Prometheus metrics server on port 8000 (daemon thread, non-blocking)
+        # Start combined Prometheus metrics + health check server on port 8000
+        health_server = None
         try:
+            from monitoring.health import (
+                HealthCheckServer, make_kafka_check, make_redis_check, make_model_check,
+            )
             metrics = get_prometheus_metrics(component_name="fraud-detector")
+            health_server = HealthCheckServer(registry=metrics.registry)
+            metrics.set_health_server(health_server)
             metrics.start_metrics_server(port=8000)
             logging.getLogger("stream_sentinel.fraud_detector").info(
-                "Prometheus metrics server started on port 8000"
+                "Combined metrics + health server started on port 8000"
             )
         except Exception as e:
             logging.getLogger("stream_sentinel.fraud_detector").warning(
@@ -1930,6 +1947,26 @@ def main():
             batch_size=args.batch_size,
             batch_timeout_ms=args.batch_timeout_ms,
         )
+
+        # Register health checks now that the detector is fully initialised
+        if health_server is not None:
+            detector._health_server = health_server
+            health_server.register_check("kafka", make_kafka_check(detector.consumer))
+            health_server.register_check("redis", make_redis_check(detector.redis_client))
+            health_server.register_check("model", make_model_check(detector))
+
+            def _metrics_summary():
+                uptime = time.time() - detector.start_time
+                tps = detector.processed_count / max(uptime, 1)
+                return {
+                    "messages_processed": detector.processed_count,
+                    "fraud_alerts": detector.fraud_alerts_count,
+                    "blocked_transactions": detector.blocked_count,
+                    "throughput_tps": round(tps, 2),
+                    "model_status": detector.model_status,
+                }
+
+            health_server.set_metrics_summary_fn(_metrics_summary)
 
         detector.run()
 

@@ -55,6 +55,9 @@ class DLQConsumer:
         self.consumer = Consumer(consumer_config)
         self.consumer.subscribe([DLQ_TOPIC])
 
+        # Health check server reference (set by main() after construction)
+        self._health_server = None
+
         # Signal handling
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -78,6 +81,10 @@ class DLQConsumer:
 
         try:
             while self.running:
+                # Signal liveness to health check server
+                if self._health_server is not None:
+                    self._health_server.heartbeat()
+
                 msg = self.consumer.poll(timeout=1.0)
 
                 if msg is None:
@@ -169,7 +176,39 @@ def main():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
+    # Start combined Prometheus metrics + health check server on port 8004
+    health_server = None
+    try:
+        from monitoring.health import HealthCheckServer, make_kafka_check
+        from monitoring.metrics import get_metrics as get_prometheus_metrics
+
+        metrics = get_prometheus_metrics(component_name="dlq-consumer")
+        health_server = HealthCheckServer(registry=metrics.registry)
+        metrics.set_health_server(health_server)
+        metrics.start_metrics_server(port=8004)
+        logger.info("Combined metrics + health server started on port 8004")
+    except Exception as e:
+        logger.warning(
+            "Failed to start metrics server: %s -- continuing without metrics endpoint", e
+        )
+
     consumer = DLQConsumer(output_path=args.output)
+
+    # Register health checks now that the consumer is fully initialised
+    if health_server is not None:
+        consumer._health_server = health_server
+        health_server.register_check("kafka", make_kafka_check(consumer.consumer))
+
+        def _metrics_summary():
+            uptime = time.time() - consumer.start_time
+            mps = consumer.processed / max(uptime, 1)
+            return {
+                "messages_processed": consumer.processed,
+                "throughput_mps": round(mps, 2),
+            }
+
+        health_server.set_metrics_summary_fn(_metrics_summary)
+
     consumer.run()
 
 
