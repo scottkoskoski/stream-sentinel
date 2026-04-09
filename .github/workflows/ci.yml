@@ -73,6 +73,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Create reports directory
+        run: mkdir -p reports
+
       - name: Run unit tests
         run: pytest tests/unit/ -m unit -v --tb=short --junitxml=reports/unit-results.xml
         continue-on-error: false
@@ -109,6 +112,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Create reports directory
+        run: mkdir -p reports
 
       - name: Run contract tests
         run: pytest tests/contract/ -v --tb=short --junitxml=reports/contract-results.xml
@@ -159,64 +165,10 @@ jobs:
           CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
 
       - name: Wait for services to be healthy
-        run: |
-          echo "Waiting for Kafka..."
-          for i in $(seq 1 60); do
-            if docker exec stream-sentinel-kafka kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1; then
-              echo "Kafka is ready"
-              break
-            fi
-            if [ $i -eq 60 ]; then
-              echo "Kafka failed to start"
-              docker compose -f docker/docker-compose.yml logs kafka
-              exit 1
-            fi
-            sleep 2
-          done
+        uses: ./.github/actions/wait-for-services
 
-          echo "Waiting for Redis..."
-          for i in $(seq 1 30); do
-            if docker exec stream-sentinel-redis redis-cli ping | grep -q PONG; then
-              echo "Redis is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "Redis failed to start"
-              docker compose -f docker/docker-compose.yml logs redis
-              exit 1
-            fi
-            sleep 2
-          done
-
-          echo "Waiting for PostgreSQL..."
-          for i in $(seq 1 30); do
-            if docker exec stream-sentinel-postgres pg_isready -U stream_sentinel_user -d stream_sentinel > /dev/null 2>&1; then
-              echo "PostgreSQL is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "PostgreSQL failed to start"
-              docker compose -f docker/docker-compose.yml logs postgres
-              exit 1
-            fi
-            sleep 2
-          done
-
-          echo "Waiting for ClickHouse..."
-          for i in $(seq 1 30); do
-            if docker exec stream-sentinel-clickhouse wget --quiet --tries=1 --spider http://localhost:8123/ping 2>/dev/null; then
-              echo "ClickHouse is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "ClickHouse failed to start"
-              docker compose -f docker/docker-compose.yml logs clickhouse
-              exit 1
-            fi
-            sleep 2
-          done
-
-          echo "All services are healthy"
+      - name: Create reports directory
+        run: mkdir -p reports
 
       - name: Run integration tests
         run: pytest tests/integration/ -m integration -v --tb=short --junitxml=reports/integration-results.xml
@@ -279,64 +231,10 @@ jobs:
           CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
 
       - name: Wait for services to be healthy
-        run: |
-          echo "Waiting for Kafka..."
-          for i in $(seq 1 60); do
-            if docker exec stream-sentinel-kafka kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1; then
-              echo "Kafka is ready"
-              break
-            fi
-            if [ $i -eq 60 ]; then
-              echo "Kafka failed to start"
-              docker compose -f docker/docker-compose.yml logs kafka
-              exit 1
-            fi
-            sleep 2
-          done
+        uses: ./.github/actions/wait-for-services
 
-          echo "Waiting for Redis..."
-          for i in $(seq 1 30); do
-            if docker exec stream-sentinel-redis redis-cli ping | grep -q PONG; then
-              echo "Redis is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "Redis failed to start"
-              docker compose -f docker/docker-compose.yml logs redis
-              exit 1
-            fi
-            sleep 2
-          done
-
-          echo "Waiting for PostgreSQL..."
-          for i in $(seq 1 30); do
-            if docker exec stream-sentinel-postgres pg_isready -U stream_sentinel_user -d stream_sentinel > /dev/null 2>&1; then
-              echo "PostgreSQL is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "PostgreSQL failed to start"
-              docker compose -f docker/docker-compose.yml logs postgres
-              exit 1
-            fi
-            sleep 2
-          done
-
-          echo "Waiting for ClickHouse..."
-          for i in $(seq 1 30); do
-            if docker exec stream-sentinel-clickhouse wget --quiet --tries=1 --spider http://localhost:8123/ping 2>/dev/null; then
-              echo "ClickHouse is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "ClickHouse failed to start"
-              docker compose -f docker/docker-compose.yml logs clickhouse
-              exit 1
-            fi
-            sleep 2
-          done
-
-          echo "All services are healthy"
+      - name: Create reports directory
+        run: mkdir -p reports
 
       - name: Run end-to-end tests
         run: pytest tests/e2e/ -m e2e -v --tb=short --junitxml=reports/e2e-results.xml

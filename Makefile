@@ -1,4 +1,4 @@
-.PHONY: lint format test-unit test-integration test-e2e test-contract test-performance test-all docker-up docker-down clean help
+.PHONY: lint format test-unit test-integration test-e2e test-contract test-performance test-security test-all docker-up docker-down clean help
 
 DOCKER_COMPOSE := docker compose -f docker/docker-compose.yml
 
@@ -34,6 +34,10 @@ test-contract: ## Run contract tests
 
 test-performance: ## Run performance benchmarks (requires Docker services)
 	pytest tests/performance/ -m performance -v --tb=short
+
+test-security: ## Run security scans (pip-audit + bandit)
+	pip-audit --strict --desc
+	bandit -r src/ --severity-level medium
 
 test-all: ## Run all test suites
 	pytest tests/unit/ -m unit -v --tb=short
