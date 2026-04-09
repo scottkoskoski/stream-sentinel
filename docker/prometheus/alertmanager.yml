@@ -1,0 +1,145 @@
+# Stream-Sentinel Alertmanager Configuration
+#
+# Routes alerts by severity to appropriate receivers.
+# Receivers are configured as generic webhook endpoints so operators can
+# plug in Slack, PagerDuty, OpsGenie, or any other integration by
+# updating the webhook URLs.
+#
+# Inhibition rules suppress lower-priority alerts when a root-cause
+# critical alert is already firing.
+
+global:
+  # Default SMTP / webhook settings can go here if needed.
+  resolve_timeout: 5m
+
+# -------------------------------------------------------------------------
+# Routing tree
+# -------------------------------------------------------------------------
+route:
+  # Top-level grouping: alerts with the same service + severity + component
+  # are batched together into a single notification.
+  group_by: ["service", "severity", "component"]
+
+  # How long to wait before sending the first notification for a new group.
+  group_wait: 30s
+
+  # How long to wait before sending updates for a group that has already
+  # sent an initial notification.
+  group_interval: 5m
+
+  # How long to wait before re-sending a notification that has already
+  # been sent successfully.
+  repeat_interval: 4h
+
+  # Default receiver for anything that doesn't match a child route.
+  receiver: "default-webhook"
+
+  # Child routes matched top-to-bottom; first match wins.
+  routes:
+    # Critical alerts -- page immediately
+    - matchers:
+        - severity="critical"
+      receiver: "critical-webhook"
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+      continue: false
+
+    # Warning alerts -- investigate soon
+    - matchers:
+        - severity="warning"
+      receiver: "warning-webhook"
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      continue: false
+
+    # Info alerts -- log for review
+    - matchers:
+        - severity="info"
+      receiver: "info-webhook"
+      group_wait: 1m
+      group_interval: 15m
+      repeat_interval: 12h
+      continue: false
+
+# -------------------------------------------------------------------------
+# Inhibition rules
+# -------------------------------------------------------------------------
+inhibit_rules:
+  # If the fraud detector is completely down, suppress consumer lag and
+  # throughput alerts since they are expected symptoms.
+  - source_matchers:
+      - alertname="FraudDetectorDown"
+    target_matchers:
+      - alertname="HighConsumerLag"
+    equal: ["service"]
+
+  - source_matchers:
+      - alertname="FraudDetectorDown"
+    target_matchers:
+      - alertname="ConsumerLagIncreasing"
+    equal: ["service"]
+
+  - source_matchers:
+      - alertname="FraudDetectorDown"
+    target_matchers:
+      - alertname="LowThroughput"
+    equal: ["service"]
+
+  # If model inference is failing, suppress model fallback info alerts.
+  - source_matchers:
+      - alertname="ModelInferenceFailing"
+    target_matchers:
+      - alertname="ModelFallbackActive"
+    equal: ["service"]
+
+  # If DLQ is accumulating (critical), suppress batch slowdown (info).
+  - source_matchers:
+      - alertname="DLQAccumulating"
+    target_matchers:
+      - alertname="BatchProcessingSlowdown"
+    equal: ["service"]
+
+  # Critical alerts suppress same-component warnings.
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ["service", "component"]
+
+# -------------------------------------------------------------------------
+# Receivers
+# -------------------------------------------------------------------------
+# Replace the webhook URLs below with your actual integration endpoints
+# (Slack incoming webhook, PagerDuty Events API, OpsGenie, etc.).
+receivers:
+  - name: "default-webhook"
+    webhook_configs:
+      - url: "http://localhost:9095/hooks/default"
+        send_resolved: true
+
+  - name: "critical-webhook"
+    webhook_configs:
+      - url: "http://localhost:9095/hooks/critical"
+        send_resolved: true
+        # For PagerDuty, replace the webhook_configs block with:
+        # pagerduty_configs:
+        #   - routing_key: "<YOUR_PAGERDUTY_INTEGRATION_KEY>"
+        #     severity: critical
+
+  - name: "warning-webhook"
+    webhook_configs:
+      - url: "http://localhost:9095/hooks/warning"
+        send_resolved: true
+        # For Slack, replace the webhook_configs block with:
+        # slack_configs:
+        #   - api_url: "<YOUR_SLACK_WEBHOOK_URL>"
+        #     channel: "#fraud-alerts"
+        #     title: '{{ .CommonAnnotations.summary }}'
+        #     text: '{{ .CommonAnnotations.description }}'
+
+  - name: "info-webhook"
+    webhook_configs:
+      - url: "http://localhost:9095/hooks/info"
+        send_resolved: true

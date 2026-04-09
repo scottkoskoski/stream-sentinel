@@ -1,0 +1,298 @@
+# Stream-Sentinel Prometheus Alerting Rules
+#
+# Organized by severity:
+#   critical  -- page immediately, service is degraded or at risk
+#   warning   -- investigate soon, performance or reliability concern
+#   info      -- log for review, no immediate action required
+#
+# Metric names reference src/monitoring/metrics.py and src/kafka/dlq.py.
+
+groups:
+  # =========================================================================
+  # CRITICAL -- page immediately
+  # =========================================================================
+  - name: stream_sentinel_critical
+    interval: 15s
+    rules:
+      # Fraud detector health check reports unhealthy for over 1 minute.
+      - alert: FraudDetectorDown
+        expr: component_health_status{component_name="fraud-detector", check_type="general"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: stream-sentinel
+          component: fraud-detector
+        annotations:
+          summary: "Fraud detector is down"
+          description: >-
+            The fraud-detector component health check has been reporting
+            unhealthy (0) for more than 1 minute. Fraud scoring is not
+            operational.
+          runbook_url: "https://runbooks.internal/stream-sentinel/fraud-detector-down"
+
+      # Consumer lag exceeds 50 000 messages for over 2 minutes.
+      - alert: HighConsumerLag
+        expr: sum by (consumer_group, topic) (kafka_consumer_lag_messages) > 50000
+        for: 2m
+        labels:
+          severity: critical
+          service: stream-sentinel
+          component: kafka-consumer
+        annotations:
+          summary: "Kafka consumer lag exceeds 50k messages"
+          description: >-
+            Consumer group {{ $labels.consumer_group }} on topic
+            {{ $labels.topic }} has a lag of {{ $value }} messages, which
+            has been above 50 000 for more than 2 minutes. Transactions
+            are not being processed in time.
+          runbook_url: "https://runbooks.internal/stream-sentinel/high-consumer-lag"
+
+      # Dead-letter-queue messages accumulating at more than 10/min for 5 min.
+      - alert: DLQAccumulating
+        expr: rate(dlq_messages_total[5m]) * 60 > 10
+        for: 5m
+        labels:
+          severity: critical
+          service: stream-sentinel
+          component: dlq
+        annotations:
+          summary: "Dead letter queue accumulating messages"
+          description: >-
+            The dead-letter-queue is receiving more than 10 messages per
+            minute (current rate: {{ $value | printf "%.1f" }}/min) and has
+            sustained this rate for over 5 minutes. This indicates
+            systematic processing failures.
+          runbook_url: "https://runbooks.internal/stream-sentinel/dlq-accumulating"
+
+      # Model inference error rate exceeds 5% over 2 minutes.
+      # Compares failed transactions to total transactions processed.
+      - alert: ModelInferenceFailing
+        expr: >-
+          (
+            rate(errors_total{error_type="model_inference", severity="error"}[2m])
+            /
+            clamp_min(rate(transactions_processed_total{status="completed"}[2m]), 0.001)
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: stream-sentinel
+          component: ml-model
+        annotations:
+          summary: "Model inference error rate exceeds 5%"
+          description: >-
+            ML model inference is failing at a rate of
+            {{ $value | printf "%.1f%%" }} over the last 2 minutes for
+            component {{ $labels.component }}. The system may be falling
+            back to rules-based scoring.
+          runbook_url: "https://runbooks.internal/stream-sentinel/model-inference-failing"
+
+      # Fraud rate deviates more than 3 standard deviations from baseline.
+      # Uses a 1-hour moving average as baseline compared against the
+      # short-term 5-minute window.
+      - alert: FraudRateAnomaly
+        expr: >-
+          abs(
+            fraud_rate{time_window="1h"}
+            - avg_over_time(fraud_rate{time_window="1h"}[6h])
+          )
+          >
+          3 * stddev_over_time(fraud_rate{time_window="1h"}[6h])
+        for: 5m
+        labels:
+          severity: critical
+          service: stream-sentinel
+          component: fraud-detection
+        annotations:
+          summary: "Fraud rate anomaly detected"
+          description: >-
+            The current fraud detection rate ({{ $value | printf "%.2f" }}%)
+            has deviated more than 3 standard deviations from its 6-hour
+            baseline. This may indicate a fraud attack or model degradation.
+          runbook_url: "https://runbooks.internal/stream-sentinel/fraud-rate-anomaly"
+
+  # =========================================================================
+  # WARNING -- investigate soon
+  # =========================================================================
+  - name: stream_sentinel_warning
+    interval: 30s
+    rules:
+      # P99 fraud detection latency exceeds 100ms for 5 minutes.
+      # 100ms aligns with the project's <100ms P99 performance target.
+      - alert: HighFraudDetectionLatency
+        expr: >-
+          histogram_quantile(0.99,
+            rate(fraud_detection_duration_seconds_bucket[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: stream-sentinel
+          component: fraud-detector
+        annotations:
+          summary: "P99 fraud detection latency exceeds 100ms"
+          description: >-
+            The 99th percentile end-to-end fraud detection latency is
+            {{ $value | printf "%.3f" }}s, which exceeds the 100ms SLO.
+            This has persisted for over 5 minutes.
+          runbook_url: "https://runbooks.internal/stream-sentinel/high-latency"
+
+      # Consumer lag has been steadily increasing for 10 minutes.
+      # Uses the delta over 10 minutes: if the lag grew, something is
+      # falling behind even if it hasn't yet crossed the critical threshold.
+      - alert: ConsumerLagIncreasing
+        expr: >-
+          delta(
+            sum by (consumer_group, topic) (kafka_consumer_lag_messages)[10m:]
+          ) > 5000
+        for: 10m
+        labels:
+          severity: warning
+          service: stream-sentinel
+          component: kafka-consumer
+        annotations:
+          summary: "Consumer lag is steadily increasing"
+          description: >-
+            Consumer group {{ $labels.consumer_group }} on topic
+            {{ $labels.topic }} has seen its lag increase by
+            {{ $value | printf "%.0f" }} messages over the last 10 minutes.
+            The consumer is not keeping up with the producer.
+          runbook_url: "https://runbooks.internal/stream-sentinel/consumer-lag-increasing"
+
+      # Redis error rate exceeds 1% for 5 minutes.
+      - alert: RedisConnectionErrors
+        expr: >-
+          (
+            rate(redis_operations_total{status="error"}[5m])
+            /
+            clamp_min(rate(redis_operations_total[5m]), 0.001)
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          service: stream-sentinel
+          component: redis
+        annotations:
+          summary: "Redis error rate exceeds 1%"
+          description: >-
+            Redis operations are failing at {{ $value | printf "%.2f%%" }}
+            for database {{ $labels.database }}. This may indicate
+            connection pool exhaustion or Redis availability issues.
+          runbook_url: "https://runbooks.internal/stream-sentinel/redis-errors"
+
+      # Model drift detection has been triggering.
+      - alert: ModelDriftDetected
+        expr: increase(drift_detection_runs_total{result="drift_detected"}[15m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: stream-sentinel
+          component: ml-model
+        annotations:
+          summary: "Model drift detected"
+          description: >-
+            The {{ $labels.detector_type }} drift detector has flagged
+            drift in the last 15 minutes. Model accuracy may be degrading
+            and retraining should be evaluated.
+          runbook_url: "https://runbooks.internal/stream-sentinel/model-drift"
+
+      # False positive rate exceeds 10%.
+      - alert: HighFalsePositiveRate
+        expr: false_positive_rate > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          service: stream-sentinel
+          component: fraud-detection
+        annotations:
+          summary: "High false positive rate detected"
+          description: >-
+            The false positive rate for time window {{ $labels.time_window }}
+            is {{ $value | printf "%.2f%%" }}, which exceeds the 10%
+            threshold. Legitimate transactions may be getting flagged.
+          runbook_url: "https://runbooks.internal/stream-sentinel/high-false-positive-rate"
+
+      # Throughput drops below expected baseline for 10 minutes.
+      # With a 10k TPS target, alerting if consumed rate drops below 1000/s
+      # indicates the pipeline has substantially degraded.
+      - alert: LowThroughput
+        expr: >-
+          sum(rate(kafka_messages_consumed_total[5m])) < 1000
+            and
+          sum(rate(kafka_messages_consumed_total[5m] offset 1h)) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          service: stream-sentinel
+          component: kafka-consumer
+        annotations:
+          summary: "Transaction processing throughput is low"
+          description: >-
+            The total message consumption rate has dropped to
+            {{ $value | printf "%.0f" }} msg/s, which is below the 1000
+            msg/s baseline. One hour ago the rate was above 1000 msg/s,
+            indicating a regression.
+          runbook_url: "https://runbooks.internal/stream-sentinel/low-throughput"
+
+  # =========================================================================
+  # INFO -- log for review
+  # =========================================================================
+  - name: stream_sentinel_info
+    interval: 60s
+    rules:
+      # Rules-based fallback is active instead of the ML model.
+      - alert: ModelFallbackActive
+        expr: model_status_info{status="rules_fallback"} == 1
+        for: 2m
+        labels:
+          severity: info
+          service: stream-sentinel
+          component: ml-model
+        annotations:
+          summary: "ML model fallback is active"
+          description: >-
+            The fraud detector is using rules-based fallback scoring
+            instead of the primary ML model. This may be expected during
+            startup or model reload, but should not persist.
+          runbook_url: "https://runbooks.internal/stream-sentinel/model-fallback"
+
+      # Batch processing (Kafka consume) latency is increasing.
+      - alert: BatchProcessingSlowdown
+        expr: >-
+          histogram_quantile(0.95,
+            rate(kafka_consume_duration_seconds_bucket[5m])
+          )
+          >
+          1.5 * histogram_quantile(0.95,
+            rate(kafka_consume_duration_seconds_bucket[5m] offset 30m)
+          )
+        for: 10m
+        labels:
+          severity: info
+          service: stream-sentinel
+          component: kafka-consumer
+        annotations:
+          summary: "Batch processing latency is increasing"
+          description: >-
+            The P95 Kafka consume/process latency has increased by more
+            than 50% compared to 30 minutes ago. Current P95:
+            {{ $value | printf "%.3f" }}s.
+          runbook_url: "https://runbooks.internal/stream-sentinel/batch-slowdown"
+
+      # Blocked user count increasing rapidly (more than 20 users
+      # blocked in a 15-minute window).
+      - alert: UserBlockRateHigh
+        expr: increase(users_blocked_total[15m]) > 20
+        for: 5m
+        labels:
+          severity: info
+          service: stream-sentinel
+          component: alert-processor
+        annotations:
+          summary: "User blocking rate is high"
+          description: >-
+            {{ $value | printf "%.0f" }} users have been blocked in the
+            last 15 minutes (reason: {{ $labels.reason }}). This may
+            indicate a coordinated fraud attack or overly aggressive
+            blocking rules.
+          runbook_url: "https://runbooks.internal/stream-sentinel/high-block-rate"
