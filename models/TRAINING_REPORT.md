@@ -19,12 +19,29 @@
 - **Total Pipeline Duration:** ~4.2 hours (15,172 seconds)
 - **Training Date:** 2025-08-29
 
+## Optimization Strategy
+
+The training pipeline optimizes for **F2-score** (F-beta with beta=2) rather than ROC-AUC. F2-score
+weights recall 2x more than precision, which is the industry standard for fraud detection: missing
+a fraudulent transaction (false negative) is far more costly than flagging a legitimate one (false
+positive).
+
+Additionally, **cost-sensitive learning** is enabled via `scale_pos_weight` in XGBoost. This
+parameter compensates for class imbalance by weighting the minority (fraud) class more heavily
+during training. For a base fraud rate of 2.71%, the theoretical optimum is ~35.8 (ratio of
+legitimate to fraudulent transactions). Optuna searches the range [1.0, 40.0] on a log scale.
+
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
 | Validation AUC | 0.9707 |
 | Cross-Validation AUC (reported) | 0.9705 |
+
+> **Note:** The metrics above were recorded under the previous AUC-optimized pipeline. After
+> retraining with F2-score optimization and scale_pos_weight, expect recall to improve (and
+> precision to decrease slightly) at the default threshold. AUC will continue to be tracked as a
+> secondary metric.
 
 ## Feature Importance (Top 20 by Gain)
 

@@ -237,6 +237,14 @@ class FraudDetector:
             batch_mode: Enable batch inference mode (default: False for low-latency)
             batch_size: Maximum messages per batch when batch_mode is True
             batch_timeout_ms: Maximum time to wait before flushing a partial batch (ms)
+
+        Note on fraud_threshold with F2-optimized models:
+            The training pipeline now optimizes for F2-score with scale_pos_weight
+            cost-sensitive learning. This shifts the model's probability calibration
+            towards higher recall. The default threshold of 0.3 remains appropriate
+            as a starting point, but should be re-evaluated on a holdout set after
+            retraining. A threshold sweep (precision-recall curve analysis) is
+            recommended to find the optimal operating point for the new model.
         """
         # Initialize Kafka configuration
         self.kafka_config = get_kafka_config()

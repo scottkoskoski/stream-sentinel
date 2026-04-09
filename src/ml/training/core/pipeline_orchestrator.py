@@ -504,8 +504,16 @@ class PipelineOrchestrator:
                 raise ValidationError("No valid checkpoint found for validation")
             
             # Validate model performance
-            if best_checkpoint.score < 0.7:  # Minimum AUC threshold
-                raise ValidationError(f"Model performance below threshold: {best_checkpoint.score}")
+            # Minimum score threshold: 0.5 for F2-score, 0.7 for AUC.
+            # F2-score has a lower natural baseline than AUC.
+            optimization_metric = self.config.get('optimization_metric', 'f2')
+            min_threshold = 0.5 if optimization_metric == 'f2' else 0.7
+            metric_label = 'F2-score' if optimization_metric == 'f2' else 'AUC'
+            if best_checkpoint.score < min_threshold:
+                raise ValidationError(
+                    f"Model {metric_label} below minimum threshold "
+                    f"({best_checkpoint.score:.4f} < {min_threshold})"
+                )
             
             # Update context
             context.best_model_checkpoint = best_checkpoint
@@ -515,7 +523,9 @@ class PipelineOrchestrator:
             
             self.logger.info("stage.validation.completed", extra={
                 "pipeline_id": context.pipeline_id,
+                "optimization_metric": metric_label,
                 "model_score": best_checkpoint.score,
+                "min_threshold": min_threshold,
                 "checkpoint_id": best_checkpoint.checkpoint_id,
                 "duration": context.stage_durations['model_validation']
             })
@@ -545,6 +555,9 @@ class PipelineOrchestrator:
 
             # Create production package from best checkpoint
             checkpoint = context.best_model_checkpoint
+            optimization_metric = self.config.get('optimization_metric', 'f2')
+            metric_label = 'F2-score' if optimization_metric == 'f2' else 'AUC'
+
             production_package = {
                 'model': checkpoint.model,
                 'scaler': None,  # XGBoost doesn't need scaling
@@ -552,7 +565,9 @@ class PipelineOrchestrator:
                 'feature_names': context.processed_dataset.feature_names,
                 'model_metrics': {
                     'model_type': checkpoint.model_type,
-                    'validation_auc': checkpoint.score,
+                    'optimization_metric': optimization_metric,
+                    'validation_score': checkpoint.score,
+                    'validation_auc': checkpoint.score,  # backward compat key
                     'checkpoint_id': checkpoint.checkpoint_id,
                     'pipeline_id': context.pipeline_id
                 },
@@ -596,17 +611,21 @@ class PipelineOrchestrator:
                         name=f"Fraud Detection Model ({checkpoint.model_type})",
                         description=(
                             f"Trained by pipeline {context.pipeline_id} with "
-                            f"AUC={checkpoint.score:.4f}"
+                            f"{metric_label}={checkpoint.score:.4f}"
                         ),
                         model_type="fraud_detection",
                         algorithm=checkpoint.model_type,
                         framework="xgboost",
                         training_data_hash=context.processed_dataset.data_hash,
                         performance_metrics={
-                            "auc": checkpoint.score,
+                            "optimization_metric": optimization_metric,
+                            "score": checkpoint.score,
+                            "auc": checkpoint.score,  # backward compat
                         },
                         validation_metrics={
-                            "validation_auc": checkpoint.score,
+                            "optimization_metric": optimization_metric,
+                            "validation_score": checkpoint.score,
+                            "validation_auc": checkpoint.score,  # backward compat
                         },
                         training_start_time=context.start_time.isoformat(),
                         training_end_time=now_iso,
@@ -631,7 +650,8 @@ class PipelineOrchestrator:
                         self.logger.info("stage.deployment.registry_registered", extra={
                             "model_id": model_id,
                             "version": reg_metadata.version,
-                            "auc": checkpoint.score,
+                            "optimization_metric": metric_label,
+                            "score": checkpoint.score,
                         })
                     else:
                         self.logger.warning(

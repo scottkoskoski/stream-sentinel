@@ -107,62 +107,88 @@ class OptimizationConfig:
     n_jobs: int = 1
     cv_folds: int = 5
     random_state: int = 42
-    
+
+    # Optimization metric: 'f2' (F-beta with beta=2, recall-weighted) or 'roc_auc'.
+    # F2-score is the industry standard for fraud detection because missing fraud
+    # (false negatives) is far more costly than false alarms (false positives).
+    optimization_metric: str = "f2"
+
+    # Cost-sensitive learning via scale_pos_weight.
+    # Compensates for class imbalance by weighting the positive (fraud) class.
+    # The theoretical optimum for a 2.71% fraud rate is ~35.8 (neg/pos ratio).
+    # These bounds define the Optuna search range (log scale).
+    scale_pos_weight_min: float = 1.0
+    scale_pos_weight_max: float = 40.0
+
     # Study configuration
     study_dir: str = "models/hyperparameter_studies"
     results_dir: str = "models/hyperparameter_results"
     study_name_prefix: str = "fraud_detection"
-    
+
     # Optimization strategy
     sampler: str = "tpe"  # TPE, Random, Grid
     pruner: str = "median"  # Median, Hyperband, None
     direction: str = "maximize"  # maximize, minimize
-    
+
     # Convergence detection
     convergence_patience: int = 50
     min_trials_for_convergence: int = 20
     convergence_threshold: float = 0.001
-    
+
     # Resource management
     enable_gpu: bool = True
     gpu_memory_limit_gb: Optional[float] = None
     checkpoint_interval_trials: int = 10
-    
+
     def validate(self) -> List[str]:
         """Validate optimization configuration parameters."""
         errors = []
-        
+
         if self.n_trials <= 0:
             errors.append(f"Number of trials must be positive: {self.n_trials}")
-        
+
         if self.timeout_seconds <= 0:
             errors.append(f"Timeout must be positive: {self.timeout_seconds}")
-        
+
         if not 2 <= self.cv_folds <= 10:
             errors.append(f"CV folds must be between 2 and 10: {self.cv_folds}")
-        
+
         if self.convergence_patience <= 0:
             errors.append(f"Convergence patience must be positive: {self.convergence_patience}")
-        
+
         if self.min_trials_for_convergence <= 0:
             errors.append(f"Min trials for convergence must be positive: {self.min_trials_for_convergence}")
-        
+
+        # Optimization metric validation
+        valid_metrics = ["f2", "roc_auc"]
+        if self.optimization_metric not in valid_metrics:
+            errors.append(f"Invalid optimization metric: {self.optimization_metric}. Must be one of {valid_metrics}")
+
+        # scale_pos_weight range validation
+        if self.scale_pos_weight_min <= 0:
+            errors.append(f"scale_pos_weight_min must be positive: {self.scale_pos_weight_min}")
+        if self.scale_pos_weight_max <= self.scale_pos_weight_min:
+            errors.append(
+                f"scale_pos_weight_max ({self.scale_pos_weight_max}) must be greater than "
+                f"scale_pos_weight_min ({self.scale_pos_weight_min})"
+            )
+
         # Strategy validation
         valid_samplers = ["tpe", "random", "grid", "cmaes"]
         if self.sampler.lower() not in valid_samplers:
             errors.append(f"Invalid sampler: {self.sampler}")
-        
+
         valid_pruners = ["median", "hyperband", "none"]
         if self.pruner.lower() not in valid_pruners:
             errors.append(f"Invalid pruner: {self.pruner}")
-        
+
         valid_directions = ["maximize", "minimize"]
         if self.direction.lower() not in valid_directions:
             errors.append(f"Invalid direction: {self.direction}")
-        
+
         if self.gpu_memory_limit_gb is not None and self.gpu_memory_limit_gb <= 0:
             errors.append(f"GPU memory limit must be positive: {self.gpu_memory_limit_gb}")
-        
+
         return errors
 
 

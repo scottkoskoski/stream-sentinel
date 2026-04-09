@@ -40,7 +40,7 @@ from optuna.pruners import MedianPruner
 import xgboost as xgb
 import lightgbm as lgb
 from sklearn.model_selection import cross_val_score, StratifiedKFold
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, fbeta_score, make_scorer
 
 from .checkpoint_manager import CheckpointManager, ModelCheckpoint
 from .data_processor import ProcessedDataset
@@ -138,28 +138,39 @@ class ModelObjective:
     
     def __init__(self, model_type: str, data: ProcessedDataset,
                  checkpoint_manager: CheckpointManager,
-                 cv_folds: int = 5, random_state: int = 42):
+                 cv_folds: int = 5, random_state: int = 42,
+                 optimization_metric: str = 'f2'):
         """
         Initialize model objective function.
-        
+
         Args:
             model_type: Type of model to optimize ('xgboost', 'lightgbm', etc.)
             data: Processed dataset for training
             checkpoint_manager: Checkpoint manager for immediate persistence
             cv_folds: Number of cross-validation folds
             random_state: Random state for reproducibility
+            optimization_metric: Primary optimization metric ('f2' or 'roc_auc')
         """
         self.model_type = model_type
         self.data = data
         self.checkpoint_manager = checkpoint_manager
         self.cv_folds = cv_folds
         self.random_state = random_state
+        self.optimization_metric = optimization_metric
         self.logger = logging.getLogger(__name__)
-        
+
         # Cross-validation setup
-        self.cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, 
+        self.cv = StratifiedKFold(n_splits=cv_folds, shuffle=True,
                                  random_state=random_state)
-        
+
+        # Configure scoring based on optimization metric
+        if self.optimization_metric == 'f2':
+            self.scorer = make_scorer(fbeta_score, beta=2)
+            self.metric_name = 'F2-score'
+        else:
+            self.scorer = 'roc_auc'
+            self.metric_name = 'AUC'
+
         # Performance tracking
         self.trial_count = 0
         self.start_time = time.time()
@@ -167,12 +178,12 @@ class ModelObjective:
     def __call__(self, trial: optuna.Trial) -> float:
         """
         Optuna objective function with immediate checkpointing.
-        
+
         Args:
             trial: Optuna trial object
-            
+
         Returns:
-            Cross-validation AUC score for the trial
+            Cross-validation score for the trial (F2-score or AUC depending on config)
         """
         self.trial_count += 1
         trial_start_time = time.time()
@@ -197,7 +208,9 @@ class ModelObjective:
                 validation_metrics={
                     'cv_mean': mean_score,
                     'cv_std': np.std(cv_scores),
-                    'cv_scores': cv_scores.tolist()
+                    'cv_scores': cv_scores.tolist(),
+                    'optimization_metric': self.optimization_metric,
+                    'metric_name': self.metric_name
                 },
                 feature_count=self.data.X.shape[1],
                 data_hash=self.data.data_hash
@@ -209,6 +222,7 @@ class ModelObjective:
             self.logger.info("trial.completed", extra={
                 "trial_number": trial.number,
                 "model_type": self.model_type,
+                "optimization_metric": self.metric_name,
                 "score": mean_score,
                 "checkpoint_id": checkpoint_id,
                 "trial_duration": time.time() - trial_start_time,
@@ -240,6 +254,11 @@ class ModelObjective:
                 'min_child_weight': trial.suggest_int('min_child_weight', 1, 10),
                 'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 10.0),
                 'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 10.0),
+                # Cost-sensitive learning: scale_pos_weight compensates for class
+                # imbalance. For a 2.71% fraud rate the theoretical optimum is ~35.8
+                # (ratio of negatives to positives). Log scale lets Optuna explore
+                # the full range efficiently.
+                'scale_pos_weight': trial.suggest_float('scale_pos_weight', 1.0, 40.0, log=True),
                 'random_state': self.random_state
             }
         elif self.model_type == 'lightgbm':
@@ -252,6 +271,8 @@ class ModelObjective:
                 'min_child_samples': trial.suggest_int('min_child_samples', 5, 100),
                 'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 10.0),
                 'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 10.0),
+                # Cost-sensitive learning for LightGBM (same rationale as XGBoost)
+                'scale_pos_weight': trial.suggest_float('scale_pos_weight', 1.0, 40.0, log=True),
                 'random_state': self.random_state
             }
         else:
@@ -280,11 +301,11 @@ class ModelObjective:
             )
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
-        
-        # Cross-validation with AUC scoring
+
+        # Cross-validation with configured scoring metric (F2-score or AUC)
         cv_scores = cross_val_score(
             model, self.data.X, self.data.y,
-            cv=self.cv, scoring='roc_auc',
+            cv=self.cv, scoring=self.scorer,
             n_jobs=1  # Use single job to avoid GPU conflicts
         )
         
@@ -313,13 +334,16 @@ class HyperparameterOptimizer:
         self.config = config
         self.checkpoint_manager = checkpoint_manager
         self.logger = logging.getLogger(__name__)
-        
+
         # Optimization parameters
         self.n_trials = config.get('n_trials', 100)
         self.timeout = config.get('timeout_seconds', 7200)  # 2 hours default
         self.n_jobs = config.get('n_jobs', 1)  # Single job for GPU optimization
         self.cv_folds = config.get('cv_folds', 5)
-        
+
+        # Optimization metric: 'f2' (default, recall-weighted) or 'roc_auc'
+        self.optimization_metric = config.get('optimization_metric', 'f2')
+
         # Study storage
         study_dir = Path(config.get('study_dir', 'models/hyperparameter_studies'))
         study_dir.mkdir(parents=True, exist_ok=True)
@@ -336,6 +360,7 @@ class HyperparameterOptimizer:
             "n_trials": self.n_trials,
             "timeout_seconds": self.timeout,
             "cv_folds": self.cv_folds,
+            "optimization_metric": self.optimization_metric,
             "study_storage": self.study_storage
         })
     
@@ -347,7 +372,7 @@ class HyperparameterOptimizer:
         Args:
             study_name: Unique study identifier
             model_type: Type of model to optimize
-            direction: Optimization direction ('maximize' for AUC)
+            direction: Optimization direction ('maximize' for F2/AUC)
             
         Returns:
             StudyHandle for managing the optimization
@@ -431,7 +456,8 @@ class HyperparameterOptimizer:
                 model_type=study_handle.model_type,
                 data=data,
                 checkpoint_manager=self.checkpoint_manager,
-                cv_folds=self.cv_folds
+                cv_folds=self.cv_folds,
+                optimization_metric=self.optimization_metric
             )
             
             # Setup callbacks for progress monitoring
@@ -442,9 +468,11 @@ class HyperparameterOptimizer:
             callbacks.append(self._create_checkpointing_callback(study_handle))
             
             # Run optimization
+            metric_label = 'F2-score' if self.optimization_metric == 'f2' else 'AUC'
             self.logger.info("optimization.started", extra={
                 "study_id": study_handle.study_id,
                 "model_type": study_handle.model_type,
+                "optimization_metric": metric_label,
                 "n_trials": self.n_trials,
                 "timeout_seconds": self.timeout
             })
