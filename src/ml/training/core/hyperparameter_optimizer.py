@@ -167,9 +167,7 @@ class ModelObjective:
         self.logger = logging.getLogger(__name__)
 
         # Cross-validation setup
-        self.cv = StratifiedKFold(
-            n_splits=cv_folds, shuffle=True, random_state=random_state
-        )
+        self.cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
 
         # Performance tracking
         self.trial_count = 0
@@ -253,9 +251,7 @@ class ModelObjective:
             return {
                 "n_estimators": trial.suggest_int("n_estimators", 100, 3000, step=50),
                 "max_depth": trial.suggest_int("max_depth", 3, 20),
-                "learning_rate": trial.suggest_float(
-                    "learning_rate", 0.01, 0.3, log=True
-                ),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
                 "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
@@ -267,9 +263,7 @@ class ModelObjective:
             return {
                 "n_estimators": trial.suggest_int("n_estimators", 100, 3000, step=50),
                 "max_depth": trial.suggest_int("max_depth", 3, 20),
-                "learning_rate": trial.suggest_float(
-                    "learning_rate", 0.01, 0.3, log=True
-                ),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
                 "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
@@ -280,9 +274,7 @@ class ModelObjective:
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def _train_with_cv(
-        self, params: Dict[str, Any], trial: optuna.Trial
-    ) -> Tuple[np.ndarray, Any]:
+    def _train_with_cv(self, params: Dict[str, Any], trial: optuna.Trial) -> Tuple[np.ndarray, Any]:
         """Train model with cross-validation and return scores and final model."""
 
         # Create model based on type, gating GPU usage on self.use_gpu
@@ -377,9 +369,7 @@ class HyperparameterOptimizer:
             },
         )
 
-    def create_study(
-        self, study_name: str, model_type: str, direction: str = "maximize"
-    ) -> StudyHandle:
+    def create_study(self, study_name: str, model_type: str, direction: str = "maximize") -> StudyHandle:
         """
         Create or load Optuna study with persistence.
 
@@ -428,9 +418,7 @@ class HyperparameterOptimizer:
 
                     # Calculate trials since improvement
                     best_trial_number = best_trial.number
-                    study_handle.trials_since_improvement = (
-                        len(study.trials) - best_trial_number - 1
-                    )
+                    study_handle.trials_since_improvement = len(study.trials) - best_trial_number - 1
 
                 self.active_studies[study_name] = study_handle
 
@@ -455,9 +443,7 @@ class HyperparameterOptimizer:
                         "error": str(e),
                     },
                 )
-                raise OptimizationError(
-                    f"Failed to create study {study_name}: {e}"
-                ) from e
+                raise OptimizationError(f"Failed to create study {study_name}: {e}") from e
 
     def optimize(
         self,
@@ -531,15 +517,9 @@ class HyperparameterOptimizer:
                             "trial_number": trial.number,
                             "value": trial.value,
                             "params": trial.params,
-                            "datetime_start": (
-                                trial.datetime_start.isoformat()
-                                if trial.datetime_start
-                                else None
-                            ),
+                            "datetime_start": (trial.datetime_start.isoformat() if trial.datetime_start else None),
                             "datetime_complete": (
-                                trial.datetime_complete.isoformat()
-                                if trial.datetime_complete
-                                else None
+                                trial.datetime_complete.isoformat() if trial.datetime_complete else None
                             ),
                         }
                     )
@@ -582,9 +562,7 @@ class HyperparameterOptimizer:
                     "optimization_time": time.time() - optimization_start_time,
                 },
             )
-            raise OptimizationError(
-                f"Optimization failed for {study_handle.study_id}: {e}"
-            ) from e
+            raise OptimizationError(f"Optimization failed for {study_handle.study_id}: {e}") from e
 
     def resume_study(self, study_name: str) -> Optional[StudyHandle]:
         """Resume interrupted optimization study."""
@@ -610,9 +588,7 @@ class HyperparameterOptimizer:
 
             # Calculate trials since improvement
             best_trial_number = best_trial.number
-            study_handle.trials_since_improvement = (
-                len(study.trials) - best_trial_number - 1
-            )
+            study_handle.trials_since_improvement = len(study.trials) - best_trial_number - 1
 
             self.active_studies[study_name] = study_handle
 
@@ -628,9 +604,7 @@ class HyperparameterOptimizer:
             return study_handle
 
         except Exception as e:
-            self.logger.error(
-                "study.resume_failed", extra={"study_name": study_name, "error": str(e)}
-            )
+            self.logger.error("study.resume_failed", extra={"study_name": study_name, "error": str(e)})
             return None
 
     def _create_progress_callback(self, study_handle: StudyHandle) -> Callable:
@@ -680,9 +654,7 @@ class HyperparameterOptimizer:
     def _compute_convergence_stats(self, study_handle: StudyHandle) -> Dict[str, Any]:
         """Compute convergence statistics."""
         trials = study_handle.study.trials
-        completed_trials = [
-            t for t in trials if t.state == optuna.trial.TrialState.COMPLETE
-        ]
+        completed_trials = [t for t in trials if t.state == optuna.trial.TrialState.COMPLETE]
 
         if not completed_trials:
             return {"n_trials": 0, "convergence_detected": False}
@@ -696,8 +668,7 @@ class HyperparameterOptimizer:
             "std_score": np.std(scores),
             "convergence_detected": study_handle.has_converged,
             "trials_since_improvement": study_handle.trials_since_improvement,
-            "improvement_rate": len([s for s in scores if s == max(scores)])
-            / len(scores),
+            "improvement_rate": len([s for s in scores if s == max(scores)]) / len(scores),
         }
 
     def _collect_resource_usage(self, optimization_time: float) -> Dict[str, Any]:
@@ -713,18 +684,14 @@ class HyperparameterOptimizer:
 
     def _save_optimization_results(self, result: OptimizationResult) -> None:
         """Save comprehensive optimization results."""
-        results_dir = Path(
-            self.config.get("results_dir", "models/hyperparameter_results")
-        )
+        results_dir = Path(self.config.get("results_dir", "models/hyperparameter_results"))
         results_dir.mkdir(parents=True, exist_ok=True)
 
         model_dir = results_dir / result.study_handle.model_type
         model_dir.mkdir(parents=True, exist_ok=True)
 
         # Save convergence stats
-        convergence_file = (
-            model_dir / f"{result.study_handle.study_id}_convergence_stats.json"
-        )
+        convergence_file = model_dir / f"{result.study_handle.study_id}_convergence_stats.json"
         convergence_data = {
             "study_id": result.study_handle.study_id,
             "model_type": result.study_handle.model_type,

@@ -11,33 +11,34 @@ Covers:
 
 import json
 import os
-import time
-import threading
-import pytest
-from unittest.mock import patch
-from urllib.request import urlopen, Request
-from urllib.error import HTTPError
-
 import sys
+import threading
+import time
 from pathlib import Path
+from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+import pytest
 
 # Ensure src/ is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from monitoring.health import (
+    HEALTH_STARTUP_GRACE_SECONDS,
     HealthCheckRegistry,
     start_health_server,
-    HEALTH_STARTUP_GRACE_SECONDS,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _find_free_port():
     """Find an available TCP port."""
     import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
@@ -60,6 +61,7 @@ def health_server(registry):
 # ---------------------------------------------------------------------------
 # HealthCheckRegistry unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestHealthCheckRegistry:
 
@@ -127,6 +129,7 @@ class TestHealthCheckRegistry:
 # HTTP endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestHealthEndpoints:
 
     def _get(self, base_url, path):
@@ -179,6 +182,7 @@ class TestHealthEndpoints:
         """When HEALTH_DETAILS_ENABLED=false, /health/details returns 403."""
         # Re-import to pick up patched env var
         import importlib
+
         import monitoring.health as health_mod
 
         importlib.reload(health_mod)

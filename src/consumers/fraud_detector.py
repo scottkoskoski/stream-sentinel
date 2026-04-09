@@ -332,9 +332,7 @@ class FraudDetector:
             prom = get_prometheus_metrics("fraud-detector")
             # Set all status labels: 1.0 for the active status, 0.0 for others
             for status in ("ml_primary", "rules_fallback", "loading"):
-                prom.model_status_info.labels(status=status).set(
-                    1.0 if status == self.model_status else 0.0
-                )
+                prom.model_status_info.labels(status=status).set(1.0 if status == self.model_status else 0.0)
         except Exception:
             pass  # Prometheus not available
 

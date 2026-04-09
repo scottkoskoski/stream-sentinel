@@ -16,13 +16,13 @@ Key design decisions:
 """
 
 import json
-import os
-import time
 import logging
+import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-from typing import Callable, Dict, Any, Optional
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 HEALTH_BIND_ADDRESS: str = os.environ.get("HEALTH_BIND_ADDRESS", "0.0.0.0")
 HEALTH_DETAILS_ENABLED: bool = os.environ.get("HEALTH_DETAILS_ENABLED", "true").lower() in (
-    "true", "1", "yes",
+    "true",
+    "1",
+    "yes",
 )
-HEALTH_STARTUP_GRACE_SECONDS: float = float(
-    os.environ.get("HEALTH_STARTUP_GRACE_SECONDS", "30")
-)
+HEALTH_STARTUP_GRACE_SECONDS: float = float(os.environ.get("HEALTH_STARTUP_GRACE_SECONDS", "30"))
 
 
 # ---------------------------------------------------------------------------
@@ -92,9 +92,7 @@ class HealthCheckRegistry:
             return results
 
         with ThreadPoolExecutor(max_workers=min(len(checks_snapshot), 8)) as pool:
-            future_to_name = {
-                pool.submit(fn): name for name, fn in checks_snapshot.items()
-            }
+            future_to_name = {pool.submit(fn): name for name, fn in checks_snapshot.items()}
             for future in as_completed(future_to_name, timeout=timeout):
                 name = future_to_name[future]
                 try:
@@ -150,10 +148,13 @@ class _HealthHandler(BaseHTTPRequestHandler):
             if registry.is_live():
                 self._send_json(200, {"status": "ok"})
             else:
-                self._send_json(503, {
-                    "status": "unhealthy",
-                    "reason": "no heartbeat received within startup grace period",
-                })
+                self._send_json(
+                    503,
+                    {
+                        "status": "unhealthy",
+                        "reason": "no heartbeat received within startup grace period",
+                    },
+                )
 
         elif self.path == "/health/ready":
             if registry.is_ready():
@@ -168,16 +169,19 @@ class _HealthHandler(BaseHTTPRequestHandler):
             results = registry.run_all_checks()
             overall = all(r.get("healthy", False) for r in results.values())
             code = 200 if overall else 503
-            self._send_json(code, {
-                "status": "healthy" if overall else "unhealthy",
-                "uptime_seconds": round(registry.uptime_seconds, 1),
-                "last_heartbeat_ago_seconds": (
-                    round(time.monotonic() - registry.last_heartbeat, 1)
-                    if registry.last_heartbeat is not None
-                    else None
-                ),
-                "checks": results,
-            })
+            self._send_json(
+                code,
+                {
+                    "status": "healthy" if overall else "unhealthy",
+                    "uptime_seconds": round(registry.uptime_seconds, 1),
+                    "last_heartbeat_ago_seconds": (
+                        round(time.monotonic() - registry.last_heartbeat, 1)
+                        if registry.last_heartbeat is not None
+                        else None
+                    ),
+                    "checks": results,
+                },
+            )
 
         else:
             self._send_json(404, {"error": "not found"})
