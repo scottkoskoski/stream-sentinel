@@ -7,11 +7,11 @@ against IEEE-CIS analysis, and checks feature compatibility with the
 production model.
 """
 
-import sys
-import os
-import json
-import pickle
 import importlib.util
+import json
+import os
+import pickle
+import sys
 import warnings
 
 import numpy as np
@@ -25,9 +25,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 # Load gen_config
-_spec = importlib.util.spec_from_file_location(
-    "gen_config", os.path.join(ROOT, "src/producers/config.py")
-)
+_spec = importlib.util.spec_from_file_location("gen_config", os.path.join(ROOT, "src/producers/config.py"))
 gen_config = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gen_config)
 
@@ -39,9 +37,7 @@ ieee = ieee_analysis["analysis_results"]
 ieee_spec = ieee["synthetic_spec"]
 
 # Load production model metadata
-model_data = pickle.load(
-    open(os.path.join(ROOT, "models/ieee_fraud_model_production.pkl"), "rb")
-)
+model_data = pickle.load(open(os.path.join(ROOT, "models/ieee_fraud_model_production.pkl"), "rb"))
 model_feature_names = model_data["feature_names"]
 
 
@@ -198,9 +194,7 @@ for stat, ieee_val, syn_val in [
     ("Max", ieee_amt["max"], syn_amt.max()),
 ]:
     pct_diff = abs(syn_val - ieee_val) / max(ieee_val, 0.01) * 100
-    rows.append(
-        [stat, f"{ieee_val:.2f}", f"{syn_val:.2f}", f"{pct_diff:.1f}%"]
-    )
+    rows.append([stat, f"{ieee_val:.2f}", f"{syn_val:.2f}", f"{pct_diff:.1f}%"])
 
 table(["Statistic", "IEEE-CIS", "Synthetic", "% Diff"], rows)
 
@@ -210,8 +204,12 @@ ks_stat, ks_p = stats.kstest(
     "lognorm",
     args=(ieee_amt["std"], 0, np.exp(np.log(ieee_amt["mean"]))),
 )
-report_lines.append(f"Note: Synthetic amounts are capped at {gen_config.AMOUNT_DISTRIBUTION['max_amount']} while IEEE-CIS max is {ieee_amt['max']:.2f}.")
-report_lines.append(f"The log-normal parameters (mean_log={gen_config.AMOUNT_DISTRIBUTION['mean_log']}, std_log={gen_config.AMOUNT_DISTRIBUTION['std_log']}) produce the synthetic distribution.")
+report_lines.append(
+    f"Note: Synthetic amounts are capped at {gen_config.AMOUNT_DISTRIBUTION['max_amount']} while IEEE-CIS max is {ieee_amt['max']:.2f}."
+)
+report_lines.append(
+    f"The log-normal parameters (mean_log={gen_config.AMOUNT_DISTRIBUTION['mean_log']}, std_log={gen_config.AMOUNT_DISTRIBUTION['std_log']}) produce the synthetic distribution."
+)
 
 # ===== 2. Fraud Rate =====
 section("2. Fraud Rate Analysis")
@@ -238,7 +236,9 @@ config_peak = gen_config.PEAK_FRAUD_HOURS
 report_lines.append(f"IEEE-CIS high-risk hours: {ieee_peak}")
 report_lines.append(f"Config PEAK_FRAUD_HOURS: {config_peak}")
 if set(config_peak) != set(ieee_peak):
-    report_lines.append(f"**MISMATCH**: Config peak hours {config_peak} differ from IEEE-CIS {ieee_peak}. IEEE includes hours 0,1,5,22,23 as high-risk.")
+    report_lines.append(
+        f"**MISMATCH**: Config peak hours {config_peak} differ from IEEE-CIS {ieee_peak}. IEEE includes hours 0,1,5,22,23 as high-risk."
+    )
 
 # ===== 3. Card Features =====
 section("3. Card Feature Distributions")
@@ -285,23 +285,34 @@ for i in range(1, 15):
     if col_upper in ieee_c:
         ieee_mean = ieee_c[col_upper]["mean"]
         syn_mean = df[col].dropna().mean() if df[col].notna().any() else 0
-        rows.append([col_upper,
-                     f"{null_rate_ieee}" if isinstance(null_rate_ieee, str) else f"{null_rate_ieee:.2f}",
-                     f"{null_rate_config:.2f}",
-                     f"{null_rate_actual:.2f}",
-                     f"{ieee_mean:.2f}",
-                     f"{syn_mean:.2f}"])
+        rows.append(
+            [
+                col_upper,
+                f"{null_rate_ieee}" if isinstance(null_rate_ieee, str) else f"{null_rate_ieee:.2f}",
+                f"{null_rate_config:.2f}",
+                f"{null_rate_actual:.2f}",
+                f"{ieee_mean:.2f}",
+                f"{syn_mean:.2f}",
+            ]
+        )
     else:
-        rows.append([col_upper,
-                     f"{null_rate_ieee}" if isinstance(null_rate_ieee, str) else f"{null_rate_ieee:.2f}",
-                     f"{null_rate_config:.2f}",
-                     f"{null_rate_actual:.2f}",
-                     "N/A", "N/A"])
+        rows.append(
+            [
+                col_upper,
+                f"{null_rate_ieee}" if isinstance(null_rate_ieee, str) else f"{null_rate_ieee:.2f}",
+                f"{null_rate_config:.2f}",
+                f"{null_rate_actual:.2f}",
+                "N/A",
+                "N/A",
+            ]
+        )
 
 table(["Feature", "IEEE Null%", "Config Null%", "Actual Null%", "IEEE Mean", "Synth Mean"], rows)
 
 # Major mismatch: IEEE-CIS has 0% null for C1-C5,C9,C12-C14 but config has non-zero
-report_lines.append("\n**Key Finding:** IEEE-CIS has 0% null rate for C1-C5, C9, C12-C14, but `config.py` uses non-zero null rates (2-25%). This is a distribution mismatch.")
+report_lines.append(
+    "\n**Key Finding:** IEEE-CIS has 0% null rate for C1-C5, C9, C12-C14, but `config.py` uses non-zero null rates (2-25%). This is a distribution mismatch."
+)
 
 # ===== 5. D-Features =====
 section("5. D-Feature (Time Delta) Analysis")
@@ -318,18 +329,27 @@ for i in range(1, 16):
     if col_upper in ieee_d:
         ieee_mean = ieee_d[col_upper]["mean"]
         syn_mean = df[col].dropna().mean() if df[col].notna().any() else 0
-        rows.append([col_upper,
-                     f"{null_rate_ieee}" if isinstance(null_rate_ieee, str) else f"{null_rate_ieee:.3f}",
-                     f"{null_rate_config:.3f}",
-                     f"{null_rate_actual:.3f}",
-                     f"{ieee_mean:.1f}",
-                     f"{syn_mean:.1f}"])
+        rows.append(
+            [
+                col_upper,
+                f"{null_rate_ieee}" if isinstance(null_rate_ieee, str) else f"{null_rate_ieee:.3f}",
+                f"{null_rate_config:.3f}",
+                f"{null_rate_actual:.3f}",
+                f"{ieee_mean:.1f}",
+                f"{syn_mean:.1f}",
+            ]
+        )
     else:
-        rows.append([col_upper,
-                     f"{null_rate_ieee}" if isinstance(null_rate_ieee, str) else f"{null_rate_ieee:.3f}",
-                     f"{null_rate_config:.3f}",
-                     f"{null_rate_actual:.3f}",
-                     "N/A", "N/A"])
+        rows.append(
+            [
+                col_upper,
+                f"{null_rate_ieee}" if isinstance(null_rate_ieee, str) else f"{null_rate_ieee:.3f}",
+                f"{null_rate_config:.3f}",
+                f"{null_rate_actual:.3f}",
+                "N/A",
+                "N/A",
+            ]
+        )
 
 table(["Feature", "IEEE Null%", "Config Null%", "Actual Null%", "IEEE Mean", "Synth Mean"], rows)
 
@@ -350,11 +370,15 @@ for i in range(1, 10):
     f_pct = (non_null == "F").mean() if len(non_null) > 0 else 0
     nf_pct = (non_null == "NotFound").mean() if len(non_null) > 0 else 0
 
-    rows.append([col_upper,
-                 f"{null_rate_ieee:.3f}",
-                 f"{null_rate_config:.3f}",
-                 f"{null_rate_actual:.3f}",
-                 f"T:{t_pct:.0%} F:{f_pct:.0%} NF:{nf_pct:.0%}"])
+    rows.append(
+        [
+            col_upper,
+            f"{null_rate_ieee:.3f}",
+            f"{null_rate_config:.3f}",
+            f"{null_rate_actual:.3f}",
+            f"T:{t_pct:.0%} F:{f_pct:.0%} NF:{nf_pct:.0%}",
+        ]
+    )
 
 table(["Feature", "IEEE Null%", "Config Null%", "Actual Null%", "Value Dist (non-null)"], rows)
 
@@ -369,7 +393,7 @@ model_features = set(model_feature_names)
 synth_to_model = {}
 for col in df.columns:
     # Direct uppercase match
-    upper = col.upper() if col.startswith(('c', 'd', 'm')) and col[1:].isdigit() else col
+    upper = col.upper() if col.startswith(("c", "d", "m")) and col[1:].isdigit() else col
     # Special cases
     mapping = {
         "transaction_dt": "TransactionDT",
@@ -409,23 +433,28 @@ id_features = sorted([f for f in missing if f.startswith("id_") or f in ("Device
 amt_derived = sorted([f for f in missing if f.startswith("TransactionAmt_")])
 c_missing = sorted([f for f in missing if f.startswith("C")])
 d_missing = sorted([f for f in missing if f.startswith("D")])
-other_missing = sorted(missing - set(v_features) - set(id_features) - set(amt_derived) - set(c_missing) - set(d_missing))
+other_missing = sorted(
+    missing - set(v_features) - set(id_features) - set(amt_derived) - set(c_missing) - set(d_missing)
+)
 
 report_lines.append(f"\n### Missing Feature Categories\n")
-table(["Category", "Count", "Examples"], [
-    ["V-features (Vesta)", len(v_features), ", ".join(v_features[:10]) + ("..." if len(v_features) > 10 else "")],
-    ["id-features (Identity)", len(id_features), ", ".join(id_features[:10])],
-    ["TransactionAmt derived", len(amt_derived), ", ".join(amt_derived)],
-    ["C-features", len(c_missing), ", ".join(c_missing)],
-    ["D-features", len(d_missing), ", ".join(d_missing)],
-    ["Other", len(other_missing), ", ".join(other_missing)],
-])
+table(
+    ["Category", "Count", "Examples"],
+    [
+        ["V-features (Vesta)", len(v_features), ", ".join(v_features[:10]) + ("..." if len(v_features) > 10 else "")],
+        ["id-features (Identity)", len(id_features), ", ".join(id_features[:10])],
+        ["TransactionAmt derived", len(amt_derived), ", ".join(amt_derived)],
+        ["C-features", len(c_missing), ", ".join(c_missing)],
+        ["D-features", len(d_missing), ", ".join(d_missing)],
+        ["Other", len(other_missing), ", ".join(other_missing)],
+    ],
+)
 
 # C/D features the model uses vs what synthetic generates
 model_c = sorted([f for f in model_features if f.startswith("C") and f[1:].isdigit()])
 model_d = sorted([f for f in model_features if f.startswith("D") and f[1:].isdigit()])
-synth_c = sorted([f"C{i}" for i in range(1,15)])
-synth_d = sorted([f"D{i}" for i in range(1,16)])
+synth_c = sorted([f"C{i}" for i in range(1, 15)])
+synth_d = sorted([f"D{i}" for i in range(1, 16)])
 
 report_lines.append(f"\n### C-Feature Coverage")
 report_lines.append(f"Model uses: {model_c}")
@@ -444,28 +473,48 @@ section("8. Specific Distribution Issues")
 
 report_lines.append("### Amount Capping")
 report_lines.append(f"- Config max_amount: {gen_config.AMOUNT_DISTRIBUTION['max_amount']}")
-report_lines.append(f"- IEEE-CIS spec max_amount: {ieee_spec['transaction_patterns']['amount_distribution']['max_amount']}")
+report_lines.append(
+    f"- IEEE-CIS spec max_amount: {ieee_spec['transaction_patterns']['amount_distribution']['max_amount']}"
+)
 report_lines.append(f"- IEEE-CIS actual max: {ieee_amt['max']}")
 report_lines.append(f"- Synthetic max observed: {syn_amt.max():.2f}")
-if gen_config.AMOUNT_DISTRIBUTION['max_amount'] < ieee_spec['transaction_patterns']['amount_distribution']['max_amount']:
-    report_lines.append(f"- **ISSUE**: Config caps at {gen_config.AMOUNT_DISTRIBUTION['max_amount']} but IEEE spec says {ieee_spec['transaction_patterns']['amount_distribution']['max_amount']}.")
+if (
+    gen_config.AMOUNT_DISTRIBUTION["max_amount"]
+    < ieee_spec["transaction_patterns"]["amount_distribution"]["max_amount"]
+):
+    report_lines.append(
+        f"- **ISSUE**: Config caps at {gen_config.AMOUNT_DISTRIBUTION['max_amount']} but IEEE spec says {ieee_spec['transaction_patterns']['amount_distribution']['max_amount']}."
+    )
 
 report_lines.append("\n### Amount Min")
 report_lines.append(f"- Config min_amount: {gen_config.AMOUNT_DISTRIBUTION['min_amount']}")
-report_lines.append(f"- IEEE-CIS spec min_amount: {ieee_spec['transaction_patterns']['amount_distribution']['min_amount']}")
-if gen_config.AMOUNT_DISTRIBUTION['min_amount'] != ieee_spec['transaction_patterns']['amount_distribution']['min_amount']:
-    report_lines.append(f"- **ISSUE**: Config min is {gen_config.AMOUNT_DISTRIBUTION['min_amount']} but IEEE spec says {ieee_spec['transaction_patterns']['amount_distribution']['min_amount']}.")
+report_lines.append(
+    f"- IEEE-CIS spec min_amount: {ieee_spec['transaction_patterns']['amount_distribution']['min_amount']}"
+)
+if (
+    gen_config.AMOUNT_DISTRIBUTION["min_amount"]
+    != ieee_spec["transaction_patterns"]["amount_distribution"]["min_amount"]
+):
+    report_lines.append(
+        f"- **ISSUE**: Config min is {gen_config.AMOUNT_DISTRIBUTION['min_amount']} but IEEE spec says {ieee_spec['transaction_patterns']['amount_distribution']['min_amount']}."
+    )
 
 report_lines.append("\n### Fraud Amount Bias")
 report_lines.append(f"- Config FRAUD_AMOUNT_BIAS: {gen_config.FRAUD_AMOUNT_BIAS}")
-report_lines.append(f"- IEEE spec high_amount_bias: {ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']}")
-if abs(gen_config.FRAUD_AMOUNT_BIAS - ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']) > 0.01:
-    report_lines.append(f"- **ISSUE**: Config uses {gen_config.FRAUD_AMOUNT_BIAS} but IEEE spec says {ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']}.")
+report_lines.append(
+    f"- IEEE spec high_amount_bias: {ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']}"
+)
+if abs(gen_config.FRAUD_AMOUNT_BIAS - ieee_spec["fraud_patterns"]["amount_patterns"]["high_amount_bias"]) > 0.01:
+    report_lines.append(
+        f"- **ISSUE**: Config uses {gen_config.FRAUD_AMOUNT_BIAS} but IEEE spec says {ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']}."
+    )
 
 # ===== 9. C-Feature Null Rate Mismatches =====
 section("9. C-Feature Null Rate Mismatches")
 
-report_lines.append("The IEEE-CIS dataset has 0% null for many C-features, but `config.py` applies artificial null rates:")
+report_lines.append(
+    "The IEEE-CIS dataset has 0% null for many C-features, but `config.py` applies artificial null rates:"
+)
 rows = []
 for i in range(1, 15):
     col_upper = f"C{i}"
@@ -484,27 +533,65 @@ section("10. Generation Pacing Assessment")
 report_lines.append(f"- **DEFAULT_TARGET_TPS:** {gen_config.DEFAULT_TARGET_TPS}")
 report_lines.append(f"- **DEFAULT_DURATION_SECONDS:** {gen_config.DEFAULT_DURATION_SECONDS}")
 report_lines.append(f"- **DEFAULT_USER_COUNT:** {gen_config.DEFAULT_USER_COUNT}")
-report_lines.append(f"- Total transactions per run: ~{gen_config.DEFAULT_TARGET_TPS * gen_config.DEFAULT_DURATION_SECONDS:,}")
+report_lines.append(
+    f"- Total transactions per run: ~{gen_config.DEFAULT_TARGET_TPS * gen_config.DEFAULT_DURATION_SECONDS:,}"
+)
 report_lines.append("")
 report_lines.append("### Assessment")
-report_lines.append("- The IEEE-CIS dataset has 590,540 transactions over ~182 days, averaging ~3,245 transactions/day (~0.04 TPS).")
-report_lines.append(f"- The default TPS of {gen_config.DEFAULT_TARGET_TPS} is a load-testing config, not a realistic production rate.")
+report_lines.append(
+    "- The IEEE-CIS dataset has 590,540 transactions over ~182 days, averaging ~3,245 transactions/day (~0.04 TPS)."
+)
+report_lines.append(
+    f"- The default TPS of {gen_config.DEFAULT_TARGET_TPS} is a load-testing config, not a realistic production rate."
+)
 report_lines.append(f"- For a large payment processor, 2000 TPS is realistic peak volume.")
-report_lines.append(f"- The 500 user pool is small for 2000 TPS -- this means ~4 TPS per user, which is unrealistically high.")
-report_lines.append(f"- **Recommendation:** Increase DEFAULT_USER_COUNT to 5000+ for more realistic per-user transaction frequency.")
+report_lines.append(
+    f"- The 500 user pool is small for 2000 TPS -- this means ~4 TPS per user, which is unrealistically high."
+)
+report_lines.append(
+    f"- **Recommendation:** Increase DEFAULT_USER_COUNT to 5000+ for more realistic per-user transaction frequency."
+)
 
 # ===== 11. Summary of Issues =====
 section("11. Summary of Issues and Recommendations")
 
 issues = [
-    ("CRITICAL", "Missing 149 V-features", "The model expects 149 V-features (Vesta engineered features) that the synthetic producer does not generate. These are needed for model inference."),
-    ("CRITICAL", "Missing identity features", f"The model expects {len(id_features)} identity features ({', '.join(id_features[:5])}...) not generated by the producer."),
-    ("CRITICAL", "Missing TransactionAmt derived features", f"Model expects {', '.join(amt_derived)} which are not generated."),
-    ("HIGH", "Amount max_amount mismatch", f"Config caps at {gen_config.AMOUNT_DISTRIBUTION['max_amount']} vs IEEE spec {ieee_spec['transaction_patterns']['amount_distribution']['max_amount']}."),
-    ("HIGH", "Amount min_amount mismatch", f"Config min is {gen_config.AMOUNT_DISTRIBUTION['min_amount']} vs IEEE spec {ieee_spec['transaction_patterns']['amount_distribution']['min_amount']}."),
-    ("HIGH", "Fraud amount bias mismatch", f"Config {gen_config.FRAUD_AMOUNT_BIAS} vs IEEE {ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']}."),
+    (
+        "CRITICAL",
+        "Missing 149 V-features",
+        "The model expects 149 V-features (Vesta engineered features) that the synthetic producer does not generate. These are needed for model inference.",
+    ),
+    (
+        "CRITICAL",
+        "Missing identity features",
+        f"The model expects {len(id_features)} identity features ({', '.join(id_features[:5])}...) not generated by the producer.",
+    ),
+    (
+        "CRITICAL",
+        "Missing TransactionAmt derived features",
+        f"Model expects {', '.join(amt_derived)} which are not generated.",
+    ),
+    (
+        "HIGH",
+        "Amount max_amount mismatch",
+        f"Config caps at {gen_config.AMOUNT_DISTRIBUTION['max_amount']} vs IEEE spec {ieee_spec['transaction_patterns']['amount_distribution']['max_amount']}.",
+    ),
+    (
+        "HIGH",
+        "Amount min_amount mismatch",
+        f"Config min is {gen_config.AMOUNT_DISTRIBUTION['min_amount']} vs IEEE spec {ieee_spec['transaction_patterns']['amount_distribution']['min_amount']}.",
+    ),
+    (
+        "HIGH",
+        "Fraud amount bias mismatch",
+        f"Config {gen_config.FRAUD_AMOUNT_BIAS} vs IEEE {ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']}.",
+    ),
     ("MEDIUM", "C-feature null rate mismatches", "C1-C5, C9, C12-C14 have 0% null in IEEE but 2-25% in config."),
-    ("MEDIUM", "Peak fraud hours mismatch", f"Config uses {gen_config.PEAK_FRAUD_HOURS} but IEEE high-risk hours include {ieee_peak}."),
+    (
+        "MEDIUM",
+        "Peak fraud hours mismatch",
+        f"Config uses {gen_config.PEAK_FRAUD_HOURS} but IEEE high-risk hours include {ieee_peak}.",
+    ),
     ("LOW", "User count too small", f"500 users at 2000 TPS = ~4 TPS/user, unrealistically high."),
 ]
 
@@ -522,6 +609,12 @@ with open(report_path, "w") as f:
 print(f"\nReport written to {report_path}")
 print(f"\nKey findings:")
 print(f"  - Model expects {len(model_features)} features, synthetic provides {len(provided)}")
-print(f"  - Missing: {len(missing)} features ({len(v_features)} V-features, {len(id_features)} id-features, {len(amt_derived)} amt-derived)")
-print(f"  - Amount config mismatches: max={gen_config.AMOUNT_DISTRIBUTION['max_amount']} vs {ieee_spec['transaction_patterns']['amount_distribution']['max_amount']}, min={gen_config.AMOUNT_DISTRIBUTION['min_amount']} vs {ieee_spec['transaction_patterns']['amount_distribution']['min_amount']}")
-print(f"  - Fraud bias: {gen_config.FRAUD_AMOUNT_BIAS} vs {ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']}")
+print(
+    f"  - Missing: {len(missing)} features ({len(v_features)} V-features, {len(id_features)} id-features, {len(amt_derived)} amt-derived)"
+)
+print(
+    f"  - Amount config mismatches: max={gen_config.AMOUNT_DISTRIBUTION['max_amount']} vs {ieee_spec['transaction_patterns']['amount_distribution']['max_amount']}, min={gen_config.AMOUNT_DISTRIBUTION['min_amount']} vs {ieee_spec['transaction_patterns']['amount_distribution']['min_amount']}"
+)
+print(
+    f"  - Fraud bias: {gen_config.FRAUD_AMOUNT_BIAS} vs {ieee_spec['fraud_patterns']['amount_patterns']['high_amount_bias']}"
+)

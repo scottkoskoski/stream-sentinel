@@ -98,11 +98,11 @@ def generate_synthetic_data(n_samples: int, n_users: int):
     print("=" * 70)
 
     # Import and instantiate the producer without Kafka
-    from producers.config import DEFAULT_IEEE_CIS_ANALYSIS
-
     # We need to create a producer-like object that can generate transactions
     # without connecting to Kafka. We do this by reimporting and monkey-patching.
     import importlib.util
+
+    from producers.config import DEFAULT_IEEE_CIS_ANALYSIS
 
     producer_path = os.path.join(SRC_DIR, "producers", "synthetic_transaction_producer.py")
     spec = importlib.util.spec_from_file_location("synth_producer", producer_path)
@@ -200,6 +200,7 @@ def generate_synthetic_data(n_samples: int, n_users: int):
 
     # Pre-compute weighted-choice lists (added by TPS optimization)
     import importlib.util as _ilu
+
     _cfg_spec = _ilu.spec_from_file_location(
         "gen_config",
         os.path.join(os.path.dirname(__file__), "..", "src", "producers", "config.py"),
@@ -237,10 +238,7 @@ def generate_synthetic_data(n_samples: int, n_users: int):
             elapsed = time.time() - start_time
             fraud_count = sum(1 for t in transactions if t["is_fraud"] == 1)
             fraud_rate = fraud_count / len(transactions) * 100
-            print(
-                f"  Generated {i + 1:>8,} / {n_samples:,} "
-                f"({elapsed:.1f}s, fraud rate: {fraud_rate:.2f}%)"
-            )
+            print(f"  Generated {i + 1:>8,} / {n_samples:,} " f"({elapsed:.1f}s, fraud rate: {fraud_rate:.2f}%)")
 
     elapsed = time.time() - start_time
     fraud_count = sum(1 for t in transactions if t["is_fraud"] == 1)
@@ -329,9 +327,7 @@ def extract_features(df, feature_names, label_encoders):
 
             if producer_col and producer_col in df.columns:
                 if feat_name in categorical_features:
-                    feature_df[feat_name] = _encode_categorical(
-                        df[producer_col], feat_name, label_encoders[feat_name]
-                    )
+                    feature_df[feat_name] = _encode_categorical(df[producer_col], feat_name, label_encoders[feat_name])
                 else:
                     feature_df[feat_name] = df[producer_col].astype(float)
                 populated.append(feat_name)
@@ -342,16 +338,12 @@ def extract_features(df, feature_names, label_encoders):
             feature_df[feat_name] = np.log1p(df["transaction_amt"].astype(float))
             populated.append(feat_name)
         elif feat_name == "TransactionAmt_decimal":
-            feature_df[feat_name] = (
-                df["transaction_amt"].astype(float) % 1
-            ).round(4)
+            feature_df[feat_name] = (df["transaction_amt"].astype(float) % 1).round(4)
             populated.append(feat_name)
         elif feat_name == "TransactionAmt_bin":
             amt = df["transaction_amt"].astype(float)
             bins = [0, 10, 50, 100, 200, 500, 1000, 5000, float("inf")]
-            feature_df[feat_name] = pd.cut(
-                amt, bins=bins, labels=False, include_lowest=True
-            ).astype(float)
+            feature_df[feat_name] = pd.cut(amt, bins=bins, labels=False, include_lowest=True).astype(float)
             populated.append(feat_name)
         else:
             # Not available from producer -- fill NaN (XGBoost handles natively)
@@ -447,9 +439,7 @@ def train_model(X_train, y_train, X_test, y_test, feature_names):
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-            "scale_pos_weight": trial.suggest_float(
-                "scale_pos_weight", 1.0, min(40.0, base_scale_pos_weight * 2)
-            ),
+            "scale_pos_weight": trial.suggest_float("scale_pos_weight", 1.0, min(40.0, base_scale_pos_weight * 2)),
             "gamma": trial.suggest_float("gamma", 0.0, 5.0),
             "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
             "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
@@ -539,8 +529,12 @@ def evaluate_model(model, X_test, y_test, feature_names):
 
     fraud_scores = y_prob[y_test == 1]
     legit_scores = y_prob[y_test == 0]
-    print(f"\n  Fraud scores: min={fraud_scores.min():.4f}, median={np.median(fraud_scores):.4f}, max={fraud_scores.max():.4f}")
-    print(f"  Legit scores: min={legit_scores.min():.4f}, median={np.median(legit_scores):.4f}, max={legit_scores.max():.4f}")
+    print(
+        f"\n  Fraud scores: min={fraud_scores.min():.4f}, median={np.median(fraud_scores):.4f}, max={fraud_scores.max():.4f}"
+    )
+    print(
+        f"  Legit scores: min={legit_scores.min():.4f}, median={np.median(legit_scores):.4f}, max={legit_scores.max():.4f}"
+    )
 
     # Optimal threshold via precision-recall
     precisions, recalls, thresholds = precision_recall_curve(y_test, y_prob)
@@ -701,9 +695,7 @@ def main():
     print(f"  Test:  {X_test.shape[0]:,} samples ({y_test.sum():,} fraud)")
 
     # Step 4: Train
-    best_model, study = train_model(
-        X_train, y_train, X_test, y_test, list(feature_names)
-    )
+    best_model, study = train_model(X_train, y_train, X_test, y_test, list(feature_names))
 
     # Step 5: Evaluate
     metrics = evaluate_model(best_model, X_test, y_test, list(feature_names))

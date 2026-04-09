@@ -14,18 +14,18 @@ Usage:
 
 import json
 import os
+import statistics
 import sys
+import threading
 import time
 import uuid
-import threading
-import statistics
-from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
 
 # Ensure src is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from confluent_kafka import Producer, Consumer, KafkaError, TopicPartition
+from confluent_kafka import Consumer, KafkaError, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient
 
 # ---------------------------------------------------------------------------
@@ -45,30 +45,36 @@ EXPECTED_FRAUD_RATE = 0.0271  # 2.71%
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def create_producer():
-    return Producer({
-        "bootstrap.servers": BOOTSTRAP_SERVERS,
-        "linger.ms": 5,
-        "batch.num.messages": 1000,
-        "queue.buffering.max.messages": 500000,
-        "compression.type": "lz4",
-    })
+    return Producer(
+        {
+            "bootstrap.servers": BOOTSTRAP_SERVERS,
+            "linger.ms": 5,
+            "batch.num.messages": 1000,
+            "queue.buffering.max.messages": 500000,
+            "compression.type": "lz4",
+        }
+    )
 
 
 def create_consumer(group_id, auto_offset_reset="latest"):
-    return Consumer({
-        "bootstrap.servers": BOOTSTRAP_SERVERS,
-        "group.id": group_id,
-        "auto.offset.reset": auto_offset_reset,
-        "enable.auto.commit": True,
-        "fetch.min.bytes": 1,
-        "fetch.wait.max.ms": 100,
-    })
+    return Consumer(
+        {
+            "bootstrap.servers": BOOTSTRAP_SERVERS,
+            "group.id": group_id,
+            "auto.offset.reset": auto_offset_reset,
+            "enable.auto.commit": True,
+            "fetch.min.bytes": 1,
+            "fetch.wait.max.ms": 100,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Phase 1: Produce and measure throughput + latency
 # ---------------------------------------------------------------------------
+
 
 def run_producer_benchmark():
     """Produce transactions for TEST_DURATION seconds and measure TPS + latency."""
@@ -77,8 +83,9 @@ def run_producer_benchmark():
     print("=" * 70)
 
     # Import the producer's transaction generator
-    from producers.synthetic_transaction_producer import SyntheticTransactionProducer
     from dataclasses import asdict
+
+    from producers.synthetic_transaction_producer import SyntheticTransactionProducer
 
     synth = SyntheticTransactionProducer()
     # We'll use our own producer for latency tracking
@@ -105,6 +112,7 @@ def run_producer_benchmark():
                     latencies.append(now - produce_times.pop(txn_id))
 
     import random
+
     start = time.monotonic()
     produced_count = 0
     target_interval = 1.0 / TARGET_TPS
@@ -190,6 +198,7 @@ def run_producer_benchmark():
 # Phase 2: Consumer throughput + lag + message loss check
 # ---------------------------------------------------------------------------
 
+
 def run_consumer_benchmark(expected_count):
     """Consume messages and measure rate, lag, and loss."""
     print("=" * 70)
@@ -248,7 +257,7 @@ def run_consumer_benchmark(expected_count):
     try:
         parts = consumer.assignment()
         for p in parts:
-            (lo, hi) = consumer.get_watermark_offsets(p, timeout=5)
+            lo, hi = consumer.get_watermark_offsets(p, timeout=5)
             committed = consumer.committed([p], timeout=5)
             if committed and committed[0].offset >= 0:
                 lag_total += hi - committed[0].offset
@@ -277,6 +286,7 @@ def run_consumer_benchmark(expected_count):
 # ---------------------------------------------------------------------------
 # Phase 3: Data quality checks on sampled messages
 # ---------------------------------------------------------------------------
+
 
 def run_data_quality_checks(samples):
     """Validate field presence, fraud rate, and amount ranges."""
@@ -358,6 +368,7 @@ def run_data_quality_checks(samples):
 # Phase 4: Config sensibility check
 # ---------------------------------------------------------------------------
 
+
 def check_config_defaults():
     """Verify config defaults are sensible."""
     print("=" * 70)
@@ -365,11 +376,11 @@ def check_config_defaults():
     print("=" * 70)
 
     from producers.config import (
-        DEFAULT_TARGET_TPS,
-        DEFAULT_DURATION_SECONDS,
-        DEFAULT_USER_COUNT,
-        BASE_FRAUD_RATE,
         AMOUNT_DISTRIBUTION,
+        BASE_FRAUD_RATE,
+        DEFAULT_DURATION_SECONDS,
+        DEFAULT_TARGET_TPS,
+        DEFAULT_USER_COUNT,
     )
 
     issues = []
@@ -409,6 +420,7 @@ def check_config_defaults():
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     print()
     print("Stream Sentinel - Synthetic Data Throughput Verification")
@@ -440,14 +452,18 @@ def main():
     err_ok = producer_results["error_rate"] < 1.0
     consume_ok = consumer_results["consume_tps"] >= producer_results["actual_tps"] * 0.5
 
-    print(f"  Producer TPS:    {producer_results['actual_tps']:,.0f} (target {TARGET_TPS}) {'PASS' if tps_ok else 'BELOW TARGET'}")
+    print(
+        f"  Producer TPS:    {producer_results['actual_tps']:,.0f} (target {TARGET_TPS}) {'PASS' if tps_ok else 'BELOW TARGET'}"
+    )
     print(f"  Error rate:      {producer_results['error_rate']:.3f}% {'PASS' if err_ok else 'FAIL'}")
     print(f"  Consumer TPS:    {consumer_results['consume_tps']:,.0f} {'PASS' if consume_ok else 'SLOW'}")
     print(f"  Consumer lag:    {consumer_results['lag']:,}")
     print(f"  Delivery P50:    {producer_results['lat_p50']:.2f}ms")
     print(f"  Delivery P95:    {producer_results['lat_p95']:.2f}ms")
     print(f"  Delivery P99:    {producer_results['lat_p99']:.2f}ms")
-    print(f"  Data quality:    {'PASS' if quality_results.get('field_ok') and quality_results.get('amt_ok') else 'ISSUES'}")
+    print(
+        f"  Data quality:    {'PASS' if quality_results.get('field_ok') and quality_results.get('amt_ok') else 'ISSUES'}"
+    )
     print(f"  Fraud rate:      {quality_results.get('fraud_rate', 0):.2%} (expected ~{EXPECTED_FRAUD_RATE:.2%})")
     print(f"  Config defaults: {'PASS' if not config_issues else 'WARNINGS'}")
     print()

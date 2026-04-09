@@ -154,9 +154,7 @@ class TestInjectCorrelationId:
         assert corr_headers[0] == b"corr-new"
 
     def test_inject_with_span_and_parent(self):
-        result = inject_correlation_id(
-            None, "corr-test", span_id="span-001", parent_span_id="span-000"
-        )
+        result = inject_correlation_id(None, "corr-test", span_id="span-001", parent_span_id="span-000")
         keys = [k for k, v in result]
         assert HEADER_CORRELATION_ID in keys
         assert HEADER_SPAN_ID in keys
@@ -504,9 +502,7 @@ class TestRoundTrip:
         try:
             assert ctx.correlation_id == original_corr_id
             # The consumer's parent_span should be the producer's span
-            producer_span = next(
-                v.decode("utf-8") for k, v in produced_headers if k == HEADER_SPAN_ID
-            )
+            producer_span = next(v.decode("utf-8") for k, v in produced_headers if k == HEADER_SPAN_ID)
             assert ctx.parent_span_id == producer_span
         finally:
             ctx.detach()

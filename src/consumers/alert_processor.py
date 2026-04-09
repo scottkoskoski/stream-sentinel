@@ -172,13 +172,9 @@ class AlertProcessor:
             try:
                 self._schema_helper = get_schema_helper()
                 if self._schema_helper.is_available:
-                    self.logger.info(
-                        "Schema Registry available -- consuming Avro messages"
-                    )
+                    self.logger.info("Schema Registry available -- consuming Avro messages")
                 else:
-                    self.logger.info(
-                        "Schema Registry not reachable -- consuming plain JSON"
-                    )
+                    self.logger.info("Schema Registry not reachable -- consuming plain JSON")
             except Exception as e:
                 self.logger.warning(f"Schema helper init failed: {e}")
 
@@ -188,8 +184,7 @@ class AlertProcessor:
         signal.signal(signal.SIGTERM, self._signal_handler)
 
         self.logger.info(
-            f"AlertProcessor initialized - group: {consumer_group}, "
-            f"notifications: {self.notification_email}"
+            f"AlertProcessor initialized - group: {consumer_group}, " f"notifications: {self.notification_email}"
         )
 
     @staticmethod
@@ -199,9 +194,7 @@ class AlertProcessor:
 
     def _create_consumer(self) -> Consumer:
         """Create Kafka consumer for alert processing."""
-        consumer_config = self.kafka_config.get_consumer_config(
-            self.consumer_group, "alert_processor"
-        )
+        consumer_config = self.kafka_config.get_consumer_config(self.consumer_group, "alert_processor")
         consumer = Consumer(consumer_config)
 
         # Subscribe to fraud alerts topic
@@ -263,15 +256,10 @@ class AlertProcessor:
             return AlertSeverity.CRITICAL
 
         # High: High fraud score or high-value transaction with risk factors
-        if fraud_score >= 0.7 or (
-            transaction_details.get("amount", 0) >= 1000 and fraud_score >= 0.5
-        ):
+        if fraud_score >= 0.7 or (transaction_details.get("amount", 0) >= 1000 and fraud_score >= 0.5):
 
             # Check for velocity fraud or unusual patterns
-            if (
-                risk_factors.get("is_rapid_transaction")
-                or risk_factors.get("velocity_score", 0) > 15
-            ):
+            if risk_factors.get("is_rapid_transaction") or risk_factors.get("velocity_score", 0) > 15:
                 return AlertSeverity.HIGH
 
         # Medium: Moderate fraud score with some risk indicators
@@ -311,9 +299,7 @@ class AlertProcessor:
         historical_alerts = self._get_user_alert_history(user_id, days=30)
 
         # Analyze transaction patterns
-        transaction_pattern = self._analyze_transaction_pattern(
-            alert, historical_alerts
-        )
+        transaction_pattern = self._analyze_transaction_pattern(alert, historical_alerts)
 
         # Determine recommended action based on context
         recommended_action, confidence_score = self._recommend_action(
@@ -365,16 +351,12 @@ class AlertProcessor:
             self.logger.error(f"Error getting user risk profile for {user_id}: {e}")
             return {"user_id": user_id, "risk_level": "medium", "total_alerts": 0}
 
-    def _get_user_alert_history(
-        self, user_id: str, days: int = 30
-    ) -> List[Dict[str, Any]]:
+    def _get_user_alert_history(self, user_id: str, days: int = 30) -> List[Dict[str, Any]]:
         """Get historical alerts for user from Redis."""
         try:
             # Get alert IDs for user from sorted set (sorted by timestamp)
             cutoff_timestamp = (datetime.now() - timedelta(days=days)).timestamp()
-            alert_ids = self.redis_client.zrangebyscore(
-                f"user_alerts:{user_id}", cutoff_timestamp, "+inf"
-            )
+            alert_ids = self.redis_client.zrangebyscore(f"user_alerts:{user_id}", cutoff_timestamp, "+inf")
 
             # Get alert details
             alerts = []
@@ -406,34 +388,19 @@ class AlertProcessor:
         risk_factors = alert.get("risk_factors", {})
 
         # Count recent alerts
-        recent_alerts_24h = len(
-            [
-                a
-                for a in historical_alerts
-                if self._is_within_hours(a.get("timestamp"), 24)
-            ]
-        )
+        recent_alerts_24h = len([a for a in historical_alerts if self._is_within_hours(a.get("timestamp"), 24)])
 
-        recent_alerts_7d = len(
-            [
-                a
-                for a in historical_alerts
-                if self._is_within_hours(a.get("timestamp"), 24 * 7)
-            ]
-        )
+        recent_alerts_7d = len([a for a in historical_alerts if self._is_within_hours(a.get("timestamp"), 24 * 7)])
 
         # Calculate escalation indicators
-        avg_fraud_score = sum(a.get("fraud_score", 0) for a in historical_alerts) / max(
-            len(historical_alerts), 1
-        )
+        avg_fraud_score = sum(a.get("fraud_score", 0) for a in historical_alerts) / max(len(historical_alerts), 1)
 
         return {
             "recent_alerts_24h": recent_alerts_24h,
             "recent_alerts_7d": recent_alerts_7d,
             "avg_historical_fraud_score": avg_fraud_score,
             "is_repeat_offender": recent_alerts_7d >= 3,
-            "is_escalating_pattern": alert.get("fraud_score", 0)
-            > avg_fraud_score * 1.5,
+            "is_escalating_pattern": alert.get("fraud_score", 0) > avg_fraud_score * 1.5,
             "transaction_amount": transaction_details.get("amount", 0),
             "velocity_score": risk_factors.get("velocity_score", 0),
         }
@@ -503,9 +470,7 @@ class AlertProcessor:
         else:
             return ResponseAction.LOG_ONLY, 0.50
 
-    def execute_response_action(
-        self, alert_context: AlertContext, severity: AlertSeverity
-    ) -> AlertResponse:
+    def execute_response_action(self, alert_context: AlertContext, severity: AlertSeverity) -> AlertResponse:
         """
         Execute the recommended response action.
 
@@ -567,9 +532,7 @@ class AlertProcessor:
             status="completed" if execution_details.get("success") else "failed",
         )
 
-    def _execute_immediate_block(
-        self, alert: Dict[str, Any], context: AlertContext
-    ) -> Dict[str, Any]:
+    def _execute_immediate_block(self, alert: Dict[str, Any], context: AlertContext) -> Dict[str, Any]:
         """Execute immediate user blocking action."""
         user_id = alert.get("user_id")
 
@@ -615,9 +578,7 @@ class AlertProcessor:
             "notification_sent": True,
         }
 
-    def _execute_auto_investigate(
-        self, alert: Dict[str, Any], context: AlertContext
-    ) -> Dict[str, Any]:
+    def _execute_auto_investigate(self, alert: Dict[str, Any], context: AlertContext) -> Dict[str, Any]:
         """Execute automatic investigation workflow."""
         user_id = alert.get("user_id")
 
@@ -634,9 +595,7 @@ class AlertProcessor:
 
         investigation_id = f"inv_{alert.get('alert_id')}_{int(time.time())}"
         serialized_investigation = self._serialize_for_redis(investigation_data)
-        self.redis_client.hset(
-            f"investigation:{investigation_id}", mapping=serialized_investigation
-        )
+        self.redis_client.hset(f"investigation:{investigation_id}", mapping=serialized_investigation)
         self.redis_client.lpush("investigation_queue", investigation_id)
 
         # Set TTL for investigation (7 days)
@@ -658,9 +617,7 @@ class AlertProcessor:
             "notification_sent": True,
         }
 
-    def _execute_manual_review(
-        self, alert: Dict[str, Any], context: AlertContext
-    ) -> Dict[str, Any]:
+    def _execute_manual_review(self, alert: Dict[str, Any], context: AlertContext) -> Dict[str, Any]:
         """Execute manual review workflow."""
         user_id = alert.get("user_id")
 
@@ -690,9 +647,7 @@ class AlertProcessor:
             "notification_sent": False,
         }
 
-    def _execute_escalate(
-        self, alert: Dict[str, Any], context: AlertContext
-    ) -> Dict[str, Any]:
+    def _execute_escalate(self, alert: Dict[str, Any], context: AlertContext) -> Dict[str, Any]:
         """Execute escalation to senior team."""
         user_id = alert.get("user_id")
 
@@ -713,9 +668,7 @@ class AlertProcessor:
             "reason": "repeat_offender_pattern",
         }
 
-    def _execute_notify_team(
-        self, alert: Dict[str, Any], context: AlertContext
-    ) -> Dict[str, Any]:
+    def _execute_notify_team(self, alert: Dict[str, Any], context: AlertContext) -> Dict[str, Any]:
         """Execute team notification."""
         user_id = alert.get("user_id")
 
@@ -730,15 +683,12 @@ class AlertProcessor:
 
         return {"action": "notify_team", "notification_sent": True, "channel": "email"}
 
-    def _execute_log_only(
-        self, alert: Dict[str, Any], context: AlertContext
-    ) -> Dict[str, Any]:
+    def _execute_log_only(self, alert: Dict[str, Any], context: AlertContext) -> Dict[str, Any]:
         """Execute logging-only action."""
         user_id = alert.get("user_id")
 
         self.logger.info(
-            f"Low-risk fraud alert logged for user {user_id}, "
-            f"fraud score: {alert.get('fraud_score', 0):.3f}"
+            f"Low-risk fraud alert logged for user {user_id}, " f"fraud score: {alert.get('fraud_score', 0):.3f}"
         )
 
         return {"action": "log_only", "logged": True, "log_level": "info"}
@@ -761,9 +711,7 @@ class AlertProcessor:
                 "low": logging.INFO,
             }.get(priority, logging.INFO)
 
-            self.logger.log(
-                log_level, f"NOTIFICATION [{priority.upper()}]: {subject} - {message}"
-            )
+            self.logger.log(log_level, f"NOTIFICATION [{priority.upper()}]: {subject} - {message}")
             self.notifications_sent += 1
 
             # Store notification in Redis for audit trail
@@ -778,12 +726,8 @@ class AlertProcessor:
 
             notification_id = f"notif_{int(time.time())}_{self.notifications_sent}"
             serialized_notification = self._serialize_for_redis(notification_data)
-            self.redis_client.hset(
-                f"notification:{notification_id}", mapping=serialized_notification
-            )
-            self.redis_client.expire(
-                f"notification:{notification_id}", 2592000
-            )  # 30 days
+            self.redis_client.hset(f"notification:{notification_id}", mapping=serialized_notification)
+            self.redis_client.expire(f"notification:{notification_id}", 2592000)  # 30 days
 
         except Exception as e:
             self.logger.error(f"Failed to send notification: {e}")
@@ -802,9 +746,7 @@ class AlertProcessor:
                 serialized[key] = str(value)
         return serialized
 
-    def _deserialize_from_redis(
-        self, data: Dict[str, str], schema: Dict[str, type]
-    ) -> Dict[str, Any]:
+    def _deserialize_from_redis(self, data: Dict[str, str], schema: Dict[str, type]) -> Dict[str, Any]:
         """Convert Redis string values back to proper Python types."""
         deserialized = {}
         for key, value in data.items():
@@ -821,11 +763,7 @@ class AlertProcessor:
                 deserialized[key] = float(value) if value else 0.0
             elif expected_type == dict or expected_type == list:
                 try:
-                    deserialized[key] = (
-                        json.loads(value)
-                        if value
-                        else ({} if expected_type == dict else [])
-                    )
+                    deserialized[key] = json.loads(value) if value else ({} if expected_type == dict else [])
                 except json.JSONDecodeError:
                     deserialized[key] = {} if expected_type == dict else []
             else:
@@ -845,10 +783,7 @@ class AlertProcessor:
             # Adjust risk level based on recent activity
             if alert_response.severity == AlertSeverity.CRITICAL:
                 current_profile["risk_level"] = "high"
-            elif (
-                alert_response.severity == AlertSeverity.HIGH
-                and current_profile["total_alerts"] >= 3
-            ):
+            elif alert_response.severity == AlertSeverity.HIGH and current_profile["total_alerts"] >= 3:
                 current_profile["risk_level"] = "high"
             elif current_profile["total_alerts"] >= 10:
                 current_profile["risk_level"] = "high"
@@ -869,17 +804,11 @@ class AlertProcessor:
             serialized_data = self._serialize_for_redis(alert_data)
 
             # Store detailed response
-            self.redis_client.hset(
-                f"alert_response:{alert_response.response_id}", mapping=serialized_data
-            )
-            self.redis_client.expire(
-                f"alert_response:{alert_response.response_id}", 31536000
-            )  # 1 year
+            self.redis_client.hset(f"alert_response:{alert_response.response_id}", mapping=serialized_data)
+            self.redis_client.expire(f"alert_response:{alert_response.response_id}", 31536000)  # 1 year
 
             # Add to user's alert timeline
-            alert_timestamp = datetime.fromisoformat(
-                alert_response.timestamp
-            ).timestamp()
+            alert_timestamp = datetime.fromisoformat(alert_response.timestamp).timestamp()
             self.redis_client.zadd(
                 f"user_alerts:{alert_response.alert_id.split('_')[1] if '_' in alert_response.alert_id else 'unknown'}",
                 {alert_response.response_id: alert_timestamp},
@@ -935,9 +864,7 @@ class AlertProcessor:
         if err is not None:
             self.logger.error(f"Failed to deliver alert response: {err}")
         else:
-            self.logger.debug(
-                f"Alert response delivered to {msg.topic()} [partition {msg.partition()}]"
-            )
+            self.logger.debug(f"Alert response delivered to {msg.topic()} [partition {msg.partition()}]")
 
     def process_alert(self, alert: Dict[str, Any]):
         """
@@ -1009,9 +936,7 @@ class AlertProcessor:
                 )
 
         except Exception as e:
-            self.logger.error(
-                f"Error processing alert {alert.get('alert_id', 'unknown')}: {e}"
-            )
+            self.logger.error(f"Error processing alert {alert.get('alert_id', 'unknown')}: {e}")
             self.logger.error(f"Alert data: {alert}")
 
     def run(self):
@@ -1040,11 +965,7 @@ class AlertProcessor:
 
                 try:
                     # Parse alert from message (Avro if available, JSON fallback)
-                    if (
-                        self._schema_helper is not None
-                        and self._schema_helper.is_available
-                        and SCHEMA_UTILS_AVAILABLE
-                    ):
+                    if self._schema_helper is not None and self._schema_helper.is_available and SCHEMA_UTILS_AVAILABLE:
                         alert = deserialize_message(
                             self._schema_helper,
                             "fraud_alert",
@@ -1118,9 +1039,7 @@ def main():
         try:
             metrics = get_prometheus_metrics(component_name="alert-processor")
             metrics.start_metrics_server(port=8001)
-            logging.getLogger("stream_sentinel.alert_processor").info(
-                "Prometheus metrics server started on port 8001"
-            )
+            logging.getLogger("stream_sentinel.alert_processor").info("Prometheus metrics server started on port 8001")
         except Exception as e:
             logging.getLogger("stream_sentinel.alert_processor").warning(
                 f"Failed to start metrics server: {e} -- continuing without metrics endpoint"

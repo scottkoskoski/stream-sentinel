@@ -260,10 +260,7 @@ class PersistenceConsumer:
     def _check_batch_timeout(self):
         """Check if batch should be processed due to timeout."""
         current_time = time.time()
-        if (
-            self.current_batch
-            and (current_time - self.last_batch_time) * 1000 > self.batch_timeout_ms
-        ):
+        if self.current_batch and (current_time - self.last_batch_time) * 1000 > self.batch_timeout_ms:
             self._process_batch()
 
     def _process_batch(self):
@@ -288,9 +285,7 @@ class PersistenceConsumer:
                 self._process_topic_batch(topic, messages)
 
             processing_time = (time.time() - start_time) * 1000
-            self.logger.debug(
-                f"Processed batch of {batch_size} messages in {processing_time:.2f}ms"
-            )
+            self.logger.debug(f"Processed batch of {batch_size} messages in {processing_time:.2f}ms")
 
         except Exception as e:
             self.logger.error(f"Error processing batch: {e}")
@@ -345,9 +340,7 @@ class PersistenceConsumer:
                         severity=AlertSeverity(data.get("severity")),
                         fraud_score=transaction.fraud_score,
                         ml_prediction=float(data.get("ml_prediction", 0)),
-                        business_rules_triggered=data.get(
-                            "business_rules_triggered", []
-                        ),
+                        business_rules_triggered=data.get("business_rules_triggered", []),
                         explanation=data.get("explanation", {}),
                     )
 
@@ -361,9 +354,7 @@ class PersistenceConsumer:
                     )
                 else:
                     # Just persist transaction record to ClickHouse
-                    self.persistence_layer.clickhouse.insert_transaction_record(
-                        transaction
-                    )
+                    self.persistence_layer.clickhouse.insert_transaction_record(transaction)
 
             except Exception as e:
                 self.logger.error(f"Error processing fraud detection message: {e}")
@@ -412,9 +403,7 @@ class PersistenceConsumer:
                 self.processing_errors += 1
 
         if transactions:
-            success = self.persistence_layer.clickhouse.batch_insert_transactions(
-                transactions
-            )
+            success = self.persistence_layer.clickhouse.batch_insert_transactions(transactions)
             if not success:
                 self.processing_errors += len(transactions)
 
@@ -442,9 +431,7 @@ class PersistenceConsumer:
                 self.processing_errors += 1
 
         if metrics:
-            success = self.persistence_layer.clickhouse.insert_performance_metrics(
-                metrics
-            )
+            success = self.persistence_layer.clickhouse.insert_performance_metrics(metrics)
             if not success:
                 self.processing_errors += len(metrics)
 
@@ -511,9 +498,7 @@ class PersistenceConsumer:
         try:
             # Process any remaining batch
             if self.current_batch:
-                self.logger.info(
-                    f"Processing final batch of {len(self.current_batch)} messages"
-                )
+                self.logger.info(f"Processing final batch of {len(self.current_batch)} messages")
                 self._process_batch()
 
             # Close Kafka consumer
@@ -551,9 +536,7 @@ def main():
             metrics.start_metrics_server(port=8002)
             logger.info("Prometheus metrics server started on port 8002")
         except Exception as e:
-            logger.warning(
-                f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
-            )
+            logger.warning(f"Failed to start metrics server: {e} -- continuing without metrics endpoint")
     else:
         logger.info("Prometheus metrics not available, skipping metrics server")
 

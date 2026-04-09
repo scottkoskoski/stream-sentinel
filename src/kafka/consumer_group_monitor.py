@@ -178,9 +178,7 @@ class ConsumerGroupMonitor:
             members.append(member)
             total_partitions += member.partition_count
             total_lag += member.total_lag
-            partition_dist[member.partition_count] = (
-                partition_dist.get(member.partition_count, 0) + 1
-            )
+            partition_dist[member.partition_count] = partition_dist.get(member.partition_count, 0) + 1
 
         return GroupSnapshot(
             group_id=self.group_id,
@@ -234,10 +232,7 @@ class ConsumerGroupMonitor:
             time.sleep(poll_interval)
 
         state = last_snapshot.state if last_snapshot else "UNKNOWN"
-        raise TimeoutError(
-            f"Group '{self.group_id}' not Stable after "
-            f"{timeout_seconds}s (state={state})"
-        )
+        raise TimeoutError(f"Group '{self.group_id}' not Stable after " f"{timeout_seconds}s (state={state})")
 
     def get_partition_lag(self, topic: str, partition: int) -> int:
         """Return the lag for a single topic-partition."""
@@ -268,9 +263,7 @@ class ConsumerGroupMonitor:
 
     def _ensure_clients(self) -> None:
         if self._admin is None:
-            self._admin = AdminClient(
-                {"bootstrap.servers": self._kafka_config.bootstrap_servers}
-            )
+            self._admin = AdminClient({"bootstrap.servers": self._kafka_config.bootstrap_servers})
         if self._lag_consumer is None:
             self._lag_consumer = Consumer(
                 {
@@ -399,9 +392,7 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    parser = argparse.ArgumentParser(
-        description="Stream-Sentinel Consumer Group Monitor"
-    )
+    parser = argparse.ArgumentParser(description="Stream-Sentinel Consumer Group Monitor")
     parser.add_argument(
         "--group",
         "-g",
@@ -472,13 +463,8 @@ def _print_human_readable(snap: GroupSnapshot) -> None:
     print(f"{'=' * 60}")
 
     for member in snap.members:
-        parts_str = ", ".join(
-            f"{p['topic']}-{p['partition']}(lag={p['lag']})" for p in member.partitions
-        )
-        print(
-            f"  {member.client_id} ({member.member_id[:24]}...) "
-            f"@ {member.host} -> [{parts_str}]"
-        )
+        parts_str = ", ".join(f"{p['topic']}-{p['partition']}(lag={p['lag']})" for p in member.partitions)
+        print(f"  {member.client_id} ({member.member_id[:24]}...) " f"@ {member.host} -> [{parts_str}]")
 
     print()
 

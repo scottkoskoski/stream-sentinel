@@ -49,9 +49,7 @@ CONTEXT_FIELDS = [
 ]
 
 
-class StreamSentinelJsonFormatter(
-    jsonlogger.JsonFormatter if JSON_LOGGER_AVAILABLE else logging.Formatter
-):
+class StreamSentinelJsonFormatter(jsonlogger.JsonFormatter if JSON_LOGGER_AVAILABLE else logging.Formatter):
     """JSON formatter that always includes timestamp, level, logger name, and message."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

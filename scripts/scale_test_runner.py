@@ -100,9 +100,7 @@ class _ConsumerWorker:
             logger.info("Worker %d -> partitions %s", self.worker_id, sorted(pids))
 
         self._consumer.subscribe([self.topic], on_assign=_on_assign)
-        self._thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name=f"worker-{self.worker_id}"
-        )
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True, name=f"worker-{self.worker_id}")
         self._thread.start()
 
     def stop(self, timeout: float = 15.0) -> None:
@@ -277,8 +275,7 @@ def run_scale_test(
             rate = total / elapsed if elapsed > 0 else 0
             if not json_output:
                 print(
-                    f"\r  Consumed {total}/{num_messages} "
-                    f"({rate:.0f} msg/s, {elapsed:.1f}s elapsed)",
+                    f"\r  Consumed {total}/{num_messages} " f"({rate:.0f} msg/s, {elapsed:.1f}s elapsed)",
                     end="",
                     flush=True,
                 )
@@ -314,11 +311,7 @@ def run_scale_test(
         extra = consumed_set - produced_set
         duplicates = len(all_ids) - len(consumed_set)
 
-        aggregate_rate = (
-            sum(w.message_count for w in workers) / consume_elapsed
-            if consume_elapsed > 0
-            else 0
-        )
+        aggregate_rate = sum(w.message_count for w in workers) / consume_elapsed if consume_elapsed > 0 else 0
 
         result = {
             "config": {
@@ -412,19 +405,13 @@ def _print_report(result: Dict[str, Any]) -> None:
             f"avg {cs['avg_throughput_msg_s']:,.0f} msg/s"
         )
 
-    overall = (
-        "PASS"
-        if (integrity["all_delivered"] and integrity["no_duplicates"])
-        else "FAIL"
-    )
+    overall = "PASS" if (integrity["all_delivered"] and integrity["no_duplicates"]) else "FAIL"
     print(f"\n  Overall: {overall}")
     print("=" * 64 + "\n")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Stream-Sentinel Consumer Scaling Test Runner"
-    )
+    parser = argparse.ArgumentParser(description="Stream-Sentinel Consumer Scaling Test Runner")
     parser.add_argument(
         "--consumers",
         "-c",
@@ -452,10 +439,7 @@ def main() -> None:
         print("Error: --consumers must be >= 1")
         sys.exit(1)
     if args.consumers > NUM_PARTITIONS:
-        print(
-            f"Warning: {args.consumers} consumers > {NUM_PARTITIONS} partitions. "
-            f"Some consumers will be idle."
-        )
+        print(f"Warning: {args.consumers} consumers > {NUM_PARTITIONS} partitions. " f"Some consumers will be idle.")
     if args.messages < 1:
         print("Error: --messages must be >= 1")
         sys.exit(1)

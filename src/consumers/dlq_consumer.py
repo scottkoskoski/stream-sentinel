@@ -158,9 +158,7 @@ class DLQConsumer:
             with open(self.output_path, "a") as fh:
                 fh.write(json.dumps(envelope, default=str) + "\n")
         except OSError as io_err:
-            logger.error(
-                "Failed to write DLQ record to %s: %s", self.output_path, io_err
-            )
+            logger.error("Failed to write DLQ record to %s: %s", self.output_path, io_err)
 
         self.consumer.commit(msg)
         self.processed += 1

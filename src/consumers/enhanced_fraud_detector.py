@@ -169,15 +169,11 @@ class EnhancedFraudDetector:
             try:
                 self.online_config = get_online_learning_config()
             except Exception as e:
-                self.logger.warning(
-                    f"Failed to load online learning config, using defaults: {e}"
-                )
+                self.logger.warning(f"Failed to load online learning config, using defaults: {e}")
                 self.online_learning_available = False
                 self.online_config = None
         else:
-            self.logger.warning(
-                "Online learning modules not importable; running in degraded mode"
-            )
+            self.logger.warning("Online learning modules not importable; running in degraded mode")
             self.online_config = None
 
         # Initialize connections
@@ -244,21 +240,9 @@ class EnhancedFraudDetector:
     def _init_redis(self) -> None:
         """Initialize Redis connections."""
         try:
-            redis_host = (
-                getattr(self.online_config, "redis_host", "localhost")
-                if self.online_config
-                else "localhost"
-            )
-            redis_port = (
-                getattr(self.online_config, "redis_port", 6379)
-                if self.online_config
-                else 6379
-            )
-            redis_password = (
-                getattr(self.online_config, "redis_password", None)
-                if self.online_config
-                else None
-            )
+            redis_host = getattr(self.online_config, "redis_host", "localhost") if self.online_config else "localhost"
+            redis_port = getattr(self.online_config, "redis_port", 6379) if self.online_config else 6379
+            redis_password = getattr(self.online_config, "redis_password", None) if self.online_config else None
 
             self.redis_client = redis.Redis(
                 host=redis_host,
@@ -280,34 +264,26 @@ class EnhancedFraudDetector:
         self.drift_detector = None
 
         if not self.online_learning_available:
-            self.logger.info(
-                "Online learning components disabled (modules not available)"
-            )
+            self.logger.info("Online learning components disabled (modules not available)")
             return
 
         try:
             self.model_registry = ModelRegistry(self.online_config)
             self.logger.info("ModelRegistry initialized")
         except Exception as e:
-            self.logger.warning(
-                f"Failed to initialize ModelRegistry, continuing without it: {e}"
-            )
+            self.logger.warning(f"Failed to initialize ModelRegistry, continuing without it: {e}")
 
         try:
             self.ab_test_manager = ABTestManager(self.online_config)
             self.logger.info("ABTestManager initialized")
         except Exception as e:
-            self.logger.warning(
-                f"Failed to initialize ABTestManager, continuing without it: {e}"
-            )
+            self.logger.warning(f"Failed to initialize ABTestManager, continuing without it: {e}")
 
         try:
             self.drift_detector = DriftDetector(self.online_config)
             self.logger.info("DriftDetector initialized")
         except Exception as e:
-            self.logger.warning(
-                f"Failed to initialize DriftDetector, continuing without it: {e}"
-            )
+            self.logger.warning(f"Failed to initialize DriftDetector, continuing without it: {e}")
 
     def _load_production_model(self) -> bool:
         """Load the current production model."""
@@ -402,9 +378,7 @@ class EnhancedFraudDetector:
         finally:
             self._cleanup()
 
-    def _process_transaction(
-        self, transaction_data: Dict[str, Any]
-    ) -> Optional[EnhancedPredictionResult]:
+    def _process_transaction(self, transaction_data: Dict[str, Any]) -> Optional[EnhancedPredictionResult]:
         """Process a single transaction with online learning enhancements."""
         start_time = time.time()
 
@@ -421,9 +395,7 @@ class EnhancedFraudDetector:
             # Determine A/B test variant
             ab_variant = None
             if self.ab_test_active and self.ab_test_manager is not None:
-                ab_variant = self.ab_test_manager.assign_variant(
-                    user_id, transaction_data
-                )
+                ab_variant = self.ab_test_manager.assign_variant(user_id, transaction_data)
 
             # Select model based on A/B test
             model_to_use = self._select_model_for_prediction(ab_variant)
@@ -432,9 +404,7 @@ class EnhancedFraudDetector:
             features = self._engineer_features(transaction_data, user_profile)
 
             # Make prediction
-            fraud_score = self._predict_fraud_score(
-                model_to_use, features, transaction_data
-            )
+            fraud_score = self._predict_fraud_score(model_to_use, features, transaction_data)
 
             # Determine fraud alert
             is_fraud_alert = fraud_score >= 0.7  # Default threshold
@@ -464,9 +434,7 @@ class EnhancedFraudDetector:
                 model_confidence=self._calculate_model_confidence(fraud_score),
                 drift_indicators=self._get_drift_indicators(),
                 risk_level=self._determine_risk_level(fraud_score, features),
-                recommended_actions=self._get_recommended_actions(
-                    fraud_score, features
-                ),
+                recommended_actions=self._get_recommended_actions(fraud_score, features),
             )
 
             # Update counters
@@ -477,9 +445,7 @@ class EnhancedFraudDetector:
             return prediction_result
 
         except Exception as e:
-            self.logger.error(
-                f"Error processing transaction {transaction_data.get('TransactionID')}: {e}"
-            )
+            self.logger.error(f"Error processing transaction {transaction_data.get('TransactionID')}: {e}")
             return None
 
     def _get_user_profile(self, user_id: str) -> UserProfile:
@@ -523,9 +489,7 @@ class EnhancedFraudDetector:
 
         return self.current_model
 
-    def _engineer_features(
-        self, transaction_data: Dict[str, Any], user_profile: UserProfile
-    ) -> FraudFeatures:
+    def _engineer_features(self, transaction_data: Dict[str, Any], user_profile: UserProfile) -> FraudFeatures:
         """Engineer fraud detection features with enhancements."""
         # Basic transaction features
         transaction_id = transaction_data.get("TransactionID", "")
@@ -540,9 +504,7 @@ class EnhancedFraudDetector:
 
         # User behavior features
         amount_vs_avg_ratio = (
-            amount / max(user_profile.avg_transaction_amount, 1.0)
-            if user_profile.avg_transaction_amount > 0
-            else 1.0
+            amount / max(user_profile.avg_transaction_amount, 1.0) if user_profile.avg_transaction_amount > 0 else 1.0
         )
 
         time_since_last = 0.0
@@ -551,22 +513,16 @@ class EnhancedFraudDetector:
             time_since_last = (transaction_time - last_time).total_seconds()
 
         amount_vs_last_ratio = (
-            amount / max(user_profile.last_transaction_amount, 1.0)
-            if user_profile.last_transaction_amount > 0
-            else 1.0
+            amount / max(user_profile.last_transaction_amount, 1.0) if user_profile.last_transaction_amount > 0 else 1.0
         )
 
         # Risk indicators
         is_high_amount = amount > 1000  # High amount threshold
-        is_unusual_hour = (
-            transaction_hour < 6 or transaction_hour > 22
-        )  # Outside normal hours
+        is_unusual_hour = transaction_hour < 6 or transaction_hour > 22  # Outside normal hours
         is_rapid_transaction = time_since_last < 300  # Less than 5 minutes
 
         # Velocity score (enhanced)
-        velocity_score = user_profile.daily_transaction_count / max(
-            1, (transaction_time.hour + 1) / 24.0
-        )
+        velocity_score = user_profile.daily_transaction_count / max(1, (transaction_time.hour + 1) / 24.0)
 
         # Create features object (fraud_score will be set later)
         features = FraudFeatures(
@@ -590,9 +546,7 @@ class EnhancedFraudDetector:
 
         return features
 
-    def _predict_fraud_score(
-        self, model: Any, features: FraudFeatures, transaction_data: Dict[str, Any]
-    ) -> float:
+    def _predict_fraud_score(self, model: Any, features: FraudFeatures, transaction_data: Dict[str, Any]) -> float:
         """Make fraud prediction with model fallback."""
         try:
             if model is None:
@@ -617,9 +571,7 @@ class EnhancedFraudDetector:
             self.logger.error(f"Prediction failed, using rule-based fallback: {e}")
             return self._rule_based_fraud_score(features)
 
-    def _prepare_feature_vector(
-        self, features: FraudFeatures, transaction_data: Dict[str, Any]
-    ) -> np.ndarray:
+    def _prepare_feature_vector(self, features: FraudFeatures, transaction_data: Dict[str, Any]) -> np.ndarray:
         """Prepare feature vector for model prediction."""
         # Create feature vector based on available transaction data
         # This is a simplified version - in production, you'd match the exact training features
@@ -696,16 +648,12 @@ class EnhancedFraudDetector:
         else:
             return "low"
 
-    def _get_recommended_actions(
-        self, fraud_score: float, features: FraudFeatures
-    ) -> List[str]:
+    def _get_recommended_actions(self, fraud_score: float, features: FraudFeatures) -> List[str]:
         """Get recommended actions based on fraud assessment."""
         actions = []
 
         if fraud_score >= 0.9:
-            actions.extend(
-                ["block_transaction", "freeze_account", "immediate_investigation"]
-            )
+            actions.extend(["block_transaction", "freeze_account", "immediate_investigation"])
         elif fraud_score >= 0.7:
             actions.extend(["require_additional_authentication", "flag_for_review"])
         elif fraud_score >= 0.5:
@@ -719,9 +667,7 @@ class EnhancedFraudDetector:
 
         return list(set(actions))  # Remove duplicates
 
-    def _update_user_profile(
-        self, profile: UserProfile, amount: float, transaction_dt: int
-    ) -> None:
+    def _update_user_profile(self, profile: UserProfile, amount: float, transaction_dt: int) -> None:
         """Update user profile with new transaction."""
         transaction_time = datetime.fromtimestamp(transaction_dt)
         timestamp_str = transaction_time.isoformat()
@@ -732,9 +678,7 @@ class EnhancedFraudDetector:
         # Update overall stats
         profile.update_transaction_stats(amount, timestamp_str)
 
-    def _add_to_drift_monitoring(
-        self, features: FraudFeatures, prediction: float
-    ) -> None:
+    def _add_to_drift_monitoring(self, features: FraudFeatures, prediction: float) -> None:
         """Add sample to drift monitoring buffer."""
         if len(self.feature_buffer) >= self.max_buffer_size:
             self.feature_buffer.pop(0)
@@ -751,9 +695,7 @@ class EnhancedFraudDetector:
 
         # Add to drift detector if available
         if self.drift_detector is not None:
-            self.drift_detector.add_prediction_sample(
-                feature_dict, prediction, actual_label=None
-            )
+            self.drift_detector.add_prediction_sample(feature_dict, prediction, actual_label=None)
 
     def _handle_prediction_result(self, result: EnhancedPredictionResult) -> None:
         """Handle prediction result - publish alerts and record metrics."""
@@ -877,9 +819,7 @@ class EnhancedFraudDetector:
             if self.drift_monitoring_enabled and self.drift_detector is not None:
                 drift_alerts = self.drift_detector.detect_drift()
                 if drift_alerts:
-                    self.logger.info(
-                        f"Drift detection found {len(drift_alerts)} alerts"
-                    )
+                    self.logger.info(f"Drift detection found {len(drift_alerts)} alerts")
 
             # Save performance statistics
             self._save_performance_stats()
@@ -918,8 +858,7 @@ class EnhancedFraudDetector:
             stats = {
                 "prediction_count": self.prediction_count,
                 "fraud_detection_count": self.fraud_detection_count,
-                "fraud_rate": self.fraud_detection_count
-                / max(1, self.prediction_count),
+                "fraud_rate": self.fraud_detection_count / max(1, self.prediction_count),
                 "predictions_per_hour": self.prediction_count / max(0.1, uptime_hours),
                 "uptime_hours": uptime_hours,
                 "last_updated": datetime.now().isoformat(),
@@ -968,9 +907,7 @@ def main():
         metrics.start_metrics_server(port=8003)
         get_logger(__name__).info("Prometheus metrics server started on port 8003")
     except Exception as e:
-        get_logger(__name__).warning(
-            f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
-        )
+        get_logger(__name__).warning(f"Failed to start metrics server: {e} -- continuing without metrics endpoint")
 
     detector = EnhancedFraudDetector()
     detector.run()

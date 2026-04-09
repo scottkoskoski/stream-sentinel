@@ -184,15 +184,11 @@ class _ConsumerWorker:
                 self.assigned_partitions = pids
                 self.assignment_history.append(pids)
             self.assignment_ready.set()
-            logger.info(
-                "Worker %d assigned partitions: %s", self.worker_id, sorted(pids)
-            )
+            logger.info("Worker %d assigned partitions: %s", self.worker_id, sorted(pids))
 
         def _on_revoke(consumer, partitions):
             pids = {tp.partition for tp in partitions}
-            logger.info(
-                "Worker %d revoked partitions: %s", self.worker_id, sorted(pids)
-            )
+            logger.info("Worker %d revoked partitions: %s", self.worker_id, sorted(pids))
 
         self._consumer.subscribe(
             [self.topic],
@@ -350,8 +346,7 @@ class TestPartitionAssignment:
                 # Each consumer should get roughly expected_per_consumer partitions
                 # Allow +/-1 for edge cases in Kafka's range assignor
                 assert abs(len(pset) - expected_per_consumer) <= 1, (
-                    f"Worker {w.worker_id} has {len(pset)} partitions, "
-                    f"expected ~{expected_per_consumer}"
+                    f"Worker {w.worker_id} has {len(pset)} partitions, " f"expected ~{expected_per_consumer}"
                 )
                 # No overlap
                 overlap = all_assigned & pset
@@ -397,9 +392,7 @@ class TestRebalancing:
         assert worker1.assignment_ready.wait(timeout=30)
         time.sleep(3)
 
-        assert (
-            len(worker1.get_partition_set()) == NUM_PARTITIONS
-        ), "Single consumer should own all 12 partitions"
+        assert len(worker1.get_partition_set()) == NUM_PARTITIONS, "Single consumer should own all 12 partitions"
 
         # Phase 2: add a second consumer -> rebalance to 6+6
         worker2 = _ConsumerWorker(
@@ -638,9 +631,7 @@ class TestNoDuplicateProcessing:
 
         # Check for duplicates
         duplicates = len(all_ids) - len(consumed_set)
-        assert (
-            duplicates == 0
-        ), f"{duplicates} duplicate messages detected across 3 consumers"
+        assert duplicates == 0, f"{duplicates} duplicate messages detected across 3 consumers"
 
 
 @pytest.mark.scaling
@@ -687,9 +678,7 @@ class TestGracefulShutdown:
             }
         )
         try:
-            partitions = [
-                TopicPartition(scaling_topic, p) for p in range(NUM_PARTITIONS)
-            ]
+            partitions = [TopicPartition(scaling_topic, p) for p in range(NUM_PARTITIONS)]
             committed = verify_consumer.committed(partitions, timeout=10)
             total_committed = sum(tp.offset for tp in committed if tp.offset > 0)
         finally:
@@ -755,6 +744,4 @@ class TestGracefulShutdown:
 
         all_consumed = first_run_ids | second_run_ids
         missing = set(produced_ids) - all_consumed
-        assert (
-            len(missing) == 0
-        ), f"{len(missing)} messages lost between stop and restart"
+        assert len(missing) == 0, f"{len(missing)} messages lost between stop and restart"

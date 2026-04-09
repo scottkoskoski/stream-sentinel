@@ -9,12 +9,12 @@ Generates 100 transactions and checks:
 4. No feature is always the same value (no degenerate columns)
 """
 
-import sys
-import os
 import math
+import os
+import sys
+from collections import defaultdict
 from dataclasses import asdict
 from unittest.mock import Mock, patch
-from collections import defaultdict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -25,28 +25,208 @@ from producers.synthetic_transaction_producer import (
 
 # The exact 200 features the production ML model expects (case as emitted by model)
 REQUIRED_MODEL_FEATURES = [
-    "TransactionDT", "TransactionAmt", "ProductCD", "card1", "card2", "card3", "card4", "card5", "card6",
-    "addr1", "addr2", "P_emaildomain", "R_emaildomain",
-    "C4", "C7", "C8", "C10", "C12",
+    "TransactionDT",
+    "TransactionAmt",
+    "ProductCD",
+    "card1",
+    "card2",
+    "card3",
+    "card4",
+    "card5",
+    "card6",
+    "addr1",
+    "addr2",
+    "P_emaildomain",
+    "R_emaildomain",
+    "C4",
+    "C7",
+    "C8",
+    "C10",
+    "C12",
     "D8",
-    "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9",
-    "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12", "V13", "V14",
-    "V19", "V20", "V23", "V24", "V25", "V26", "V29", "V30", "V33", "V34", "V35", "V36", "V37", "V38",
-    "V41", "V44", "V45", "V46", "V47", "V48", "V49", "V51", "V52", "V53", "V54", "V55", "V56",
-    "V61", "V62", "V65", "V66", "V67", "V69", "V70", "V75", "V76", "V77", "V78", "V79", "V82", "V83",
-    "V86", "V87", "V88", "V90", "V91", "V94",
-    "V107", "V108", "V109", "V110", "V111", "V112", "V113", "V114", "V115", "V116", "V117", "V118", "V119", "V120", "V121", "V122", "V123", "V124", "V125",
-    "V170", "V171", "V176",
-    "V186", "V187", "V188", "V189", "V190", "V191", "V192", "V193", "V194", "V195", "V196", "V197", "V198", "V199", "V200", "V201", "V203", "V204",
-    "V211", "V212", "V213", "V217", "V218", "V219", "V228", "V229", "V230", "V232", "V233",
-    "V240", "V241", "V242", "V243", "V244", "V245", "V246", "V247", "V248", "V249", "V250", "V251", "V252", "V253", "V254",
-    "V257", "V258", "V259", "V260", "V261", "V262", "V263", "V264", "V265",
-    "V273", "V274", "V275", "V282", "V283", "V290", "V292",
-    "V302", "V303", "V304", "V305",
-    "id_11", "id_12", "id_13", "id_15", "id_16", "id_17", "id_19", "id_20", "id_23", "id_27", "id_28", "id_29", "id_30", "id_31", "id_33", "id_34", "id_35", "id_36", "id_37", "id_38",
-    "DeviceType", "DeviceInfo",
-    "TransactionAmt_log", "TransactionAmt_decimal", "TransactionAmt_bin",
+    "M1",
+    "M2",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "M7",
+    "M8",
+    "M9",
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+    "V7",
+    "V8",
+    "V9",
+    "V10",
+    "V11",
+    "V12",
+    "V13",
+    "V14",
+    "V19",
+    "V20",
+    "V23",
+    "V24",
+    "V25",
+    "V26",
+    "V29",
+    "V30",
+    "V33",
+    "V34",
+    "V35",
+    "V36",
+    "V37",
+    "V38",
+    "V41",
+    "V44",
+    "V45",
+    "V46",
+    "V47",
+    "V48",
+    "V49",
+    "V51",
+    "V52",
+    "V53",
+    "V54",
+    "V55",
+    "V56",
+    "V61",
+    "V62",
+    "V65",
+    "V66",
+    "V67",
+    "V69",
+    "V70",
+    "V75",
+    "V76",
+    "V77",
+    "V78",
+    "V79",
+    "V82",
+    "V83",
+    "V86",
+    "V87",
+    "V88",
+    "V90",
+    "V91",
+    "V94",
+    "V107",
+    "V108",
+    "V109",
+    "V110",
+    "V111",
+    "V112",
+    "V113",
+    "V114",
+    "V115",
+    "V116",
+    "V117",
+    "V118",
+    "V119",
+    "V120",
+    "V121",
+    "V122",
+    "V123",
+    "V124",
+    "V125",
+    "V170",
+    "V171",
+    "V176",
+    "V186",
+    "V187",
+    "V188",
+    "V189",
+    "V190",
+    "V191",
+    "V192",
+    "V193",
+    "V194",
+    "V195",
+    "V196",
+    "V197",
+    "V198",
+    "V199",
+    "V200",
+    "V201",
+    "V203",
+    "V204",
+    "V211",
+    "V212",
+    "V213",
+    "V217",
+    "V218",
+    "V219",
+    "V228",
+    "V229",
+    "V230",
+    "V232",
+    "V233",
+    "V240",
+    "V241",
+    "V242",
+    "V243",
+    "V244",
+    "V245",
+    "V246",
+    "V247",
+    "V248",
+    "V249",
+    "V250",
+    "V251",
+    "V252",
+    "V253",
+    "V254",
+    "V257",
+    "V258",
+    "V259",
+    "V260",
+    "V261",
+    "V262",
+    "V263",
+    "V264",
+    "V265",
+    "V273",
+    "V274",
+    "V275",
+    "V282",
+    "V283",
+    "V290",
+    "V292",
+    "V302",
+    "V303",
+    "V304",
+    "V305",
+    "id_11",
+    "id_12",
+    "id_13",
+    "id_15",
+    "id_16",
+    "id_17",
+    "id_19",
+    "id_20",
+    "id_23",
+    "id_27",
+    "id_28",
+    "id_29",
+    "id_30",
+    "id_31",
+    "id_33",
+    "id_34",
+    "id_35",
+    "id_36",
+    "id_37",
+    "id_38",
+    "DeviceType",
+    "DeviceInfo",
+    "TransactionAmt_log",
+    "TransactionAmt_decimal",
+    "TransactionAmt_bin",
 ]
+
 
 # Build a mapping from model feature name -> dataclass field name (lowercase)
 def _model_to_field(name):
@@ -71,9 +251,11 @@ def _model_to_field(name):
 
 def make_producer():
     """Create producer with mocked Kafka."""
-    with patch('producers.synthetic_transaction_producer.get_kafka_config') as mock_cfg, \
-         patch('producers.synthetic_transaction_producer.Producer') as mock_prod, \
-         patch.object(SyntheticTransactionProducer, '_load_analysis_results') as mock_load:
+    with (
+        patch("producers.synthetic_transaction_producer.get_kafka_config") as mock_cfg,
+        patch("producers.synthetic_transaction_producer.Producer") as mock_prod,
+        patch.object(SyntheticTransactionProducer, "_load_analysis_results") as mock_load,
+    ):
         mock_kafka = Mock()
         mock_kafka.get_producer_config.return_value = {"bootstrap.servers": "localhost:9092"}
         mock_cfg.return_value = mock_kafka
@@ -82,8 +264,7 @@ def make_producer():
             "schema": {"fraud_rate": 0.027},
             "synthetic_spec": {
                 "transaction_patterns": {
-                    "amount_distribution": {"mean_log": 4.0, "std_log": 1.2,
-                                            "min_amount": 1.0, "max_amount": 1000.0},
+                    "amount_distribution": {"mean_log": 4.0, "std_log": 1.2, "min_amount": 1.0, "max_amount": 1000.0},
                     "product_codes": {"W": 0.74, "C": 0.14, "R": 0.06, "H": 0.05, "S": 0.01},
                 },
                 "fraud_patterns": {
@@ -124,6 +305,7 @@ def main():
     # Force some fraud transactions if we didn't get enough
     if len(fraud_txns) < 10:
         import random
+
         old_rate = producer.fraud_rate
         producer.fraud_rate = 0.95  # Force fraud
         for i in range(20):
@@ -136,8 +318,7 @@ def main():
                 legit_txns.append(d)
         producer.fraud_rate = old_rate
 
-    print(f"\nGenerated {len(transactions)} transactions "
-          f"({len(fraud_txns)} fraud, {len(legit_txns)} legit)")
+    print(f"\nGenerated {len(transactions)} transactions " f"({len(fraud_txns)} fraud, {len(legit_txns)} legit)")
 
     # === Check 1: All 200 features are present ===
     print("\n--- CHECK 1: All 200 model features present ---")
@@ -179,8 +360,14 @@ def main():
                 null_counts[feat] += 1
 
     all_null_features = [f for f in REQUIRED_MODEL_FEATURES if null_counts[f] == total]
-    never_null_mandatory = ["TransactionDT", "TransactionAmt", "ProductCD", "TransactionAmt_log",
-                            "TransactionAmt_decimal", "TransactionAmt_bin"]
+    never_null_mandatory = [
+        "TransactionDT",
+        "TransactionAmt",
+        "ProductCD",
+        "TransactionAmt_log",
+        "TransactionAmt_decimal",
+        "TransactionAmt_bin",
+    ]
     wrongly_null = [f for f in never_null_mandatory if null_counts[f] > 0]
 
     if all_null_features:
@@ -219,7 +406,7 @@ def main():
 
     # === Summary ===
     print("\n" + "=" * 70)
-    all_pass = (not missing and not all_null_features and not wrongly_null)
+    all_pass = not missing and not all_null_features and not wrongly_null
     if all_pass:
         print("RESULT: ALL CHECKS PASSED")
     else:

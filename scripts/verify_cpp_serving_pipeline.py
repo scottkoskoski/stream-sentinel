@@ -7,12 +7,13 @@ tests FastInferenceEngine wrapper, and assesses C++ build readiness.
 """
 
 import os
-import sys
-import time
 import pickle
 import subprocess
-import numpy as np
+import sys
+import time
 from pathlib import Path
+
+import numpy as np
 
 # Ensure src is importable
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +42,7 @@ def find_json_model():
     # Try to export
     print("JSON model not found, exporting from pickle...")
     import xgboost as xgb
+
     with open(PKL_PATH, "rb") as f:
         model_data = pickle.load(f)
     estimator = model_data["model"] if isinstance(model_data, dict) else model_data
@@ -63,6 +65,7 @@ print(f"Pickle model type: {type(estimator).__name__}")
 
 # Extract info about features
 import xgboost as xgb
+
 booster = estimator.get_booster() if hasattr(estimator, "get_booster") else estimator
 num_features = booster.num_features()
 print(f"Number of features: {num_features}")
@@ -142,8 +145,7 @@ print(f"  P95: {p95:.1f} us")
 print(f"  P99: {p99:.1f} us")
 print(f"  Throughput: {1e6 / np.mean(single_times):.0f} predictions/sec")
 
-results["single_latency"] = {"p50_us": p50, "p95_us": p95, "p99_us": p99,
-                              "throughput": 1e6 / np.mean(single_times)}
+results["single_latency"] = {"p50_us": p50, "p95_us": p95, "p99_us": p99, "throughput": 1e6 / np.mean(single_times)}
 
 # Batch prediction latency
 print(f"\nBatch prediction latency:")
@@ -160,8 +162,7 @@ for batch_size in [32, 64, 128]:
     bp50 = times[int(len(times) * 0.50)]
     bp95 = times[int(len(times) * 0.95)]
     throughput = batch_size * 1e6 / np.mean(times)
-    print(f"  Batch {batch_size:>3d}: P50={bp50:.1f}us  P95={bp95:.1f}us  "
-          f"Throughput={throughput:.0f} pred/s")
+    print(f"  Batch {batch_size:>3d}: P50={bp50:.1f}us  P95={bp95:.1f}us  " f"Throughput={throughput:.0f} pred/s")
     batch_results[batch_size] = {"p50_us": bp50, "p95_us": bp95, "throughput": throughput}
 
 results["batch_latency"] = batch_results
@@ -189,8 +190,7 @@ print(f"  Fallback to Python: {not status_auto['using_cpp']}")
 # Test predictions match
 test_features = test_data[0].tolist()
 prob_engine, info = engine.predict_fraud_probability(test_features)
-print(f"\nWrapper prediction: {prob_engine:.6f} (engine={info['engine']}, "
-      f"time={info['inference_time_ms']:.3f}ms)")
+print(f"\nWrapper prediction: {prob_engine:.6f} (engine={info['engine']}, " f"time={info['inference_time_ms']:.3f}ms)")
 
 # Compare with direct XGBoost
 prob_direct = estimator.predict_proba([test_features])[0][1]
@@ -223,8 +223,10 @@ print(f"  Direct:   {d_p50:.1f} us")
 print(f"  Overhead: {overhead_pct:+.1f}%")
 
 results["wrapper"] = {
-    "wrapper_p50_us": w_p50, "direct_p50_us": d_p50,
-    "overhead_pct": overhead_pct, "prediction_diff": float(diff),
+    "wrapper_p50_us": w_p50,
+    "direct_p50_us": d_p50,
+    "overhead_pct": overhead_pct,
+    "prediction_diff": float(diff),
     "fallback_works": not status_auto["using_cpp"],
 }
 
@@ -254,6 +256,7 @@ for cmd, label in [("g++ --version", "g++"), ("python3 -m pybind11 --includes", 
 # Check for XGBoost shared library
 try:
     import xgboost as _xgb
+
     xgb_lib = Path(_xgb.__file__).parent / "lib" / "libxgboost.so"
     checks["libxgboost.so"] = xgb_lib.exists()
     print(f"  libxgboost.so: {'found' if xgb_lib.exists() else 'NOT found'} at {xgb_lib}")
@@ -267,14 +270,13 @@ cpp_build_output = ""
 if all(checks.values()):
     print("\nAttempting C++ build...")
     try:
-        r = subprocess.run(
-            ["make", "-C", str(cpp_dir), "clean"],
-            capture_output=True, text=True, timeout=30
-        )
+        r = subprocess.run(["make", "-C", str(cpp_dir), "clean"], capture_output=True, text=True, timeout=30)
         r = subprocess.run(
             ["make", "-C", str(cpp_dir)],
-            capture_output=True, text=True, timeout=60,
-            env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")}
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")},
         )
         cpp_build_output = r.stdout + r.stderr
         cpp_build_success = r.returncode == 0
@@ -331,6 +333,7 @@ print(f"C++ build:        {'SUCCESS' if results['cpp_build']['build_success'] el
 
 # Save results for report generation
 import json
+
 results_path = MODELS_DIR / "serving_verification_results.json"
 with open(results_path, "w") as f:
     json.dump(results, f, indent=2)
