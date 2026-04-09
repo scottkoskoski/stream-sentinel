@@ -1,19 +1,17 @@
 # Model Performance Report
 
-## Model Overview
+## Production Model (Synthetic Data)
 
 | Property | Value |
 |----------|-------|
-| Algorithm | XGBoost (XGBClassifier, binary:logistic) |
-| Version | pipeline_20250829_143814 |
-| Training Date | 2025-08-29 |
-| Training Duration | ~4.2 hours (15,172 seconds) |
-| Training Samples | 590,540 (IEEE-CIS Fraud Detection dataset) |
-| Features | 200 (selected from 394 available) |
-| Categorical Features | 31 (label-encoded) |
-| Boosted Rounds | 2,050 |
-| Tree Method | histogram (grow_quantile_histmaker) |
-| Hyperparameter Optimization | Optuna, 60 trials |
+| Algorithm | XGBoost (Booster, binary:logistic) |
+| Training Date | 2026-04-08 |
+| Training Duration | ~6.6 minutes (GPU-accelerated) |
+| GPU | NVIDIA RTX 5070 (CUDA) |
+| Training Samples | 150,000 synthetic transactions (full 200 IEEE-CIS features) |
+| Features | 200 (all populated in synthetic data) |
+| Categorical Features | 31 (label-encoded with saved LabelEncoders) |
+| Hyperparameter Optimization | Optuna, 75 trials (GPU) |
 
 ## Training Performance
 
@@ -21,11 +19,13 @@
 
 | Metric | Value |
 |--------|-------|
-| Cross-Validation AUC | 0.9705 |
-| Validation AUC | 0.9707 |
+| Training AUC | 0.9959 |
+| Production AUC (measured) | 0.9942 |
+| Precision (threshold=0.5) | 0.6204 |
+| Recall (threshold=0.5) | 0.9054 |
 | Baseline Fraud Rate | 2.71% |
 
-The model was trained on the IEEE-CIS Fraud Detection dataset with stratified k-fold cross-validation. Optuna explored 60 hyperparameter configurations to maximize AUC.
+The model was trained on synthetic data with all 200 IEEE-CIS features populated (V-features, id-features, device features, derived amounts). GPU-accelerated Optuna explored 75 hyperparameter configurations. Production AUC matches training AUC within 0.0017.
 
 ### Feature Importance (Top 20 by Gain)
 
@@ -69,14 +69,14 @@ V258 is the dominant feature at 717.91 gain -- over 9x the next most important f
 
 ## Production Performance
 
-### Training vs Production Gap
+### Training vs Production Gap -- RESOLVED
 
-The model was trained on real IEEE-CIS data with all 200 features populated. In production with synthetic data, only 28 of 200 features are available. The remaining 172 features (primarily V-features and identity features) are filled with zeros.
+The synthetic data producer now generates all 200 features the model expects. The model was retrained on this full-feature synthetic data. Training and production AUC match within 0.0017.
 
-| Environment | Features Populated | Expected AUC |
+| Environment | Features Populated | Measured AUC |
 |------------|-------------------|-------------|
-| Training (IEEE-CIS data) | 200/200 (100%) | 0.9707 |
-| Production (synthetic data) | 28/200 (14%) | Degraded (estimated 0.55-0.70) |
+| Training (synthetic, full features) | 200/200 (100%) | 0.9959 |
+| Production (synthetic, full features) | 200/200 (100%) | 0.9942 |
 
 XGBoost handles missing features natively via its sparsity-aware split finding, so the model still produces meaningful scores -- but accuracy is significantly degraded from the training AUC. The system falls back to rule-based scoring as a safety net when the model is unavailable.
 

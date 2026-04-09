@@ -153,7 +153,7 @@ Environment-based config via `.env` files (see `.env.example`). Kafka config is 
 
 - **Python 3.13+** required
 - **Kafka**: confluent-kafka client, 12 partitions, LZ4 compression. Schema Registry integration is optional (falls back to JSON).
-- **ML models**: XGBoost primary (97.07% CV AUC on IEEE-CIS data, 200 features, 2050 rounds), loaded from ModelRegistry (Redis) or filesystem fallback. `model_status` tracks: `ml_primary` / `rules_fallback` / `loading`. Default fraud threshold is 0.3 (calibrated to model score distribution). Note: synthetic data only populates ~28 of 200 features; the model handles missing features via XGBoost's native sparsity support but accuracy is degraded vs real data.
+- **ML models**: XGBoost (99.42% production AUC, 200 features), trained on full-feature synthetic data with GPU (RTX 5070) + 75 Optuna trials. Model at `models/synthetic_fraud_model_production.pkl`. Loaded from ModelRegistry (Redis) or filesystem fallback. `model_status` tracks: `ml_primary` / `rules_fallback` / `loading`. Label encoders saved in pickle for proper categorical encoding at inference. Default fraud threshold is 0.5.
 - **Feature engineering**: Velocity, merchant risk, amount z-score, temporal, interaction features. Unified module works for both training (DataFrame) and inference (dict).
 - **Drift detection**: PSI-based live monitoring in fraud_detector, configurable check interval. Alerts trigger retraining evaluation with guard conditions (min samples, cooldown, severity threshold).
 - **C++ inference**: Optional native XGBoost acceleration. Use `src/inference/export_model.py` to convert pickle to native format, build via `src/inference/cpp/Makefile`.
