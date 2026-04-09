@@ -1,0 +1,25 @@
+# Stream Sentinel Code Ownership
+# Each line is a file pattern followed by one or more owners.
+# Order matters: later patterns take precedence over earlier ones.
+
+# Default: require at least 1 reviewer for all changes
+* @scottkoskoski
+
+# ML code: model training, features, serving, and online learning
+src/ml/ @scottkoskoski
+models/ @scottkoskoski
+tests/unit/test_fraud_scoring.py @scottkoskoski
+tests/unit/test_feature_engineering.py @scottkoskoski
+
+# Infrastructure: Docker, CI/CD, deployment configs
+docker/ @scottkoskoski
+.github/ @scottkoskoski
+Makefile @scottkoskoski
+
+# Kafka and streaming pipeline
+src/kafka/ @scottkoskoski
+src/consumers/ @scottkoskoski
+src/producers/ @scottkoskoski
+
+# Database and persistence layer
+src/persistence/ @scottkoskoski
