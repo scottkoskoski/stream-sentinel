@@ -1,0 +1,113 @@
+name: Performance Regression Testing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  performance-tests:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Start infrastructure services
+        run: docker compose -f docker/docker-compose.yml up -d
+        env:
+          REDIS_PASSWORD: ""
+          POSTGRES_DB: stream_sentinel
+          POSTGRES_USER: stream_sentinel_user
+          POSTGRES_PASSWORD: ci-test-postgres-password-not-production
+          CLICKHOUSE_DB: stream_sentinel
+          CLICKHOUSE_USER: stream_sentinel_user
+          CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
+
+      - name: Wait for services to be healthy
+        uses: ./.github/actions/wait-for-services
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run performance tests
+        run: pytest tests/performance/ -m performance -v --tb=short --junitxml=reports/performance-results.xml
+        continue-on-error: false
+        env:
+          REDIS_PASSWORD: ""
+          POSTGRES_DB: stream_sentinel
+          POSTGRES_USER: stream_sentinel_user
+          POSTGRES_PASSWORD: ci-test-postgres-password-not-production
+          CLICKHOUSE_DB: stream_sentinel
+          CLICKHOUSE_USER: stream_sentinel_user
+          CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
+
+      - name: Upload performance test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-results
+          path: reports/performance-results.xml
+          retention-days: 90
+
+      - name: Comment performance results on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '## Performance Test Results\n\n';
+
+            try {
+              const xml = fs.readFileSync('reports/performance-results.xml', 'utf8');
+              const tests = xml.match(/tests="(\d+)"/)?.[1] || '?';
+              const failures = xml.match(/failures="(\d+)"/)?.[1] || '?';
+              const errors = xml.match(/errors="(\d+)"/)?.[1] || '?';
+              const time = xml.match(/time="([\d.]+)"/)?.[1] || '?';
+
+              const status = (failures === '0' && errors === '0') ? ':white_check_mark:' : ':x:';
+              body += `${status} **Tests:** ${tests} | **Failures:** ${failures} | **Errors:** ${errors} | **Time:** ${time}s\n\n`;
+              body += `> Target: 10k+ TPS sustained, <100ms P99 latency\n`;
+            } catch (e) {
+              body += ':warning: Could not parse performance test results.\n';
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Tear down services
+        if: always()
+        run: docker compose -f docker/docker-compose.yml down -v
