@@ -15,6 +15,14 @@ Architecture guides, implementation details, and learning resources for the Stre
 | [Data Analysis](data-analysis/README.md) | IEEE-CIS dataset analysis, synthetic data generation |
 | [Machine Learning](machine-learning/README.md) | Training pipeline, hyperparameter optimization, model export |
 
+## Performance Reports
+
+| Report | What it covers |
+|--------|---------------|
+| [Model Performance](model-performance-report.md) | Training metrics, feature importance, inference benchmarks, training-production gap analysis |
+| [System Benchmarks](system-benchmarks-report.md) | Producer/consumer throughput, end-to-end latency, data quality, resource utilization |
+| [Synthetic Data Validation](../data/SYNTHETIC_DATA_VALIDATION.md) | Distribution comparison vs IEEE-CIS, feature compatibility, fraud rate calibration |
+
 ## ML & Online Learning
 
 | Guide | What it covers |

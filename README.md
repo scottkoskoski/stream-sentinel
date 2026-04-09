@@ -414,6 +414,7 @@ See `tests/pytest.ini` for all markers. Tests requiring live services are marked
   - [Data Analysis](docs/data-analysis/README.md) -- IEEE-CIS analysis, synthetic generation
   - [Data Persistence](docs/data-persistence/README.md) -- PostgreSQL + ClickHouse hybrid
 - **[Online Learning System](src/ml/online_learning/README.md)** -- Drift detection, model registry, A/B testing
+- **Performance Reports**: [Model Performance](docs/model-performance-report.md) | [System Benchmarks](docs/system-benchmarks-report.md) | [Synthetic Data Validation](data/SYNTHETIC_DATA_VALIDATION.md)
 - **Learning Resources**: [Kafka](docs/learning/kafka.md) | [Redis](docs/learning/redis.md)
 - **[Development Journal](docs/project-logs/README.md)** -- Phase-by-phase implementation history
 
