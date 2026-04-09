@@ -1,359 +1,209 @@
 """
-Unit Tests for Health Check and Readiness Probe Module
+Unit tests for src/monitoring/health.py
 
-Tests the health check server, dependency checks, HTTP handler routing,
-and the convenience check-builder functions without requiring live
-infrastructure (Kafka, Redis, etc.).
+Covers:
+  - HealthCheckRegistry basic registration and execution
+  - Parallel check execution (W6)
+  - Startup grace period / liveness logic (W7)
+  - HTTP endpoints: /health, /health/ready, /health/details
+  - HEALTH_DETAILS_ENABLED=false returning 403 (C5)
 """
 
 import json
-import sys
-import threading
+import os
 import time
-import urllib.request
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
+import threading
 import pytest
+from unittest.mock import patch
+from urllib.request import urlopen, Request
+from urllib.error import HTTPError
 
-sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
+import sys
+from pathlib import Path
+
+# Ensure src/ is importable
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from monitoring.health import (
-    DependencyCheck,
-    HealthCheckHandler,
-    HealthCheckServer,
-    make_database_check,
-    make_kafka_check,
-    make_model_check,
-    make_redis_check,
+    HealthCheckRegistry,
+    start_health_server,
+    HEALTH_STARTUP_GRACE_SECONDS,
 )
 
+
 # ---------------------------------------------------------------------------
-# DependencyCheck
+# Fixtures
 # ---------------------------------------------------------------------------
 
+def _find_free_port():
+    """Find an available TCP port."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
-class TestDependencyCheck:
-    """Tests for individual dependency check execution."""
 
-    def test_successful_check(self):
-        def _ok():
-            return {"status": "connected", "latency_ms": 1.5}
+@pytest.fixture()
+def registry():
+    return HealthCheckRegistry()
 
-        check = DependencyCheck("redis", _ok)
-        result = check.run()
 
-        assert result["status"] == "connected"
-        assert result["latency_ms"] == 1.5
-        assert check.last_error is None
-        assert check.last_success_time is not None
-
-    def test_failing_check(self):
-        def _fail():
-            raise ConnectionError("Connection refused")
-
-        check = DependencyCheck("redis", _fail)
-        result = check.run()
-
-        assert result["status"] == "error"
-        assert "Connection refused" in result["error"]
-        assert check.last_error is not None
-        assert check.last_success_time is None
-
-    def test_timeout_check(self):
-        def _slow():
-            time.sleep(5)
-            return {"status": "connected"}
-
-        check = DependencyCheck("slow_dep", _slow, timeout=0.1)
-        result = check.run()
-
-        assert result["status"] == "timeout"
-        assert "timed out" in result["error"].lower()
-
-    def test_tracks_last_check_time(self):
-        before = time.time()
-
-        check = DependencyCheck("test", lambda: {"status": "ok"})
-        check.run()
-
-        assert check.last_check_time is not None
-        assert check.last_check_time >= before
+@pytest.fixture()
+def health_server(registry):
+    """Start a health server on a random port and tear it down after test."""
+    port = _find_free_port()
+    server = start_health_server(registry, port=port)
+    yield f"http://127.0.0.1:{port}", registry
+    server.shutdown()
 
 
 # ---------------------------------------------------------------------------
-# HealthCheckServer
+# HealthCheckRegistry unit tests
 # ---------------------------------------------------------------------------
 
+class TestHealthCheckRegistry:
 
-class TestHealthCheckServer:
-    """Tests for the server-side check registry and aggregation."""
+    def test_register_and_run_check(self, registry):
+        registry.register("dummy", lambda: {"healthy": True})
+        results = registry.run_all_checks()
+        assert "dummy" in results
+        assert results["dummy"]["healthy"] is True
 
-    def test_register_and_run_checks(self):
-        server = HealthCheckServer()
-        server.register_check("dep_a", lambda: {"status": "ok"})
-        server.register_check("dep_b", lambda: {"status": "connected"})
+    def test_deregister_removes_check(self, registry):
+        registry.register("tmp", lambda: {"healthy": True})
+        registry.deregister("tmp")
+        assert registry.run_all_checks() == {}
 
-        results = server.run_all_checks()
+    def test_failing_check_captured(self, registry):
+        def bad_check():
+            raise RuntimeError("boom")
 
-        assert "dep_a" in results
-        assert "dep_b" in results
-        assert results["dep_a"]["status"] == "ok"
-        assert results["dep_b"]["status"] == "connected"
+        registry.register("bad", bad_check)
+        results = registry.run_all_checks()
+        assert results["bad"]["healthy"] is False
+        assert "boom" in results["bad"]["error"]
 
-    def test_heartbeat_updates_timestamp(self):
-        server = HealthCheckServer()
-        assert server.last_heartbeat is None
+    def test_parallel_execution_faster_than_serial(self, registry):
+        """Two checks each sleeping 0.2s should complete in ~0.2s, not ~0.4s."""
+        registry.register("slow_a", lambda: (time.sleep(0.2) or {"healthy": True}))
+        registry.register("slow_b", lambda: (time.sleep(0.2) or {"healthy": True}))
 
-        server.heartbeat()
-        assert server.last_heartbeat is not None
-        assert server.last_heartbeat <= time.time()
+        start = time.monotonic()
+        results = registry.run_all_checks(timeout=2.0)
+        elapsed = time.monotonic() - start
 
-    def test_metrics_summary_fn(self):
-        server = HealthCheckServer()
-        server.set_metrics_summary_fn(lambda: {"processed": 42})
+        assert results["slow_a"]["healthy"] is True
+        assert results["slow_b"]["healthy"] is True
+        assert elapsed < 0.4, f"Checks ran serially ({elapsed:.2f}s)"
 
-        summary = server.get_metrics_summary()
-        assert summary["processed"] == 42
+    def test_is_live_true_within_grace_period(self, registry):
+        """Before grace period and with no heartbeat, liveness is True."""
+        assert registry.is_live() is True
 
-    def test_metrics_summary_fn_not_set(self):
-        server = HealthCheckServer()
-        assert server.get_metrics_summary() == {}
+    def test_is_live_false_after_grace_no_heartbeat(self, registry):
+        """After grace period without heartbeat, liveness is False."""
+        # Simulate elapsed time by backdating start_time
+        registry._start_time = time.monotonic() - (HEALTH_STARTUP_GRACE_SECONDS + 5)
+        assert registry.is_live() is False
 
-    def test_metrics_summary_fn_error_handled(self):
-        server = HealthCheckServer()
-        server.set_metrics_summary_fn(lambda: 1 / 0)
+    def test_is_live_true_with_heartbeat(self, registry):
+        """Once a heartbeat is recorded, liveness is always True."""
+        registry._start_time = time.monotonic() - 120  # well past grace
+        registry.record_heartbeat()
+        assert registry.is_live() is True
 
-        summary = server.get_metrics_summary()
-        assert "error" in summary
+    def test_is_ready_all_pass(self, registry):
+        registry.register("a", lambda: {"healthy": True})
+        registry.register("b", lambda: {"healthy": True})
+        assert registry.is_ready() is True
 
-    def test_mixed_check_results(self):
-        server = HealthCheckServer()
-        server.register_check("good", lambda: {"status": "connected"})
-        server.register_check("bad", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-
-        results = server.run_all_checks()
-        assert results["good"]["status"] == "connected"
-        assert results["bad"]["status"] == "error"
+    def test_is_ready_one_fails(self, registry):
+        registry.register("ok", lambda: {"healthy": True})
+        registry.register("fail", lambda: {"healthy": False})
+        assert registry.is_ready() is False
 
 
 # ---------------------------------------------------------------------------
-# HTTP endpoints (integration-style via real HTTP server)
+# HTTP endpoint tests
 # ---------------------------------------------------------------------------
 
+class TestHealthEndpoints:
 
-class TestHealthHTTPEndpoints:
-    """Tests the combined HTTP server by starting it on a random port."""
-
-    @pytest.fixture(autouse=True)
-    def _start_server(self):
-        """Start a real HTTP server on an ephemeral port for each test."""
-        # Use a mock registry so we don't need prometheus_client installed
-        mock_registry = MagicMock()
-        mock_registry.__iter__ = MagicMock(return_value=iter([]))
-
-        self.server = HealthCheckServer(registry=mock_registry)
-        self.server.register_check("test_dep", lambda: {"status": "connected"})
-        self.server.heartbeat()
-
-        # Patch generate_latest to avoid needing real prometheus_client
-        with patch("monitoring.health.generate_latest", return_value=b"# HELP fake\n"):
-            with patch("monitoring.health.CONTENT_TYPE_LATEST", "text/plain"):
-                # Find a free port
-                import socket
-
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.bind(("127.0.0.1", 0))
-                self.port = sock.getsockname()[1]
-                sock.close()
-
-                self.server.start(self.port)
-                # Give the server thread a moment to bind
-                time.sleep(0.1)
-
-                yield
-
-    def _get(self, path: str) -> tuple:
-        """Make a GET request and return (status_code, parsed_json_or_bytes)."""
-        url = f"http://127.0.0.1:{self.port}{path}"
+    def _get(self, base_url, path):
+        """HTTP GET helper that returns (status_code, parsed_json)."""
         try:
-            resp = urllib.request.urlopen(url, timeout=3)
-            body = resp.read()
-            try:
-                return resp.status, json.loads(body)
-            except json.JSONDecodeError:
-                return resp.status, body
-        except urllib.error.HTTPError as e:
-            body = e.read()
-            try:
-                return e.code, json.loads(body)
-            except json.JSONDecodeError:
-                return e.code, body
+            resp = urlopen(f"{base_url}{path}", timeout=5)
+            return resp.status, json.loads(resp.read())
+        except HTTPError as e:
+            return e.code, json.loads(e.read())
 
-    def test_health_endpoint_returns_200(self):
-        code, body = self._get("/health")
+    def test_health_returns_ok(self, health_server):
+        base_url, registry = health_server
+        registry.record_heartbeat()
+        code, body = self._get(base_url, "/health")
         assert code == 200
-        assert body["status"] == "healthy"
-        assert "uptime_seconds" in body
-        assert "timestamp" in body
+        assert body["status"] == "ok"
 
-    def test_health_endpoint_unhealthy_when_stale(self):
-        # Set heartbeat far in the past
-        self.server.last_heartbeat = time.time() - 120
-        code, body = self._get("/health")
+    def test_health_returns_503_after_grace(self, health_server):
+        base_url, registry = health_server
+        registry._start_time = time.monotonic() - (HEALTH_STARTUP_GRACE_SECONDS + 5)
+        code, body = self._get(base_url, "/health")
         assert code == 503
         assert body["status"] == "unhealthy"
 
-    def test_readiness_endpoint_ready(self):
-        code, body = self._get("/readiness")
+    def test_health_ready_passes(self, health_server):
+        base_url, registry = health_server
+        registry.register("ok", lambda: {"healthy": True})
+        code, body = self._get(base_url, "/health/ready")
         assert code == 200
-        assert body["status"] == "ready"
-        assert "test_dep" in body["checks"]
 
-    def test_readiness_endpoint_not_ready(self):
-        self.server.register_check("broken", lambda: (_ for _ in ()).throw(RuntimeError("down")))
-        code, body = self._get("/readiness")
+    def test_health_ready_fails(self, health_server):
+        base_url, registry = health_server
+        registry.register("bad", lambda: {"healthy": False})
+        code, body = self._get(base_url, "/health/ready")
         assert code == 503
-        assert body["status"] == "not_ready"
-        assert body["checks"]["broken"]["status"] == "error"
 
-    def test_details_endpoint(self):
-        self.server.set_metrics_summary_fn(lambda: {"msgs": 100})
-        code, body = self._get("/health/details")
+    def test_health_details(self, health_server):
+        base_url, registry = health_server
+        registry.register("kafka", lambda: {"healthy": True, "lag": 42})
+        registry.record_heartbeat()
+        code, body = self._get(base_url, "/health/details")
         assert code == 200
-        assert body["status"] == "ready"
-        assert "checks" in body
-        assert body["metrics_summary"]["msgs"] == 100
+        assert body["status"] == "healthy"
+        assert "kafka" in body["checks"]
+        assert "uptime_seconds" in body
+        assert "last_heartbeat_ago_seconds" in body
 
-    def test_metrics_endpoint(self):
-        with patch("monitoring.health.generate_latest", return_value=b"# metrics\n"):
-            with patch("monitoring.health.CONTENT_TYPE_LATEST", "text/plain"):
-                code, body = self._get("/metrics")
-                assert code == 200
+    @patch.dict(os.environ, {"HEALTH_DETAILS_ENABLED": "false"})
+    def test_health_details_disabled(self):
+        """When HEALTH_DETAILS_ENABLED=false, /health/details returns 403."""
+        # Re-import to pick up patched env var
+        import importlib
+        import monitoring.health as health_mod
 
-    def test_404_for_unknown_path(self):
-        code, _ = self._get("/unknown")
+        importlib.reload(health_mod)
+        try:
+            reg = health_mod.HealthCheckRegistry()
+            port = _find_free_port()
+            server = health_mod.start_health_server(reg, port=port)
+            try:
+                try:
+                    resp = urlopen(f"http://127.0.0.1:{port}/health/details", timeout=5)
+                    code = resp.status
+                    body = json.loads(resp.read())
+                except HTTPError as e:
+                    code = e.code
+                    body = json.loads(e.read())
+
+                assert code == 403
+                assert body["status"] == "disabled"
+            finally:
+                server.shutdown()
+        finally:
+            # Restore module defaults
+            importlib.reload(health_mod)
+
+    def test_unknown_path_404(self, health_server):
+        base_url, registry = health_server
+        code, body = self._get(base_url, "/nonexistent")
         assert code == 404
-
-
-# ---------------------------------------------------------------------------
-# Convenience check builders
-# ---------------------------------------------------------------------------
-
-
-class TestKafkaCheck:
-    """Tests for make_kafka_check."""
-
-    def test_connected_with_partitions(self):
-        consumer = MagicMock()
-        tp1 = MagicMock()
-        tp1.topic = "transactions"
-        tp2 = MagicMock()
-        tp2.topic = "transactions"
-        consumer.assignment.return_value = [tp1, tp2]
-
-        check = make_kafka_check(consumer)
-        result = check()
-
-        assert result["status"] == "connected"
-        assert result["partitions_assigned"] == 2
-
-    def test_no_partitions(self):
-        consumer = MagicMock()
-        consumer.assignment.return_value = []
-
-        check = make_kafka_check(consumer)
-        result = check()
-
-        assert result["status"] == "no_partitions"
-        assert result["partitions_assigned"] == 0
-
-
-class TestRedisCheck:
-    """Tests for make_redis_check."""
-
-    def test_connected(self):
-        redis_client = MagicMock()
-        redis_client.ping.return_value = True
-
-        check = make_redis_check(redis_client)
-        result = check()
-
-        assert result["status"] == "connected"
-        assert "latency_ms" in result
-
-    def test_connection_error(self):
-        redis_client = MagicMock()
-        redis_client.ping.side_effect = ConnectionError("refused")
-
-        check = make_redis_check(redis_client)
-        with pytest.raises(ConnectionError):
-            check()
-
-
-class TestModelCheck:
-    """Tests for make_model_check."""
-
-    def test_ml_primary(self):
-        detector = MagicMock()
-        detector.model_status = "ml_primary"
-        detector.ml_model = MagicMock()
-        type(detector.ml_model).__name__ = "XGBClassifier"
-
-        check = make_model_check(detector)
-        result = check()
-
-        assert result["status"] == "loaded"
-        assert result["scoring_mode"] == "ml_primary"
-
-    def test_rules_fallback(self):
-        detector = MagicMock()
-        detector.model_status = "rules_fallback"
-        detector.ml_model = None
-
-        check = make_model_check(detector)
-        result = check()
-
-        assert result["status"] == "degraded"
-        assert result["scoring_mode"] == "rules_fallback"
-
-    def test_loading(self):
-        detector = MagicMock()
-        detector.model_status = "loading"
-        detector.ml_model = None
-
-        check = make_model_check(detector)
-        result = check()
-
-        assert result["status"] == "loading"
-
-
-class TestDatabaseCheck:
-    """Tests for make_database_check."""
-
-    def test_all_healthy(self):
-        persistence = MagicMock()
-        persistence.health_check.return_value = {
-            "postgresql": True,
-            "clickhouse": True,
-        }
-
-        check = make_database_check(persistence)
-        result = check()
-
-        assert result["status"] == "connected"
-        assert result["components"]["postgresql"] == "connected"
-        assert result["components"]["clickhouse"] == "connected"
-
-    def test_partial_failure(self):
-        persistence = MagicMock()
-        persistence.health_check.return_value = {
-            "postgresql": True,
-            "clickhouse": False,
-        }
-
-        check = make_database_check(persistence)
-        result = check()
-
-        assert result["status"] == "error"
-        assert result["components"]["clickhouse"] == "error"
