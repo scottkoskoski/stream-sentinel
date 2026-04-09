@@ -1820,6 +1820,13 @@ class FraudDetector:
                 if msg is not None and not msg.error():
                     try:
                         transaction = json.loads(msg.value().decode("utf-8"))
+
+                        # Extract tracing context for batch messages
+                        if TRACING_AVAILABLE:
+                            corr_id = extract_correlation_id(msg.headers())
+                            if corr_id:
+                                transaction["_correlation_id"] = corr_id
+
                         msg_buffer.append(msg)
                         txn_buffer.append(transaction)
 

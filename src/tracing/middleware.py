@@ -124,6 +124,18 @@ def traced_consume(message: Any) -> TracingContext:
     current thread so that subsequent log entries and ``traced_produce``
     calls pick it up.
 
+    **Important:** Callers MUST detach the context when done, ideally
+    in a ``finally`` block::
+
+        ctx = traced_consume(msg)
+        try:
+            process(msg)
+        finally:
+            ctx.detach()
+
+    Or equivalently, since ``TracingContext`` is a context manager,
+    callers can detach and re-attach after the initial call.
+
     Args:
         message: A ``confluent_kafka.Message`` object.
 

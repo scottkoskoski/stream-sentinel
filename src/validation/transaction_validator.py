@@ -104,27 +104,42 @@ class TransactionValidator:
         velocity_threshold: Optional[int] = None,
         velocity_window_s: Optional[int] = None,
     ):
-        # Configurable thresholds (env vars override defaults)
-        self.max_transaction_amt = max_transaction_amt or float(
-            os.environ.get("VALIDATION_MAX_TRANSACTION_AMT", DEFAULT_MAX_TRANSACTION_AMT)
+        # Configurable thresholds (env vars override defaults).
+        # Use `is None` checks so that 0 is treated as a valid explicit value.
+        self.max_transaction_amt = (
+            float(os.environ.get("VALIDATION_MAX_TRANSACTION_AMT", DEFAULT_MAX_TRANSACTION_AMT))
+            if max_transaction_amt is None
+            else max_transaction_amt
         )
-        self.timestamp_future_tolerance_s = timestamp_future_tolerance_s or int(
-            os.environ.get("VALIDATION_TIMESTAMP_FUTURE_TOLERANCE_S", DEFAULT_TIMESTAMP_FUTURE_TOLERANCE_SECONDS)
+        self.timestamp_future_tolerance_s = (
+            int(os.environ.get("VALIDATION_TIMESTAMP_FUTURE_TOLERANCE_S", DEFAULT_TIMESTAMP_FUTURE_TOLERANCE_SECONDS))
+            if timestamp_future_tolerance_s is None
+            else timestamp_future_tolerance_s
         )
-        self.duplicate_window_s = duplicate_window_s or int(
-            os.environ.get("VALIDATION_DUPLICATE_WINDOW_S", DEFAULT_DUPLICATE_WINDOW_SECONDS)
+        self.duplicate_window_s = (
+            int(os.environ.get("VALIDATION_DUPLICATE_WINDOW_S", DEFAULT_DUPLICATE_WINDOW_SECONDS))
+            if duplicate_window_s is None
+            else duplicate_window_s
         )
-        self.velocity_threshold = velocity_threshold or int(
-            os.environ.get("VALIDATION_VELOCITY_THRESHOLD", DEFAULT_VELOCITY_THRESHOLD)
+        self.velocity_threshold = (
+            int(os.environ.get("VALIDATION_VELOCITY_THRESHOLD", DEFAULT_VELOCITY_THRESHOLD))
+            if velocity_threshold is None
+            else velocity_threshold
         )
-        self.velocity_window_s = velocity_window_s or int(
-            os.environ.get("VALIDATION_VELOCITY_WINDOW_S", DEFAULT_VELOCITY_WINDOW_SECONDS)
+        self.velocity_window_s = (
+            int(os.environ.get("VALIDATION_VELOCITY_WINDOW_S", DEFAULT_VELOCITY_WINDOW_SECONDS))
+            if velocity_window_s is None
+            else velocity_window_s
         )
 
         # In-memory duplicate tracking: {transaction_id: timestamp_seen}
+        # Bounded to prevent unbounded memory growth at high TPS.
         self._seen_ids: Dict[str, float] = {}
-        # In-memory velocity tracking: {user_id: [timestamp1, timestamp2, ...]}
+        self._max_seen_ids = 200_000  # ~200k entries, ~20MB at peak
+        # In-memory velocity tracking: {user_id: [timestamp1, ...]}
+        # Note: per-process only. Multi-instance dedup requires Redis.
         self._user_timestamps: Dict[str, List[float]] = {}
+        self._max_user_entries = 100_000  # cap tracked users
         self._lock = threading.Lock()
 
         # Track last cleanup time to avoid excessive sweeps
@@ -341,6 +356,12 @@ class TransactionValidator:
         for tid in expired_ids:
             del self._seen_ids[tid]
 
+        # Hard cap: if still over limit after TTL eviction, drop oldest entries
+        if len(self._seen_ids) > self._max_seen_ids:
+            sorted_ids = sorted(self._seen_ids.items(), key=lambda x: x[1])
+            for tid, _ in sorted_ids[: len(self._seen_ids) - self._max_seen_ids]:
+                del self._seen_ids[tid]
+
         # Evict users with no recent activity
         vel_cutoff = now - self.velocity_window_s
         stale_users = []
@@ -352,6 +373,13 @@ class TransactionValidator:
                 stale_users.append(uid)
         for uid in stale_users:
             del self._user_timestamps[uid]
+
+        # Hard cap on tracked users
+        if len(self._user_timestamps) > self._max_user_entries:
+            # Evict users with the fewest recent timestamps (least active)
+            by_activity = sorted(self._user_timestamps.items(), key=lambda x: len(x[1]))
+            for uid, _ in by_activity[: len(self._user_timestamps) - self._max_user_entries]:
+                del self._user_timestamps[uid]
 
     def _record_metrics(self, result: ValidationResult) -> None:
         """Increment Prometheus counters if available."""
