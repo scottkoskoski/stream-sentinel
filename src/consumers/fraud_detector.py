@@ -218,7 +218,7 @@ class FraudDetector:
                  consumer_group: str = "fraud-detection-group",
                  fraud_threshold: float = 0.3,
                  use_ml_model: bool = True,
-                 model_path: str = "models/ieee_fraud_model_production.pkl",
+                 model_path: str = "models/synthetic_fraud_model_production.pkl",
                  enable_cpp_acceleration: bool = True,
                  drift_check_interval: int = 1000,
                  batch_mode: bool = False,

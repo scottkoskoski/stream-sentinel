@@ -198,6 +198,23 @@ def generate_synthetic_data(n_samples: int, n_users: int):
     producer.transaction_patterns = results["synthetic_spec"]["transaction_patterns"]
     producer.fraud_patterns = results["synthetic_spec"]["fraud_patterns"]
 
+    # Pre-compute weighted-choice lists (added by TPS optimization)
+    import importlib.util as _ilu
+    _cfg_spec = _ilu.spec_from_file_location(
+        "gen_config",
+        os.path.join(os.path.dirname(__file__), "..", "src", "producers", "config.py"),
+    )
+    _gen_config = _ilu.module_from_spec(_cfg_spec)
+    _cfg_spec.loader.exec_module(_gen_config)
+    producer._card4_names = list(_gen_config.CARD4_DISTRIBUTION.keys())
+    producer._card4_weights = list(_gen_config.CARD4_DISTRIBUTION.values())
+    producer._card6_names = list(_gen_config.CARD6_DISTRIBUTION.keys())
+    producer._card6_weights = list(_gen_config.CARD6_DISTRIBUTION.values())
+    producer._p_email_names = list(_gen_config.P_EMAIL_DOMAINS.keys())
+    producer._p_email_weights = list(_gen_config.P_EMAIL_DOMAINS.values())
+    producer._r_email_names = list(getattr(_gen_config, "R_EMAIL_DOMAINS", _gen_config.P_EMAIL_DOMAINS).keys())
+    producer._r_email_weights = list(getattr(_gen_config, "R_EMAIL_DOMAINS", _gen_config.P_EMAIL_DOMAINS).values())
+
     # Pre-create user profiles to build up entity history
     user_ids = [f"user_{i:06d}" for i in range(n_users)]
     for uid in user_ids:
