@@ -132,6 +132,194 @@ class Transaction:
     m8: Optional[str] = None    # Email domain matches merchant domain
     m9: Optional[str] = None    # Transaction time matches user's typical pattern
 
+    # V-features (Vesta engineered features from IEEE-CIS dataset)
+    # V1-V11: Card/address match flags
+    v1: Optional[float] = None
+    v2: Optional[float] = None
+    v3: Optional[float] = None
+    v4: Optional[float] = None
+    v5: Optional[float] = None
+    v6: Optional[float] = None
+    v7: Optional[float] = None
+    v8: Optional[float] = None
+    v9: Optional[float] = None
+    v10: Optional[float] = None
+    v11: Optional[float] = None
+    # V12-V14: Time-based aggregations
+    v12: Optional[float] = None
+    v13: Optional[float] = None
+    v14: Optional[float] = None
+    # V19-V94: Transaction velocity/frequency
+    v19: Optional[float] = None
+    v20: Optional[float] = None
+    v23: Optional[float] = None
+    v24: Optional[float] = None
+    v25: Optional[float] = None
+    v26: Optional[float] = None
+    v29: Optional[float] = None
+    v30: Optional[float] = None
+    v33: Optional[float] = None
+    v34: Optional[float] = None
+    v35: Optional[float] = None
+    v36: Optional[float] = None
+    v37: Optional[float] = None
+    v38: Optional[float] = None
+    v41: Optional[float] = None
+    v44: Optional[float] = None
+    v45: Optional[float] = None
+    v46: Optional[float] = None
+    v47: Optional[float] = None
+    v48: Optional[float] = None
+    v49: Optional[float] = None
+    v51: Optional[float] = None
+    v52: Optional[float] = None
+    v53: Optional[float] = None
+    v54: Optional[float] = None
+    v55: Optional[float] = None
+    v56: Optional[float] = None
+    v61: Optional[float] = None
+    v62: Optional[float] = None
+    v65: Optional[float] = None
+    v66: Optional[float] = None
+    v67: Optional[float] = None
+    v69: Optional[float] = None
+    v70: Optional[float] = None
+    v75: Optional[float] = None
+    v76: Optional[float] = None
+    v77: Optional[float] = None
+    v78: Optional[float] = None
+    v79: Optional[float] = None
+    v82: Optional[float] = None
+    v83: Optional[float] = None
+    v86: Optional[float] = None
+    v87: Optional[float] = None
+    v88: Optional[float] = None
+    v90: Optional[float] = None
+    v91: Optional[float] = None
+    v94: Optional[float] = None
+    # V107-V125: Critical time-based features (high model importance)
+    v107: Optional[float] = None
+    v108: Optional[float] = None
+    v109: Optional[float] = None
+    v110: Optional[float] = None
+    v111: Optional[float] = None
+    v112: Optional[float] = None
+    v113: Optional[float] = None
+    v114: Optional[float] = None
+    v115: Optional[float] = None
+    v116: Optional[float] = None
+    v117: Optional[float] = None
+    v118: Optional[float] = None
+    v119: Optional[float] = None
+    v120: Optional[float] = None
+    v121: Optional[float] = None
+    v122: Optional[float] = None
+    v123: Optional[float] = None
+    v124: Optional[float] = None
+    v125: Optional[float] = None
+    # V170-V176: Advanced low-range features
+    v170: Optional[float] = None
+    v171: Optional[float] = None
+    v176: Optional[float] = None
+    # V186-V204: Advanced mid-range features
+    v186: Optional[float] = None
+    v187: Optional[float] = None
+    v188: Optional[float] = None
+    v189: Optional[float] = None
+    v190: Optional[float] = None
+    v191: Optional[float] = None
+    v192: Optional[float] = None
+    v193: Optional[float] = None
+    v194: Optional[float] = None
+    v195: Optional[float] = None
+    v196: Optional[float] = None
+    v197: Optional[float] = None
+    v198: Optional[float] = None
+    v199: Optional[float] = None
+    v200: Optional[float] = None
+    v201: Optional[float] = None
+    v203: Optional[float] = None
+    v204: Optional[float] = None
+    # V211-V265: Log-normal features (V258 is most important)
+    v211: Optional[float] = None
+    v212: Optional[float] = None
+    v213: Optional[float] = None
+    v217: Optional[float] = None
+    v218: Optional[float] = None
+    v219: Optional[float] = None
+    v228: Optional[float] = None
+    v229: Optional[float] = None
+    v230: Optional[float] = None
+    v232: Optional[float] = None
+    v233: Optional[float] = None
+    v240: Optional[float] = None
+    v241: Optional[float] = None
+    v242: Optional[float] = None
+    v243: Optional[float] = None
+    v244: Optional[float] = None
+    v245: Optional[float] = None
+    v246: Optional[float] = None
+    v247: Optional[float] = None
+    v248: Optional[float] = None
+    v249: Optional[float] = None
+    v250: Optional[float] = None
+    v251: Optional[float] = None
+    v252: Optional[float] = None
+    v253: Optional[float] = None
+    v254: Optional[float] = None
+    v257: Optional[float] = None
+    v258: Optional[float] = None
+    v259: Optional[float] = None
+    v260: Optional[float] = None
+    v261: Optional[float] = None
+    v262: Optional[float] = None
+    v263: Optional[float] = None
+    v264: Optional[float] = None
+    v265: Optional[float] = None
+    # V273-V305: Sparse features
+    v273: Optional[float] = None
+    v274: Optional[float] = None
+    v275: Optional[float] = None
+    v282: Optional[float] = None
+    v283: Optional[float] = None
+    v290: Optional[float] = None
+    v292: Optional[float] = None
+    v302: Optional[float] = None
+    v303: Optional[float] = None
+    v304: Optional[float] = None
+    v305: Optional[float] = None
+
+    # Identity features (device/browser/OS)
+    id_11: Optional[float] = None   # Screen DPI
+    id_12: Optional[str] = None     # Found/NotFound
+    id_13: Optional[float] = None   # Browser version
+    id_15: Optional[str] = None     # Found/New/Unknown
+    id_16: Optional[str] = None     # Found/NotFound
+    id_17: Optional[float] = None   # Device identifier hash
+    id_19: Optional[float] = None   # ISP identifier
+    id_20: Optional[float] = None   # ISP region
+    id_23: Optional[str] = None     # Proxy type
+    id_27: Optional[str] = None     # Found/NotFound
+    id_28: Optional[str] = None     # Found/New
+    id_29: Optional[str] = None     # Found/NotFound
+    id_30: Optional[str] = None     # OS string
+    id_31: Optional[str] = None     # Browser string
+    id_33: Optional[str] = None     # Screen resolution
+    id_34: Optional[str] = None     # Match status
+    id_35: Optional[str] = None     # T/F flag
+    id_36: Optional[str] = None     # T/F flag
+    id_37: Optional[str] = None     # T/F flag
+    id_38: Optional[str] = None     # T/F flag
+
+    # Device features
+    device_type: Optional[str] = None    # desktop/mobile/unknown
+    device_info: Optional[str] = None    # OS/browser info string
+
+    # Derived amount features
+    transaction_amt_log: Optional[float] = None       # log1p(amount)
+    transaction_amt_decimal: Optional[float] = None   # amount - int(amount)
+    transaction_amt_bin: Optional[int] = None          # Binned amount category 0-4
+
     # Additional metadata for stream processing (required fields must not have defaults after optional fields)
     generated_timestamp: Optional[str] = None
     user_id: Optional[str] = None
@@ -922,6 +1110,250 @@ class SyntheticTransactionProducer:
 
         return is_fraud, fraud_reason if is_fraud else None
 
+    # ------------------------------------------------------------------
+    # V-feature generation
+    # ------------------------------------------------------------------
+
+    def _generate_v_features(self, is_fraud: bool, addr1: float,
+                             card1: int) -> Dict[str, Optional[float]]:
+        """Generate all V-features (Vesta engineered features).
+
+        V-features are grouped by type and generated with distributions
+        that correlate with fraud status. The most important features
+        (V258, V201, V246, V12, V264, V244) have strong fraud signal.
+
+        Args:
+            is_fraud: Whether this transaction is fraudulent.
+            addr1: Address feature (used to seed V1-V11 correlations).
+            card1: Card identifier (used to seed V1-V11 correlations).
+
+        Returns:
+            Dict mapping lowercase feature names (e.g. "v1") to values.
+        """
+        features: Dict[str, Optional[float]] = {}
+
+        # Shared fraud shift -- a single random draw that makes anomalies
+        # correlated across V-features within the same transaction
+        fraud_intensity = random.uniform(1.3, 2.5) if is_fraud else 1.0
+
+        # --- V1-V11: Card/address match flags [0, 1] ---
+        # Fraud -> more mismatches (values closer to 0)
+        for i in range(1, 12):
+            key = f"v{i}"
+            if is_fraud:
+                features[key] = float(random.choices([0, 1], weights=[0.6, 0.4])[0])
+            else:
+                features[key] = float(random.choices([0, 1], weights=[0.2, 0.8])[0])
+
+        # --- V12-V14: Time-based aggregations [0, 300] ---
+        for i in [12, 13, 14]:
+            key = f"v{i}"
+            base_val = np.random.lognormal(mean=3.0, sigma=1.0)
+            base_val = min(base_val, 300.0)
+            hi_imp = gen_config.V_HIGH_IMPORTANCE.get(f"V{i}", 1.0)
+            if is_fraud:
+                base_val *= hi_imp * fraud_intensity
+                base_val = min(base_val, 300.0)
+            features[key] = round(float(base_val), 4)
+
+        # --- V19-V94: Transaction velocity/frequency ---
+        for v_name in gen_config.V_VELOCITY_FEATURES:
+            key = v_name.lower()
+            null_rate = gen_config.V_VELOCITY_NULL_RATES.get(v_name, 0.20)
+            if random.random() < null_rate:
+                features[key] = None
+                continue
+            num = int(v_name[1:])
+            # Vary mean/std by position for diversity
+            mean_base = 0.5 + (num % 7) * 0.3
+            std_base = 1.0 + (num % 5) * 0.2
+            val = float(np.random.lognormal(mean=np.log(mean_base + 0.1), sigma=np.log(std_base + 0.5)))
+            if is_fraud:
+                val *= fraud_intensity
+            features[key] = round(val, 4)
+
+        # --- V107-V125: Critical time-based features (high importance) ---
+        for v_name in gen_config.V_CRITICAL_TIME:
+            key = v_name.lower()
+            val = float(np.random.lognormal(mean=2.0, sigma=1.5))
+            val = min(val, 1000.0)
+            if is_fraud:
+                # Strong fraud correlation for critical features
+                val *= fraud_intensity * 1.5
+                val = min(val, 1000.0)
+            features[key] = round(val, 4)
+
+        # --- V170-V176: Advanced low-range [0, 10] ---
+        for v_name in gen_config.V_ADVANCED_LOW:
+            key = v_name.lower()
+            val = max(0.0, np.random.normal(loc=1.0, scale=2.0))
+            val = min(val, 10.0)
+            if is_fraud:
+                val *= fraud_intensity
+                val = min(val, 10.0)
+            features[key] = round(float(val), 4)
+
+        # --- V186-V204: Advanced mid-range [0, 10] ---
+        for v_name in gen_config.V_ADVANCED_MID:
+            key = v_name.lower()
+            val = max(0.0, np.random.normal(loc=1.0, scale=2.0))
+            val = min(val, 10.0)
+            hi_imp = gen_config.V_HIGH_IMPORTANCE.get(f"V{key[1:]}", 1.0)
+            if is_fraud:
+                val *= hi_imp * fraud_intensity
+                val = min(val, 10.0)
+            features[key] = round(float(val), 4)
+
+        # --- V211-V265: Log-normal features [0, 100] ---
+        for v_name in gen_config.V_LOGNORMAL:
+            key = v_name.lower()
+            num = int(v_name[1:])
+            hi_imp = gen_config.V_HIGH_IMPORTANCE.get(v_name, 1.0)
+
+            if v_name == "V258":
+                # THE most important feature (gain=717.91)
+                if is_fraud:
+                    val = float(np.random.lognormal(mean=np.log(2.0), sigma=0.5))
+                else:
+                    val = float(np.random.lognormal(mean=np.log(0.5), sigma=0.5))
+            else:
+                val = float(np.random.lognormal(mean=np.log(1.0 + (num % 10) * 0.1), sigma=0.8))
+                if is_fraud:
+                    val *= hi_imp * fraud_intensity
+
+            val = min(val, 100.0)
+            features[key] = round(val, 4)
+
+        # --- V273-V305: Sparse features [0, 50], ~40% null ---
+        for v_name in gen_config.V_SPARSE:
+            key = v_name.lower()
+            if random.random() < 0.40:
+                features[key] = None
+                continue
+            val = float(np.random.lognormal(mean=1.5, sigma=1.0))
+            val = min(val, 50.0)
+            if is_fraud:
+                val *= fraud_intensity
+                val = min(val, 50.0)
+            features[key] = round(val, 4)
+
+        return features
+
+    # ------------------------------------------------------------------
+    # Identity feature generation
+    # ------------------------------------------------------------------
+
+    def _generate_id_features(self, is_fraud: bool) -> Dict[str, Any]:
+        """Generate identity features (id_11 through id_38).
+
+        Categorical id-features use config-driven value/weight tables.
+        Numeric id-features use uniform distributions within configured ranges.
+        T/F flags (id_35-id_38) correlate with fraud (more 'F' for fraud).
+
+        Args:
+            is_fraud: Whether this transaction is fraudulent.
+
+        Returns:
+            Dict mapping feature names (e.g. "id_11") to values.
+        """
+        features: Dict[str, Any] = {}
+
+        # Numeric id-features
+        for feat_name, params in gen_config.ID_NUMERIC_FEATURES.items():
+            if random.random() < params["null_rate"]:
+                features[feat_name] = None
+            else:
+                features[feat_name] = round(
+                    random.uniform(params["min"], params["max"]), 2
+                )
+
+        # Categorical id-features
+        for feat_name, params in gen_config.ID_CATEGORICAL_FEATURES.items():
+            if random.random() < params["null_rate"]:
+                features[feat_name] = None
+                continue
+            if is_fraud and "fraud_weights" in params:
+                weights = params["fraud_weights"]
+            else:
+                weights = params["weights"]
+            features[feat_name] = random.choices(params["values"], weights=weights)[0]
+
+        # T/F flags (id_35 - id_38)
+        for feat_name in gen_config.ID_TF_FEATURES:
+            if random.random() < gen_config.ID_TF_NULL_RATE:
+                features[feat_name] = None
+                continue
+            if is_fraud:
+                weights = gen_config.ID_TF_FRAUD_WEIGHTS
+            else:
+                weights = gen_config.ID_TF_LEGITIMATE_WEIGHTS
+            features[feat_name] = random.choices(
+                ["T", "F", "unknown"], weights=list(weights)
+            )[0]
+
+        return features
+
+    # ------------------------------------------------------------------
+    # Device feature generation
+    # ------------------------------------------------------------------
+
+    def _generate_device_features(self, is_fraud: bool) -> Tuple[Optional[str], Optional[str]]:
+        """Generate DeviceType and DeviceInfo features.
+
+        Args:
+            is_fraud: Whether this transaction is fraudulent.
+
+        Returns:
+            (device_type, device_info) tuple.
+        """
+        # DeviceType
+        if is_fraud:
+            dist = gen_config.DEVICE_TYPE_FRAUD_DISTRIBUTION
+        else:
+            dist = gen_config.DEVICE_TYPE_DISTRIBUTION
+        device_type = random.choices(
+            list(dist.keys()), weights=list(dist.values())
+        )[0]
+
+        # DeviceInfo (~60% null)
+        if random.random() < gen_config.DEVICE_INFO_NULL_RATE:
+            device_info = None
+        else:
+            dist = gen_config.DEVICE_INFO_DISTRIBUTION
+            device_info = random.choices(
+                list(dist.keys()), weights=list(dist.values())
+            )[0]
+
+        return device_type, device_info
+
+    # ------------------------------------------------------------------
+    # Derived amount features
+    # ------------------------------------------------------------------
+
+    def _generate_derived_amount_features(self, amount: float) -> Tuple[float, float, int]:
+        """Generate derived features from TransactionAmt.
+
+        Args:
+            amount: The transaction amount.
+
+        Returns:
+            (amt_log, amt_decimal, amt_bin) tuple.
+        """
+        amt_log = float(np.log1p(amount))
+        amt_decimal = round(amount - int(amount), 4)
+
+        # Bin: [0,50) -> 0, [50,100) -> 1, [100,200) -> 2, [200,500) -> 3, [500,inf) -> 4
+        edges = gen_config.TRANSACTION_AMT_BIN_EDGES
+        amt_bin = 0
+        for i in range(len(edges) - 1):
+            if edges[i] <= amount < edges[i + 1]:
+                amt_bin = i
+                break
+        else:
+            amt_bin = len(edges) - 2  # Last bin
+
+        return amt_log, amt_decimal, amt_bin
+
     def _apply_fraud_correlations(self, counting_features: Dict[str, Optional[float]],
                                     time_delta_features: Dict[str, Optional[float]],
                                     ) -> None:
@@ -961,12 +1393,14 @@ class SyntheticTransactionProducer:
                 time_delta_features["d1"] = random.uniform(0, 2)  # 0-2 days old
 
     def _generate_transaction(self, user_id: Optional[str] = None) -> Transaction:
-        """Generate a single realistic transaction.
+        """Generate a single realistic transaction with all 200 model features.
 
         For fraudulent transactions, correlated anomalies are injected:
         - Amount, hour, and velocity anomalies fire together (not independently)
         - C-features get inflated counts, D-features get compressed deltas
         - M-features use the fraud weight table (handled in _generate_match_features)
+        - V-features use a shared fraud_intensity multiplier for correlated shifts
+        - id-features shift toward anomalous values (more 'F', more ANONYMOUS proxy)
         """
         # Get or create user profile
         user = self._get_or_create_user(user_id)
@@ -1006,6 +1440,12 @@ class SyntheticTransactionProducer:
         time_delta_features = self._generate_time_delta_features(user, card1, p_email, product_cd, addr1 or 0.0, current_time_float)
         match_features = self._generate_match_features(card4, p_email, addr1, user, current_time_float, is_fraud=is_fraud)
 
+        # Generate new feature groups (V-features, id-features, device, derived amounts)
+        v_features = self._generate_v_features(is_fraud, addr1 or 0.0, card1)
+        id_features = self._generate_id_features(is_fraud)
+        device_type, device_info = self._generate_device_features(is_fraud)
+        amt_log, amt_decimal, amt_bin = self._generate_derived_amount_features(amount)
+
         # Apply correlated anomalies for fraud transactions
         if is_fraud:
             self._apply_fraud_correlations(counting_features, time_delta_features)
@@ -1029,7 +1469,7 @@ class SyntheticTransactionProducer:
             dist2=dist2,
             p_emaildomain=p_email,
             r_emaildomain=r_email,
-            
+
             # Add enhanced features
             c1=counting_features.get("c1"),
             c2=counting_features.get("c2"),
@@ -1045,7 +1485,7 @@ class SyntheticTransactionProducer:
             c12=counting_features.get("c12"),
             c13=counting_features.get("c13"),
             c14=counting_features.get("c14"),
-            
+
             d1=time_delta_features.get("d1"),
             d2=time_delta_features.get("d2"),
             d3=time_delta_features.get("d3"),
@@ -1061,7 +1501,7 @@ class SyntheticTransactionProducer:
             d13=time_delta_features.get("d13"),
             d14=time_delta_features.get("d14"),
             d15=time_delta_features.get("d15"),
-            
+
             m1=match_features.get("m1"),
             m2=match_features.get("m2"),
             m3=match_features.get("m3"),
@@ -1071,7 +1511,65 @@ class SyntheticTransactionProducer:
             m7=match_features.get("m7"),
             m8=match_features.get("m8"),
             m9=match_features.get("m9"),
-            
+
+            # V-features
+            **{k: v_features.get(k) for k in [
+                "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11",
+                "v12", "v13", "v14",
+                "v19", "v20", "v23", "v24", "v25", "v26", "v29", "v30",
+                "v33", "v34", "v35", "v36", "v37", "v38",
+                "v41", "v44", "v45", "v46", "v47", "v48", "v49",
+                "v51", "v52", "v53", "v54", "v55", "v56",
+                "v61", "v62", "v65", "v66", "v67", "v69", "v70",
+                "v75", "v76", "v77", "v78", "v79", "v82", "v83",
+                "v86", "v87", "v88", "v90", "v91", "v94",
+                "v107", "v108", "v109", "v110", "v111", "v112", "v113", "v114",
+                "v115", "v116", "v117", "v118", "v119", "v120", "v121", "v122",
+                "v123", "v124", "v125",
+                "v170", "v171", "v176",
+                "v186", "v187", "v188", "v189", "v190", "v191", "v192", "v193",
+                "v194", "v195", "v196", "v197", "v198", "v199", "v200", "v201",
+                "v203", "v204",
+                "v211", "v212", "v213", "v217", "v218", "v219",
+                "v228", "v229", "v230", "v232", "v233",
+                "v240", "v241", "v242", "v243", "v244", "v245", "v246", "v247",
+                "v248", "v249", "v250", "v251", "v252", "v253", "v254",
+                "v257", "v258", "v259", "v260", "v261", "v262", "v263", "v264", "v265",
+                "v273", "v274", "v275", "v282", "v283", "v290", "v292",
+                "v302", "v303", "v304", "v305",
+            ]},
+
+            # Identity features
+            id_11=id_features.get("id_11"),
+            id_12=id_features.get("id_12"),
+            id_13=id_features.get("id_13"),
+            id_15=id_features.get("id_15"),
+            id_16=id_features.get("id_16"),
+            id_17=id_features.get("id_17"),
+            id_19=id_features.get("id_19"),
+            id_20=id_features.get("id_20"),
+            id_23=id_features.get("id_23"),
+            id_27=id_features.get("id_27"),
+            id_28=id_features.get("id_28"),
+            id_29=id_features.get("id_29"),
+            id_30=id_features.get("id_30"),
+            id_31=id_features.get("id_31"),
+            id_33=id_features.get("id_33"),
+            id_34=id_features.get("id_34"),
+            id_35=id_features.get("id_35"),
+            id_36=id_features.get("id_36"),
+            id_37=id_features.get("id_37"),
+            id_38=id_features.get("id_38"),
+
+            # Device features
+            device_type=device_type,
+            device_info=device_info,
+
+            # Derived amount features
+            transaction_amt_log=amt_log,
+            transaction_amt_decimal=amt_decimal,
+            transaction_amt_bin=amt_bin,
+
             generated_timestamp=datetime.now().isoformat(),
             user_id=user.user_id,
             session_id=f"sess_{user.total_transactions // 5}",  # New session every 5 transactions

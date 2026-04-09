@@ -408,6 +408,195 @@ DEFAULT_IEEE_CIS_ANALYSIS: Dict[str, Any] = {
 
 
 # ---------------------------------------------------------------------------
+# V-feature generation parameters
+#
+# V-features are Vesta's engineered features from the IEEE-CIS dataset.
+# They represent various aggregations and counts related to payment card
+# transactions. Grouped by type and importance.
+# ---------------------------------------------------------------------------
+
+# V1-V11: Card/address match flags [0, 1]
+V_MATCH_FLAGS: List[str] = [f"V{i}" for i in range(1, 12)]
+
+# V12-V14: Time-based aggregations [0, 300]
+V_TIME_AGGS: List[str] = ["V12", "V13", "V14"]
+
+# V19-V94: Transaction velocity/frequency features
+V_VELOCITY_FEATURES: List[str] = [
+    "V19", "V20", "V23", "V24", "V25", "V26", "V29", "V30",
+    "V33", "V34", "V35", "V36", "V37", "V38",
+    "V41", "V44", "V45", "V46", "V47", "V48", "V49", "V51", "V52", "V53", "V54", "V55", "V56",
+    "V61", "V62", "V65", "V66", "V67", "V69", "V70",
+    "V75", "V76", "V77", "V78", "V79", "V82", "V83",
+    "V86", "V87", "V88", "V90", "V91", "V94",
+]
+
+# Null rate tiers for velocity features
+V_VELOCITY_NULL_RATES: Dict[str, float] = {}
+for _v in V_VELOCITY_FEATURES:
+    _num = int(_v[1:])
+    if _num <= 34:
+        V_VELOCITY_NULL_RATES[_v] = 0.15
+    elif _num <= 55:
+        V_VELOCITY_NULL_RATES[_v] = 0.25
+    else:
+        V_VELOCITY_NULL_RATES[_v] = 0.30
+
+# V107-V125: Critical time-based features (high model importance)
+V_CRITICAL_TIME: List[str] = [
+    "V107", "V108", "V109", "V110", "V111", "V112", "V113", "V114",
+    "V115", "V116", "V117", "V118", "V119", "V120", "V121", "V122",
+    "V123", "V124", "V125",
+]
+
+# V170-V204: Advanced aggregations (near-zero centered)
+V_ADVANCED_LOW: List[str] = ["V170", "V171", "V176"]
+V_ADVANCED_MID: List[str] = [
+    "V186", "V187", "V188", "V189", "V190", "V191", "V192", "V193",
+    "V194", "V195", "V196", "V197", "V198", "V199", "V200", "V201",
+    "V203", "V204",
+]
+
+# V211-V265: Log-normal features (V258 is THE MOST IMPORTANT, gain=717.91)
+V_LOGNORMAL: List[str] = [
+    "V211", "V212", "V213", "V217", "V218", "V219",
+    "V228", "V229", "V230", "V232", "V233",
+    "V240", "V241", "V242", "V243", "V244", "V245", "V246", "V247",
+    "V248", "V249", "V250", "V251", "V252", "V253", "V254",
+    "V257", "V258", "V259", "V260", "V261", "V262", "V263", "V264", "V265",
+]
+
+# V273-V305: Sparse features (~40% null)
+V_SPARSE: List[str] = [
+    "V273", "V274", "V275", "V282", "V283", "V290", "V292",
+    "V302", "V303", "V304", "V305",
+]
+
+# Top-importance V-features for fraud correlation
+V_HIGH_IMPORTANCE: Dict[str, float] = {
+    "V258": 3.0,   # THE most important feature -- fraud mean 3x legitimate
+    "V201": 2.0,
+    "V246": 2.0,
+    "V12": 1.8,
+    "V264": 1.8,
+    "V244": 1.7,
+}
+
+
+# ---------------------------------------------------------------------------
+# id-feature generation parameters
+# ---------------------------------------------------------------------------
+
+ID_CATEGORICAL_FEATURES: Dict[str, Dict[str, Any]] = {
+    "id_12": {
+        "values": ["Found", "NotFound", "unknown"],
+        "weights": [0.55, 0.35, 0.10],
+        "null_rate": 0.30,
+    },
+    "id_15": {
+        "values": ["Found", "New", "Unknown", "unknown"],
+        "weights": [0.50, 0.30, 0.10, 0.10],
+        "null_rate": 0.30,
+    },
+    "id_16": {
+        "values": ["Found", "NotFound", "unknown"],
+        "weights": [0.55, 0.35, 0.10],
+        "null_rate": 0.30,
+    },
+    "id_23": {
+        "values": ["IP_PROXY:ANONYMOUS", "IP_PROXY:HIDDEN", "IP_PROXY:TRANSPARENT", "unknown"],
+        "weights": [0.10, 0.15, 0.60, 0.15],
+        "fraud_weights": [0.40, 0.25, 0.20, 0.15],  # More ANONYMOUS for fraud
+        "null_rate": 0.50,
+    },
+    "id_27": {
+        "values": ["Found", "NotFound", "unknown"],
+        "weights": [0.50, 0.40, 0.10],
+        "null_rate": 0.30,
+    },
+    "id_28": {
+        "values": ["Found", "New", "unknown"],
+        "weights": [0.50, 0.35, 0.15],
+        "null_rate": 0.30,
+    },
+    "id_29": {
+        "values": ["Found", "NotFound", "unknown"],
+        "weights": [0.50, 0.40, 0.10],
+        "null_rate": 0.30,
+    },
+    "id_30": {
+        "values": ["Windows 10", "Windows 7", "Mac OS X 10_12_6", "Android 7.0",
+                    "iOS 11.1.2", "unknown"],
+        "weights": [0.35, 0.15, 0.15, 0.15, 0.10, 0.10],
+        "null_rate": 0.40,
+    },
+    "id_31": {
+        "values": ["chrome 62.0", "chrome 63.0", "safari 11.0", "firefox 57.0",
+                    "edge 15.0", "ie 11.0", "unknown"],
+        "weights": [0.25, 0.25, 0.15, 0.10, 0.08, 0.07, 0.10],
+        "null_rate": 0.40,
+    },
+    "id_33": {
+        "values": ["1920x1080", "1366x768", "1440x900", "375x667", "360x640", "unknown"],
+        "weights": [0.30, 0.25, 0.15, 0.12, 0.10, 0.08],
+        "null_rate": 0.40,
+    },
+    "id_34": {
+        "values": ["match_status:0", "match_status:1", "match_status:2", "match_status:-1", "unknown"],
+        "weights": [0.30, 0.30, 0.15, 0.10, 0.15],
+        "null_rate": 0.30,
+    },
+}
+
+# id_35-id_38: T/F flags -- fraud correlates with more 'F'
+ID_TF_FEATURES: List[str] = ["id_35", "id_36", "id_37", "id_38"]
+ID_TF_LEGITIMATE_WEIGHTS: Tuple[float, float, float] = (0.70, 0.20, 0.10)  # T, F, unknown
+ID_TF_FRAUD_WEIGHTS: Tuple[float, float, float] = (0.30, 0.55, 0.15)       # More F for fraud
+ID_TF_NULL_RATE: float = 0.30
+
+# Numeric id-features
+ID_NUMERIC_FEATURES: Dict[str, Dict[str, Any]] = {
+    "id_11": {"min": 72.0, "max": 400.0, "null_rate": 0.30},
+    "id_13": {"min": 0.0, "max": 100.0, "null_rate": 0.30},
+    "id_17": {"min": 0.0, "max": 500.0, "null_rate": 0.30},
+    "id_19": {"min": 0.0, "max": 5000.0, "null_rate": 0.30},
+    "id_20": {"min": 0.0, "max": 5000.0, "null_rate": 0.30},
+}
+
+
+# ---------------------------------------------------------------------------
+# Device feature parameters
+# ---------------------------------------------------------------------------
+
+DEVICE_TYPE_DISTRIBUTION: Dict[str, float] = {
+    "desktop": 0.60,
+    "mobile": 0.35,
+    "unknown": 0.05,
+}
+DEVICE_TYPE_FRAUD_DISTRIBUTION: Dict[str, float] = {
+    "desktop": 0.45,
+    "mobile": 0.50,  # Mobile slightly more fraud
+    "unknown": 0.05,
+}
+
+DEVICE_INFO_DISTRIBUTION: Dict[str, float] = {
+    "Windows": 0.35,
+    "iOS Device": 0.20,
+    "MacOS": 0.15,
+    "Trident/7.0": 0.10,
+    "rv:11.0": 0.05,
+    "unknown": 0.15,
+}
+DEVICE_INFO_NULL_RATE: float = 0.60
+
+
+# ---------------------------------------------------------------------------
+# Derived amount feature bins
+# ---------------------------------------------------------------------------
+TRANSACTION_AMT_BIN_EDGES: List[float] = [0.0, 50.0, 100.0, 200.0, 500.0, float("inf")]
+
+
+# ---------------------------------------------------------------------------
 # Production defaults
 # ---------------------------------------------------------------------------
 DEFAULT_TARGET_TPS: int = 2000
