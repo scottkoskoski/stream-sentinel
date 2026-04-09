@@ -250,6 +250,7 @@ class FraudDetector:
         self.use_ml_model = use_ml_model
         self.enable_cpp_acceleration = enable_cpp_acceleration and CPP_INFERENCE_AVAILABLE
         self.scaler = None  # Feature scaler from training pipeline (applied if present)
+        self.label_encoders = {}  # Fitted LabelEncoders from training pipeline
 
         # Model scoring status tracks the current scoring path:
         #   "loading"        - startup, model load in progress
@@ -511,10 +512,17 @@ class FraudDetector:
             if isinstance(model_data, dict):
                 self.ml_model = model_data.get('model')
                 self.scaler = model_data.get('scaler')
+                self.label_encoders = model_data.get('label_encoders', {})
                 self.model_features = model_data.get('feature_names', [])
                 self.logger.info(
                     f"Loaded model components: {list(model_data.keys())}"
                 )
+                if self.label_encoders:
+                    self.logger.info(
+                        "Loaded %d label encoders for categorical features: %s",
+                        len(self.label_encoders),
+                        list(self.label_encoders.keys()),
+                    )
             else:
                 # Simple model pickle (no metadata dict wrapper)
                 self.ml_model = model_data
@@ -596,18 +604,21 @@ class FraudDetector:
     def _unpack_model_data(self, model_data: Any, source: str) -> None:
         """Unpack model data dict loaded from registry or filesystem.
 
-        Sets self.ml_model, self.scaler, and self.model_features.
+        Sets self.ml_model, self.scaler, self.label_encoders, and self.model_features.
         """
         if isinstance(model_data, dict):
             self.ml_model = model_data.get('model')
             self.scaler = model_data.get('scaler')
+            self.label_encoders = model_data.get('label_encoders', {})
             self.model_features = model_data.get('feature_names', [])
             self.logger.info(
-                "Unpacked model from %s: keys=%s, features=%d",
+                "Unpacked model from %s: keys=%s, features=%d, label_encoders=%d",
                 source, list(model_data.keys()), len(self.model_features),
+                len(self.label_encoders),
             )
         else:
             self.ml_model = model_data
+            self.label_encoders = {}
             self.model_features = []
             self.logger.info("Loaded raw model object from %s", source)
 
@@ -898,110 +909,176 @@ class FraudDetector:
                 is_rapid_transaction, velocity_score, user_profile.daily_transaction_count
             )
     
-    def _extract_ml_features(self, transaction: Dict[str, Any], 
+    # ------------------------------------------------------------------
+    # Mapping from snake_case producer keys to PascalCase model feature
+    # names.  Only entries where the names differ are needed; features
+    # whose producer key already matches the model name (e.g. ``card1``,
+    # ``V12``, ``id_11``) are resolved by the case-insensitive lookup.
+    # ------------------------------------------------------------------
+    _PRODUCER_TO_MODEL_KEY: Dict[str, str] = {
+        "transaction_dt": "TransactionDT",
+        "transaction_amt": "TransactionAmt",
+        "product_cd": "ProductCD",
+        "p_emaildomain": "P_emaildomain",
+        "r_emaildomain": "R_emaildomain",
+        "device_type": "DeviceType",
+        "device_info": "DeviceInfo",
+    }
+
+    def _extract_ml_features(self, transaction: Dict[str, Any],
                             user_profile: UserProfile) -> List[float]:
-        """
-        Extract features compatible with the trained ML model.
-        
+        """Extract features compatible with the trained ML model.
+
+        Builds a feature vector of exactly ``len(self.model_features)``
+        values in the order the model was trained on.  Categorical
+        features are encoded using the ``LabelEncoder`` instances saved
+        in the model pickle.  Missing features are set to ``NaN`` so
+        XGBoost can use its native sparsity handling.
+
         Args:
-            transaction: Transaction data
-            user_profile: User profile for behavioral features
-            
+            transaction: Transaction data dict (snake_case keys from producer).
+            user_profile: User profile for behavioral features.
+
         Returns:
-            List of feature values matching model expectations
+            List of float values matching model feature order.
         """
-        features = []
-        
-        # Create a mapping of available transaction features with safe None handling
-        def safe_float(value, default=0.0):
-            """Safely convert value to float, handling None and empty values."""
+
+        # -- helpers --------------------------------------------------
+        _nan = float('nan')
+
+        def safe_float(value):
+            """Convert to float; return NaN for missing / unconvertible."""
             if value is None or value == '':
-                return default
+                return _nan
             try:
                 return float(value)
             except (ValueError, TypeError):
-                return default
-                
-        available_features = {
-            'TransactionAmt': safe_float(transaction.get('transaction_amt')),
-            'ProductCD': transaction.get('product_cd', 'W') or 'W',
-            'card1': safe_float(transaction.get('card1')),
-            'card2': safe_float(transaction.get('card2')),
-            'card3': safe_float(transaction.get('card3')),
-            'card5': safe_float(transaction.get('card5')),
-            'card6': transaction.get('card6', 'debit') or 'debit',
-            'addr1': safe_float(transaction.get('addr1')),
-            'addr2': safe_float(transaction.get('addr2')),
-            'R_emaildomain': transaction.get('r_emaildomain', 'unknown') or 'unknown',
-        }
-        
-        # Add engineered features
-        amount = available_features['TransactionAmt']
-        available_features['TransactionAmt_log'] = np.log1p(amount) if amount > 0 else 0.0
-        available_features['TransactionAmt_decimal'] = amount - int(amount) if amount > 0 else 0.0
+                return _nan
 
-        # Add behavioral features from user profile
-        available_features['user_avg_amount'] = user_profile.avg_transaction_amount
-        available_features['user_total_transactions'] = float(user_profile.total_transactions)
-        available_features['user_daily_count'] = float(user_profile.daily_transaction_count)
+        # -- case-insensitive lookup table ----------------------------
+        # The producer emits snake_case keys (``transaction_amt``) while
+        # the model expects PascalCase / original IEEE-CIS names
+        # (``TransactionAmt``).  Build a single dict keyed by the *model*
+        # feature name so the assembly loop can look values up directly.
+        txn_by_model_key: Dict[str, Any] = {}
 
-        # Add enriched features from unified FeatureEngineer
-        if self.feature_engineer is not None:
-            try:
-                profile_dict = {
-                    "total_transactions": user_profile.total_transactions,
-                    "total_amount": user_profile.total_amount,
-                    "avg_transaction_amount": user_profile.avg_transaction_amount,
-                    "last_transaction_time": user_profile.last_transaction_time,
-                    "daily_transaction_count": user_profile.daily_transaction_count,
-                    "daily_amount": user_profile.daily_amount,
-                }
-                enriched = self.feature_engineer.compute_streaming_features(
-                    transaction, profile_dict
-                )
-                # Merge into available_features with "feat_" prefix for
-                # compatibility with batch-trained models
-                for key, value in enriched.items():
-                    available_features[f"feat_{key}"] = value
-            except Exception as e:
-                self.logger.debug(f"Enriched feature computation failed: {e}")
-        
-        # For each expected feature, use available value or sensible default
-        for feature_name in self.model_features:
-            if feature_name in available_features:
-                value = available_features[feature_name]
-                # Handle categorical features
-                if isinstance(value, str):
-                    # Simple categorical encoding (more sophisticated than needed but safe)
-                    features.append(float(hash(value) % 1000))
-                else:
-                    features.append(float(value))
+        for raw_key, raw_value in transaction.items():
+            model_key = self._PRODUCER_TO_MODEL_KEY.get(raw_key)
+            if model_key is not None:
+                txn_by_model_key[model_key] = raw_value
             else:
-                # Default values for missing features
-                if feature_name.startswith('V') or feature_name.startswith('C') or feature_name.startswith('D'):
-                    features.append(0.0)  # Numerical features default to 0
-                elif feature_name.startswith('id_'):
-                    features.append(0.0)  # Identity features default to 0
-                elif 'email' in feature_name.lower():
-                    features.append(0.0)  # Email features default to 0
-                else:
-                    features.append(0.0)  # All other features default to 0
+                # For keys not in the explicit map (card1, addr1, c4,
+                # m1, v12, id_11, ...) the producer key is already the
+                # same string the model uses modulo case.  Store both
+                # the raw key and an upper-first variant so lookups
+                # work regardless of case.
+                txn_by_model_key[raw_key] = raw_value
+                # V-features: producer sends "v12", model expects "V12"
+                # M-features: producer sends "m1", model expects "M1"
+                # C-features: producer sends "c4", model expects "C4"
+                # D-features: producer sends "d8", model expects "D8"
+                if len(raw_key) >= 2 and raw_key[0].isalpha() and raw_key[1:].replace('_', '').isdigit():
+                    txn_by_model_key[raw_key[0].upper() + raw_key[1:]] = raw_value
 
-        # Validate feature vector length matches model expectations
+        # -- collect numeric features ---------------------------------
+        available: Dict[str, float] = {}
+
+        # Numeric features that come directly from the transaction
+        _NUMERIC_FEATURES = [
+            'TransactionDT', 'TransactionAmt',
+            'card1', 'card2', 'card3', 'card5',
+            'addr1', 'addr2',
+            'C4', 'C7', 'C8', 'C10', 'C12',
+            'D8',
+            'id_11', 'id_13', 'id_17', 'id_19', 'id_20',
+        ]
+        for feat in _NUMERIC_FEATURES:
+            val = txn_by_model_key.get(feat)
+            if val is not None:
+                available[feat] = safe_float(val)
+
+        # V-features (147 specific V columns used by the model)
+        for feat_name in self.model_features:
+            if feat_name.startswith('V'):
+                val = txn_by_model_key.get(feat_name)
+                if val is not None:
+                    available[feat_name] = safe_float(val)
+
+        # -- encode categoricals with saved LabelEncoders -------------
+        for feat_name, encoder in self.label_encoders.items():
+            raw_value = txn_by_model_key.get(feat_name)
+            if raw_value is None or raw_value == '':
+                # Feature not present -- use 'unknown' if the encoder
+                # supports it, otherwise NaN.
+                if 'unknown' in encoder.classes_:
+                    available[feat_name] = float(
+                        encoder.transform(['unknown'])[0]
+                    )
+                else:
+                    available[feat_name] = _nan
+            else:
+                str_value = str(raw_value)
+                if str_value in encoder.classes_:
+                    available[feat_name] = float(
+                        encoder.transform([str_value])[0]
+                    )
+                elif 'unknown' in encoder.classes_:
+                    available[feat_name] = float(
+                        encoder.transform(['unknown'])[0]
+                    )
+                else:
+                    # No 'unknown' class and value unseen -- use NaN
+                    available[feat_name] = _nan
+
+        # -- derived / engineered features ----------------------------
+        amt_raw = txn_by_model_key.get('TransactionAmt')
+        amt = safe_float(amt_raw) if amt_raw is not None else _nan
+
+        if amt == amt:  # not NaN
+            available['TransactionAmt_log'] = float(np.log1p(amt))
+            available['TransactionAmt_decimal'] = amt - int(amt)
+            # Amount bin: 0=<50, 1=<100, 2=<200, 3=<500, 4=>=500
+            if amt < 50:
+                available['TransactionAmt_bin'] = 0.0
+            elif amt < 100:
+                available['TransactionAmt_bin'] = 1.0
+            elif amt < 200:
+                available['TransactionAmt_bin'] = 2.0
+            elif amt < 500:
+                available['TransactionAmt_bin'] = 3.0
+            else:
+                available['TransactionAmt_bin'] = 4.0
+        else:
+            available['TransactionAmt_log'] = _nan
+            available['TransactionAmt_decimal'] = _nan
+            available['TransactionAmt_bin'] = _nan
+
+        # -- assemble feature vector in model order -------------------
+        features: List[float] = []
+        for feat_name in self.model_features:
+            val = available.get(feat_name)
+            if val is not None:
+                features.append(float(val))
+            else:
+                features.append(_nan)  # XGBoost handles NaN natively
+
+        # -- validate length ------------------------------------------
         expected_len = len(self.model_features)
         actual_len = len(features)
         if expected_len > 0 and actual_len != expected_len:
             raise ValueError(
-                f"Feature vector length mismatch: model expects {expected_len} "
-                f"features but got {actual_len}"
+                f"Feature vector length mismatch: model expects "
+                f"{expected_len} features but got {actual_len}"
             )
 
-        # Apply feature scaler if one was loaded with the model
+        # -- apply scaler if present ----------------------------------
         if self.scaler is not None:
             try:
                 features = self.scaler.transform([features])[0].tolist()
             except Exception as e:
-                self.logger.debug(f"Scaler transform failed, using raw features: {e}")
+                self.logger.debug(
+                    f"Scaler transform failed, using raw features: {e}"
+                )
 
         return features
     
