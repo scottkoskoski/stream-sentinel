@@ -1,0 +1,80 @@
+# Stream-Sentinel Prometheus Alert Rules
+#
+# Defines alerting rules for the fraud detection pipeline.
+# Referenced from prometheus.yml via rule_files.
+
+groups:
+  - name: stream-sentinel-alerts
+    rules:
+      # ---------------------------------------------------------------
+      # Consumer lag: compare current lag with the value 10 minutes ago.
+      # Uses a simple offset subtraction instead of delta() over a
+      # subquery, which is fragile when data is sparse.
+      # ---------------------------------------------------------------
+      - alert: ConsumerLagIncreasing
+        expr: >-
+          sum by (consumer_group, topic) (kafka_consumer_lag_messages)
+          - sum by (consumer_group, topic) (kafka_consumer_lag_messages offset 10m)
+          > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer lag increasing for {{ $labels.consumer_group }}/{{ $labels.topic }}"
+          description: >-
+            Consumer group {{ $labels.consumer_group }} on topic
+            {{ $labels.topic }} has accumulated more than 5000 additional
+            lag messages over the last 10 minutes.
+
+      # ---------------------------------------------------------------
+      # Fraud rate anomaly: fires when the 1h fraud rate deviates by
+      # more than 3 standard deviations from its 6h moving average.
+      # The guard clause (stddev > 0) prevents false positives during
+      # cold-start or perfectly-stable periods where stddev is zero.
+      # ---------------------------------------------------------------
+      - alert: FraudRateAnomaly
+        expr: >-
+          abs(fraud_rate{time_window="1h"} - avg_over_time(fraud_rate{time_window="1h"}[6h]))
+          > 3 * stddev_over_time(fraud_rate{time_window="1h"}[6h])
+          and stddev_over_time(fraud_rate{time_window="1h"}[6h]) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fraud rate anomaly detected"
+          description: >-
+            The 1-hour fraud rate has deviated by more than 3 standard
+            deviations from its 6-hour moving average, indicating a
+            possible attack or model degradation.
+
+      # ---------------------------------------------------------------
+      # Model degradation: the ML model has been in rules_fallback for
+      # more than 5 minutes.
+      # ---------------------------------------------------------------
+      - alert: ModelDegraded
+        expr: >-
+          model_status_info{status="rules_fallback"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fraud detection running in degraded mode (rules fallback)"
+          description: >-
+            The ML model has been unavailable for more than 5 minutes.
+            Transactions are being scored using the rule-based fallback.
+
+      # ---------------------------------------------------------------
+      # High error rate: more than 10 errors per minute sustained for
+      # 5 minutes.
+      # ---------------------------------------------------------------
+      - alert: HighErrorRate
+        expr: >-
+          rate(errors_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.component }}"
+          description: >-
+            Component {{ $labels.component }} is experiencing a sustained
+            error rate of {{ $value | printf "%.1f" }} errors/second.

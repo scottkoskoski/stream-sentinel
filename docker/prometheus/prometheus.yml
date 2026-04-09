@@ -8,6 +8,9 @@ global:
   evaluation_interval: 15s
   scrape_timeout: 10s
 
+rule_files:
+  - "alert_rules.yml"
+
 scrape_configs:
   # Fraud Detector consumer -- primary fraud scoring pipeline
   - job_name: "fraud-detector"

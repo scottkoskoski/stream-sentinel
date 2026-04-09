@@ -310,7 +310,11 @@ class FraudDetector:
             )
         try:
             prom = get_prometheus_metrics("fraud-detector")
-            prom.model_status_info.labels(status=self.model_status).set(1.0)
+            # Set all status labels: 1.0 for the active status, 0.0 for others
+            for status in ("ml_primary", "rules_fallback", "loading"):
+                prom.model_status_info.labels(status=status).set(
+                    1.0 if status == self.model_status else 0.0
+                )
         except Exception:
             pass  # Prometheus not available
 
@@ -883,6 +887,12 @@ class FraudDetector:
             # Transition to degraded mode so subsequent transactions use
             # the rules path directly (avoids repeated inference failures).
             self.model_status = "rules_fallback"
+            try:
+                prom = get_prometheus_metrics("fraud-detector")
+                prom.model_status_info.labels(status="ml_primary").set(0.0)
+                prom.model_status_info.labels(status="rules_fallback").set(1.0)
+            except Exception:
+                pass  # Prometheus not available
 
             # Compute rule-based score for this transaction
             amount = float(transaction['transaction_amt'])
