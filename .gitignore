@@ -84,8 +84,13 @@ data/synthetic/
 *.json
 !docker/**/*.json
 !schemas/*.json
-!models/*.json
 *.parquet
+
+# Model artifacts -- derived/regenerable, only track the production pkl
+models/*.json
+models/onnx_exports/
+models/onnx_test/
+models/hyperparameter_results/
 models/trained/
 checkpoints/
 
