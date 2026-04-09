@@ -39,7 +39,7 @@ import pandas as pd
 import xgboost as xgb
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
-from sklearn.metrics import fbeta_score, make_scorer, roc_auc_score
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from .checkpoint_manager import CheckpointManager, ModelCheckpoint
@@ -145,7 +145,7 @@ class ModelObjective:
         checkpoint_manager: CheckpointManager,
         cv_folds: int = 5,
         random_state: int = 42,
-        optimization_metric: str = "f2",
+        use_gpu: bool = True,
     ):
         """
         Initialize model objective function.
@@ -156,26 +156,20 @@ class ModelObjective:
             checkpoint_manager: Checkpoint manager for immediate persistence
             cv_folds: Number of cross-validation folds
             random_state: Random state for reproducibility
-            optimization_metric: Primary optimization metric ('f2' or 'roc_auc')
+            use_gpu: Whether to use GPU acceleration for training
         """
         self.model_type = model_type
         self.data = data
         self.checkpoint_manager = checkpoint_manager
         self.cv_folds = cv_folds
         self.random_state = random_state
-        self.optimization_metric = optimization_metric
+        self.use_gpu = use_gpu
         self.logger = logging.getLogger(__name__)
 
         # Cross-validation setup
-        self.cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
-
-        # Configure scoring based on optimization metric
-        if self.optimization_metric == "f2":
-            self.scorer = make_scorer(fbeta_score, beta=2)
-            self.metric_name = "F2-score"
-        else:
-            self.scorer = "roc_auc"
-            self.metric_name = "AUC"
+        self.cv = StratifiedKFold(
+            n_splits=cv_folds, shuffle=True, random_state=random_state
+        )
 
         # Performance tracking
         self.trial_count = 0
@@ -189,7 +183,7 @@ class ModelObjective:
             trial: Optuna trial object
 
         Returns:
-            Cross-validation score for the trial (F2-score or AUC depending on config)
+            Cross-validation AUC score for the trial
         """
         self.trial_count += 1
         trial_start_time = time.time()
@@ -215,8 +209,6 @@ class ModelObjective:
                     "cv_mean": mean_score,
                     "cv_std": np.std(cv_scores),
                     "cv_scores": cv_scores.tolist(),
-                    "optimization_metric": self.optimization_metric,
-                    "metric_name": self.metric_name,
                 },
                 feature_count=self.data.X.shape[1],
                 data_hash=self.data.data_hash,
@@ -230,7 +222,6 @@ class ModelObjective:
                 extra={
                     "trial_number": trial.number,
                     "model_type": self.model_type,
-                    "optimization_metric": self.metric_name,
                     "score": mean_score,
                     "checkpoint_id": checkpoint_id,
                     "trial_duration": time.time() - trial_start_time,
@@ -251,8 +242,10 @@ class ModelObjective:
                 },
             )
 
-            # Return very low score for failed trials to avoid selection
-            return -1.0
+            # Mark the trial as pruned so Optuna excludes it from study
+            # statistics and the TPE sampler.  Returning a sentinel like
+            # -1.0 would pollute the score distribution.
+            raise optuna.TrialPruned(f"Trial {trial.number} failed: {e}") from e
 
     def _suggest_hyperparameters(self, trial: optuna.Trial) -> Dict[str, Any]:
         """Suggest hyperparameters based on model type."""
@@ -260,60 +253,73 @@ class ModelObjective:
             return {
                 "n_estimators": trial.suggest_int("n_estimators", 100, 3000, step=50),
                 "max_depth": trial.suggest_int("max_depth", 3, 20),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.01, 0.3, log=True
+                ),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
                 "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
                 "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 10.0),
                 "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 10.0),
-                # Cost-sensitive learning: scale_pos_weight compensates for class
-                # imbalance. For a 2.71% fraud rate the theoretical optimum is ~35.8
-                # (ratio of negatives to positives). Log scale lets Optuna explore
-                # the full range efficiently.
-                "scale_pos_weight": trial.suggest_float("scale_pos_weight", 1.0, 40.0, log=True),
                 "random_state": self.random_state,
             }
         elif self.model_type == "lightgbm":
             return {
                 "n_estimators": trial.suggest_int("n_estimators", 100, 3000, step=50),
                 "max_depth": trial.suggest_int("max_depth", 3, 20),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.01, 0.3, log=True
+                ),
                 "subsample": trial.suggest_float("subsample", 0.6, 1.0),
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
                 "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
                 "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 10.0),
                 "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 10.0),
-                # Cost-sensitive learning for LightGBM (same rationale as XGBoost)
-                "scale_pos_weight": trial.suggest_float("scale_pos_weight", 1.0, 40.0, log=True),
                 "random_state": self.random_state,
             }
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def _train_with_cv(self, params: Dict[str, Any], trial: optuna.Trial) -> Tuple[np.ndarray, Any]:
+    def _train_with_cv(
+        self, params: Dict[str, Any], trial: optuna.Trial
+    ) -> Tuple[np.ndarray, Any]:
         """Train model with cross-validation and return scores and final model."""
 
-        # Create model based on type
+        # Create model based on type, gating GPU usage on self.use_gpu
         if self.model_type == "xgboost":
-            model = xgb.XGBClassifier(
+            model_params = {
                 **params,
-                tree_method="gpu_hist",
-                gpu_id=0,
-                eval_metric="auc",
-                verbosity=0,
-            )
+                "eval_metric": "auc",
+                "verbosity": 0,
+            }
+            if self.use_gpu:
+                model_params["tree_method"] = "gpu_hist"
+                model_params["gpu_id"] = 0
+            else:
+                model_params["tree_method"] = "hist"  # CPU-optimized
+            model = xgb.XGBClassifier(**model_params)
         elif self.model_type == "lightgbm":
-            model = lgb.LGBMClassifier(**params, device="gpu", objective="binary", metric="auc", verbosity=-1)
+            model_params = {
+                **params,
+                "objective": "binary",
+                "metric": "auc",
+                "verbosity": -1,
+            }
+            if self.use_gpu:
+                model_params["device"] = "gpu"
+            else:
+                model_params["device"] = "cpu"
+            model = lgb.LGBMClassifier(**model_params)
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
-        # Cross-validation with configured scoring metric (F2-score or AUC)
+        # Cross-validation with AUC scoring
         cv_scores = cross_val_score(
             model,
             self.data.X,
             self.data.y,
             cv=self.cv,
-            scoring=self.scorer,
+            scoring="roc_auc",
             n_jobs=1,  # Use single job to avoid GPU conflicts
         )
 
@@ -349,9 +355,6 @@ class HyperparameterOptimizer:
         self.n_jobs = config.get("n_jobs", 1)  # Single job for GPU optimization
         self.cv_folds = config.get("cv_folds", 5)
 
-        # Optimization metric: 'f2' (default, recall-weighted) or 'roc_auc'
-        self.optimization_metric = config.get("optimization_metric", "f2")
-
         # Study storage
         study_dir = Path(config.get("study_dir", "models/hyperparameter_studies"))
         study_dir.mkdir(parents=True, exist_ok=True)
@@ -370,19 +373,20 @@ class HyperparameterOptimizer:
                 "n_trials": self.n_trials,
                 "timeout_seconds": self.timeout,
                 "cv_folds": self.cv_folds,
-                "optimization_metric": self.optimization_metric,
                 "study_storage": self.study_storage,
             },
         )
 
-    def create_study(self, study_name: str, model_type: str, direction: str = "maximize") -> StudyHandle:
+    def create_study(
+        self, study_name: str, model_type: str, direction: str = "maximize"
+    ) -> StudyHandle:
         """
         Create or load Optuna study with persistence.
 
         Args:
             study_name: Unique study identifier
             model_type: Type of model to optimize
-            direction: Optimization direction ('maximize' for F2/AUC)
+            direction: Optimization direction ('maximize' for AUC)
 
         Returns:
             StudyHandle for managing the optimization
@@ -424,7 +428,9 @@ class HyperparameterOptimizer:
 
                     # Calculate trials since improvement
                     best_trial_number = best_trial.number
-                    study_handle.trials_since_improvement = len(study.trials) - best_trial_number - 1
+                    study_handle.trials_since_improvement = (
+                        len(study.trials) - best_trial_number - 1
+                    )
 
                 self.active_studies[study_name] = study_handle
 
@@ -449,7 +455,9 @@ class HyperparameterOptimizer:
                         "error": str(e),
                     },
                 )
-                raise OptimizationError(f"Failed to create study {study_name}: {e}") from e
+                raise OptimizationError(
+                    f"Failed to create study {study_name}: {e}"
+                ) from e
 
     def optimize(
         self,
@@ -471,13 +479,13 @@ class HyperparameterOptimizer:
         optimization_start_time = time.time()
 
         try:
-            # Create objective function
+            # Create objective function, threading GPU config through
             objective = ModelObjective(
                 model_type=study_handle.model_type,
                 data=data,
                 checkpoint_manager=self.checkpoint_manager,
                 cv_folds=self.cv_folds,
-                optimization_metric=self.optimization_metric,
+                use_gpu=self.config.get("enable_gpu", True),
             )
 
             # Setup callbacks for progress monitoring
@@ -488,13 +496,11 @@ class HyperparameterOptimizer:
             callbacks.append(self._create_checkpointing_callback(study_handle))
 
             # Run optimization
-            metric_label = "F2-score" if self.optimization_metric == "f2" else "AUC"
             self.logger.info(
                 "optimization.started",
                 extra={
                     "study_id": study_handle.study_id,
                     "model_type": study_handle.model_type,
-                    "optimization_metric": metric_label,
                     "n_trials": self.n_trials,
                     "timeout_seconds": self.timeout,
                 },
@@ -525,9 +531,15 @@ class HyperparameterOptimizer:
                             "trial_number": trial.number,
                             "value": trial.value,
                             "params": trial.params,
-                            "datetime_start": (trial.datetime_start.isoformat() if trial.datetime_start else None),
+                            "datetime_start": (
+                                trial.datetime_start.isoformat()
+                                if trial.datetime_start
+                                else None
+                            ),
                             "datetime_complete": (
-                                trial.datetime_complete.isoformat() if trial.datetime_complete else None
+                                trial.datetime_complete.isoformat()
+                                if trial.datetime_complete
+                                else None
                             ),
                         }
                     )
@@ -570,7 +582,9 @@ class HyperparameterOptimizer:
                     "optimization_time": time.time() - optimization_start_time,
                 },
             )
-            raise OptimizationError(f"Optimization failed for {study_handle.study_id}: {e}") from e
+            raise OptimizationError(
+                f"Optimization failed for {study_handle.study_id}: {e}"
+            ) from e
 
     def resume_study(self, study_name: str) -> Optional[StudyHandle]:
         """Resume interrupted optimization study."""
@@ -596,7 +610,9 @@ class HyperparameterOptimizer:
 
             # Calculate trials since improvement
             best_trial_number = best_trial.number
-            study_handle.trials_since_improvement = len(study.trials) - best_trial_number - 1
+            study_handle.trials_since_improvement = (
+                len(study.trials) - best_trial_number - 1
+            )
 
             self.active_studies[study_name] = study_handle
 
@@ -612,7 +628,9 @@ class HyperparameterOptimizer:
             return study_handle
 
         except Exception as e:
-            self.logger.error("study.resume_failed", extra={"study_name": study_name, "error": str(e)})
+            self.logger.error(
+                "study.resume_failed", extra={"study_name": study_name, "error": str(e)}
+            )
             return None
 
     def _create_progress_callback(self, study_handle: StudyHandle) -> Callable:
@@ -662,7 +680,9 @@ class HyperparameterOptimizer:
     def _compute_convergence_stats(self, study_handle: StudyHandle) -> Dict[str, Any]:
         """Compute convergence statistics."""
         trials = study_handle.study.trials
-        completed_trials = [t for t in trials if t.state == optuna.trial.TrialState.COMPLETE]
+        completed_trials = [
+            t for t in trials if t.state == optuna.trial.TrialState.COMPLETE
+        ]
 
         if not completed_trials:
             return {"n_trials": 0, "convergence_detected": False}
@@ -676,7 +696,8 @@ class HyperparameterOptimizer:
             "std_score": np.std(scores),
             "convergence_detected": study_handle.has_converged,
             "trials_since_improvement": study_handle.trials_since_improvement,
-            "improvement_rate": len([s for s in scores if s == max(scores)]) / len(scores),
+            "improvement_rate": len([s for s in scores if s == max(scores)])
+            / len(scores),
         }
 
     def _collect_resource_usage(self, optimization_time: float) -> Dict[str, Any]:
@@ -692,14 +713,18 @@ class HyperparameterOptimizer:
 
     def _save_optimization_results(self, result: OptimizationResult) -> None:
         """Save comprehensive optimization results."""
-        results_dir = Path(self.config.get("results_dir", "models/hyperparameter_results"))
+        results_dir = Path(
+            self.config.get("results_dir", "models/hyperparameter_results")
+        )
         results_dir.mkdir(parents=True, exist_ok=True)
 
         model_dir = results_dir / result.study_handle.model_type
         model_dir.mkdir(parents=True, exist_ok=True)
 
         # Save convergence stats
-        convergence_file = model_dir / f"{result.study_handle.study_id}_convergence_stats.json"
+        convergence_file = (
+            model_dir / f"{result.study_handle.study_id}_convergence_stats.json"
+        )
         convergence_data = {
             "study_id": result.study_handle.study_id,
             "model_type": result.study_handle.model_type,
