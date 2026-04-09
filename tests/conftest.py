@@ -419,5 +419,5 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.slow)
             
         # Add requires_infrastructure to tests that need full stack
-        if any(keyword in str(item.fspath) for keyword in ["e2e", "performance", "chaos"]):
+        if any(keyword in str(item.fspath) for keyword in ["e2e", "performance", "chaos", "scaling"]):
             item.add_marker(pytest.mark.requires_infrastructure)
