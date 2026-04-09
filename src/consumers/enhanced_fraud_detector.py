@@ -51,6 +51,15 @@ try:
 except ImportError:
     ONLINE_LEARNING_AVAILABLE = False
 
+# Distributed tracing
+try:
+    from tracing.correlation import TracingContext
+    from tracing.middleware import traced_consume, traced_produce
+
+    TRACING_AVAILABLE = True
+except ImportError:
+    TRACING_AVAILABLE = False
+
 # Import original fraud detector components
 try:
     from consumers.fraud_detector import FraudFeatures, UserProfile
@@ -160,11 +169,15 @@ class EnhancedFraudDetector:
             try:
                 self.online_config = get_online_learning_config()
             except Exception as e:
-                self.logger.warning(f"Failed to load online learning config, using defaults: {e}")
+                self.logger.warning(
+                    f"Failed to load online learning config, using defaults: {e}"
+                )
                 self.online_learning_available = False
                 self.online_config = None
         else:
-            self.logger.warning("Online learning modules not importable; running in degraded mode")
+            self.logger.warning(
+                "Online learning modules not importable; running in degraded mode"
+            )
             self.online_config = None
 
         # Initialize connections
@@ -196,9 +209,6 @@ class EnhancedFraudDetector:
         self.drift_monitoring_enabled = self.online_learning_available
         self.feature_buffer = []
         self.max_buffer_size = 1000
-
-        # Health check server reference (set by main() after construction)
-        self._health_server = None
 
         # Graceful shutdown
         self.running = False
@@ -234,9 +244,21 @@ class EnhancedFraudDetector:
     def _init_redis(self) -> None:
         """Initialize Redis connections."""
         try:
-            redis_host = getattr(self.online_config, "redis_host", "localhost") if self.online_config else "localhost"
-            redis_port = getattr(self.online_config, "redis_port", 6379) if self.online_config else 6379
-            redis_password = getattr(self.online_config, "redis_password", None) if self.online_config else None
+            redis_host = (
+                getattr(self.online_config, "redis_host", "localhost")
+                if self.online_config
+                else "localhost"
+            )
+            redis_port = (
+                getattr(self.online_config, "redis_port", 6379)
+                if self.online_config
+                else 6379
+            )
+            redis_password = (
+                getattr(self.online_config, "redis_password", None)
+                if self.online_config
+                else None
+            )
 
             self.redis_client = redis.Redis(
                 host=redis_host,
@@ -258,26 +280,34 @@ class EnhancedFraudDetector:
         self.drift_detector = None
 
         if not self.online_learning_available:
-            self.logger.info("Online learning components disabled (modules not available)")
+            self.logger.info(
+                "Online learning components disabled (modules not available)"
+            )
             return
 
         try:
             self.model_registry = ModelRegistry(self.online_config)
             self.logger.info("ModelRegistry initialized")
         except Exception as e:
-            self.logger.warning(f"Failed to initialize ModelRegistry, continuing without it: {e}")
+            self.logger.warning(
+                f"Failed to initialize ModelRegistry, continuing without it: {e}"
+            )
 
         try:
             self.ab_test_manager = ABTestManager(self.online_config)
             self.logger.info("ABTestManager initialized")
         except Exception as e:
-            self.logger.warning(f"Failed to initialize ABTestManager, continuing without it: {e}")
+            self.logger.warning(
+                f"Failed to initialize ABTestManager, continuing without it: {e}"
+            )
 
         try:
             self.drift_detector = DriftDetector(self.online_config)
             self.logger.info("DriftDetector initialized")
         except Exception as e:
-            self.logger.warning(f"Failed to initialize DriftDetector, continuing without it: {e}")
+            self.logger.warning(
+                f"Failed to initialize DriftDetector, continuing without it: {e}"
+            )
 
     def _load_production_model(self) -> bool:
         """Load the current production model."""
@@ -329,10 +359,6 @@ class EnhancedFraudDetector:
 
         try:
             while self.running:
-                # Signal liveness to health check server
-                if self._health_server is not None:
-                    self._health_server.heartbeat()
-
                 # Poll for new transactions
                 message = self.consumer.poll(timeout=1.0)
 
@@ -343,6 +369,11 @@ class EnhancedFraudDetector:
                     if message.error().code() != KafkaError._PARTITION_EOF:
                         self.logger.error(f"Consumer error: {message.error()}")
                     continue
+
+                # Extract tracing context from message headers
+                tracing_ctx = None
+                if TRACING_AVAILABLE:
+                    tracing_ctx = traced_consume(message)
 
                 # Process transaction
                 try:
@@ -355,6 +386,9 @@ class EnhancedFraudDetector:
                 except Exception as e:
                     self.logger.error(f"Error processing transaction: {e}")
                     continue
+                finally:
+                    if tracing_ctx is not None:
+                        tracing_ctx.detach()
 
                 # Periodic tasks
                 if self.prediction_count % 100 == 0:
@@ -368,7 +402,9 @@ class EnhancedFraudDetector:
         finally:
             self._cleanup()
 
-    def _process_transaction(self, transaction_data: Dict[str, Any]) -> Optional[EnhancedPredictionResult]:
+    def _process_transaction(
+        self, transaction_data: Dict[str, Any]
+    ) -> Optional[EnhancedPredictionResult]:
         """Process a single transaction with online learning enhancements."""
         start_time = time.time()
 
@@ -385,7 +421,9 @@ class EnhancedFraudDetector:
             # Determine A/B test variant
             ab_variant = None
             if self.ab_test_active and self.ab_test_manager is not None:
-                ab_variant = self.ab_test_manager.assign_variant(user_id, transaction_data)
+                ab_variant = self.ab_test_manager.assign_variant(
+                    user_id, transaction_data
+                )
 
             # Select model based on A/B test
             model_to_use = self._select_model_for_prediction(ab_variant)
@@ -394,7 +432,9 @@ class EnhancedFraudDetector:
             features = self._engineer_features(transaction_data, user_profile)
 
             # Make prediction
-            fraud_score = self._predict_fraud_score(model_to_use, features, transaction_data)
+            fraud_score = self._predict_fraud_score(
+                model_to_use, features, transaction_data
+            )
 
             # Determine fraud alert
             is_fraud_alert = fraud_score >= 0.7  # Default threshold
@@ -424,7 +464,9 @@ class EnhancedFraudDetector:
                 model_confidence=self._calculate_model_confidence(fraud_score),
                 drift_indicators=self._get_drift_indicators(),
                 risk_level=self._determine_risk_level(fraud_score, features),
-                recommended_actions=self._get_recommended_actions(fraud_score, features),
+                recommended_actions=self._get_recommended_actions(
+                    fraud_score, features
+                ),
             )
 
             # Update counters
@@ -435,7 +477,9 @@ class EnhancedFraudDetector:
             return prediction_result
 
         except Exception as e:
-            self.logger.error(f"Error processing transaction {transaction_data.get('TransactionID')}: {e}")
+            self.logger.error(
+                f"Error processing transaction {transaction_data.get('TransactionID')}: {e}"
+            )
             return None
 
     def _get_user_profile(self, user_id: str) -> UserProfile:
@@ -479,7 +523,9 @@ class EnhancedFraudDetector:
 
         return self.current_model
 
-    def _engineer_features(self, transaction_data: Dict[str, Any], user_profile: UserProfile) -> FraudFeatures:
+    def _engineer_features(
+        self, transaction_data: Dict[str, Any], user_profile: UserProfile
+    ) -> FraudFeatures:
         """Engineer fraud detection features with enhancements."""
         # Basic transaction features
         transaction_id = transaction_data.get("TransactionID", "")
@@ -494,7 +540,9 @@ class EnhancedFraudDetector:
 
         # User behavior features
         amount_vs_avg_ratio = (
-            amount / max(user_profile.avg_transaction_amount, 1.0) if user_profile.avg_transaction_amount > 0 else 1.0
+            amount / max(user_profile.avg_transaction_amount, 1.0)
+            if user_profile.avg_transaction_amount > 0
+            else 1.0
         )
 
         time_since_last = 0.0
@@ -503,16 +551,22 @@ class EnhancedFraudDetector:
             time_since_last = (transaction_time - last_time).total_seconds()
 
         amount_vs_last_ratio = (
-            amount / max(user_profile.last_transaction_amount, 1.0) if user_profile.last_transaction_amount > 0 else 1.0
+            amount / max(user_profile.last_transaction_amount, 1.0)
+            if user_profile.last_transaction_amount > 0
+            else 1.0
         )
 
         # Risk indicators
         is_high_amount = amount > 1000  # High amount threshold
-        is_unusual_hour = transaction_hour < 6 or transaction_hour > 22  # Outside normal hours
+        is_unusual_hour = (
+            transaction_hour < 6 or transaction_hour > 22
+        )  # Outside normal hours
         is_rapid_transaction = time_since_last < 300  # Less than 5 minutes
 
         # Velocity score (enhanced)
-        velocity_score = user_profile.daily_transaction_count / max(1, (transaction_time.hour + 1) / 24.0)
+        velocity_score = user_profile.daily_transaction_count / max(
+            1, (transaction_time.hour + 1) / 24.0
+        )
 
         # Create features object (fraud_score will be set later)
         features = FraudFeatures(
@@ -536,7 +590,9 @@ class EnhancedFraudDetector:
 
         return features
 
-    def _predict_fraud_score(self, model: Any, features: FraudFeatures, transaction_data: Dict[str, Any]) -> float:
+    def _predict_fraud_score(
+        self, model: Any, features: FraudFeatures, transaction_data: Dict[str, Any]
+    ) -> float:
         """Make fraud prediction with model fallback."""
         try:
             if model is None:
@@ -561,7 +617,9 @@ class EnhancedFraudDetector:
             self.logger.error(f"Prediction failed, using rule-based fallback: {e}")
             return self._rule_based_fraud_score(features)
 
-    def _prepare_feature_vector(self, features: FraudFeatures, transaction_data: Dict[str, Any]) -> np.ndarray:
+    def _prepare_feature_vector(
+        self, features: FraudFeatures, transaction_data: Dict[str, Any]
+    ) -> np.ndarray:
         """Prepare feature vector for model prediction."""
         # Create feature vector based on available transaction data
         # This is a simplified version - in production, you'd match the exact training features
@@ -638,12 +696,16 @@ class EnhancedFraudDetector:
         else:
             return "low"
 
-    def _get_recommended_actions(self, fraud_score: float, features: FraudFeatures) -> List[str]:
+    def _get_recommended_actions(
+        self, fraud_score: float, features: FraudFeatures
+    ) -> List[str]:
         """Get recommended actions based on fraud assessment."""
         actions = []
 
         if fraud_score >= 0.9:
-            actions.extend(["block_transaction", "freeze_account", "immediate_investigation"])
+            actions.extend(
+                ["block_transaction", "freeze_account", "immediate_investigation"]
+            )
         elif fraud_score >= 0.7:
             actions.extend(["require_additional_authentication", "flag_for_review"])
         elif fraud_score >= 0.5:
@@ -657,7 +719,9 @@ class EnhancedFraudDetector:
 
         return list(set(actions))  # Remove duplicates
 
-    def _update_user_profile(self, profile: UserProfile, amount: float, transaction_dt: int) -> None:
+    def _update_user_profile(
+        self, profile: UserProfile, amount: float, transaction_dt: int
+    ) -> None:
         """Update user profile with new transaction."""
         transaction_time = datetime.fromtimestamp(transaction_dt)
         timestamp_str = transaction_time.isoformat()
@@ -668,7 +732,9 @@ class EnhancedFraudDetector:
         # Update overall stats
         profile.update_transaction_stats(amount, timestamp_str)
 
-    def _add_to_drift_monitoring(self, features: FraudFeatures, prediction: float) -> None:
+    def _add_to_drift_monitoring(
+        self, features: FraudFeatures, prediction: float
+    ) -> None:
         """Add sample to drift monitoring buffer."""
         if len(self.feature_buffer) >= self.max_buffer_size:
             self.feature_buffer.pop(0)
@@ -685,7 +751,9 @@ class EnhancedFraudDetector:
 
         # Add to drift detector if available
         if self.drift_detector is not None:
-            self.drift_detector.add_prediction_sample(feature_dict, prediction, actual_label=None)
+            self.drift_detector.add_prediction_sample(
+                feature_dict, prediction, actual_label=None
+            )
 
     def _handle_prediction_result(self, result: EnhancedPredictionResult) -> None:
         """Handle prediction result - publish alerts and record metrics."""
@@ -731,12 +799,27 @@ class EnhancedFraudDetector:
                 "drift_indicators": result.drift_indicators,
             }
 
-            self.producer.produce(
-                "fraud-alerts",
-                key=result.transaction_id,
-                value=json.dumps(alert),
-                callback=self._delivery_callback,
-            )
+            # Include correlation ID in the alert payload
+            if TRACING_AVAILABLE:
+                corr_id = TracingContext.current_correlation_id()
+                if corr_id:
+                    alert["correlation_id"] = corr_id
+
+            if TRACING_AVAILABLE:
+                traced_produce(
+                    self.producer,
+                    "fraud-alerts",
+                    json.dumps(alert),
+                    key=result.transaction_id,
+                    callback=self._delivery_callback,
+                )
+            else:
+                self.producer.produce(
+                    "fraud-alerts",
+                    key=result.transaction_id,
+                    value=json.dumps(alert),
+                    callback=self._delivery_callback,
+                )
 
         except Exception as e:
             self.logger.error(f"Failed to publish fraud alert: {e}")
@@ -794,7 +877,9 @@ class EnhancedFraudDetector:
             if self.drift_monitoring_enabled and self.drift_detector is not None:
                 drift_alerts = self.drift_detector.detect_drift()
                 if drift_alerts:
-                    self.logger.info(f"Drift detection found {len(drift_alerts)} alerts")
+                    self.logger.info(
+                        f"Drift detection found {len(drift_alerts)} alerts"
+                    )
 
             # Save performance statistics
             self._save_performance_stats()
@@ -833,7 +918,8 @@ class EnhancedFraudDetector:
             stats = {
                 "prediction_count": self.prediction_count,
                 "fraud_detection_count": self.fraud_detection_count,
-                "fraud_rate": self.fraud_detection_count / max(1, self.prediction_count),
+                "fraud_rate": self.fraud_detection_count
+                / max(1, self.prediction_count),
                 "predictions_per_hour": self.prediction_count / max(0.1, uptime_hours),
                 "uptime_hours": uptime_hours,
                 "last_updated": datetime.now().isoformat(),
@@ -876,52 +962,17 @@ def main():
     """Main entry point."""
     configure_logging()
 
-    # Start combined Prometheus metrics + health check server on port 8003
-    health_server = None
+    # Start Prometheus metrics server on port 8003 (daemon thread, non-blocking)
     try:
-        from monitoring.health import HealthCheckServer, make_kafka_check, make_redis_check
-
         metrics = get_prometheus_metrics(component_name="enhanced-fraud-detector")
-        health_server = HealthCheckServer(registry=metrics.registry)
-        metrics.set_health_server(health_server)
         metrics.start_metrics_server(port=8003)
-        get_logger(__name__).info("Combined metrics + health server started on port 8003")
+        get_logger(__name__).info("Prometheus metrics server started on port 8003")
     except Exception as e:
-        get_logger(__name__).warning(f"Failed to start metrics server: {e} -- continuing without metrics endpoint")
+        get_logger(__name__).warning(
+            f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
+        )
 
     detector = EnhancedFraudDetector()
-
-    # Register health checks now that the detector is fully initialised
-    if health_server is not None:
-        detector._health_server = health_server
-        health_server.register_check("kafka", make_kafka_check(detector.consumer))
-        health_server.register_check("redis", make_redis_check(detector.redis_client))
-
-        # Custom model check for enhanced detector (uses current_model, not ml_model)
-        def _model_check():
-            if detector.current_model is not None:
-                return {
-                    "status": "loaded",
-                    "model_type": type(detector.current_model).__name__,
-                    "scoring_mode": "ml_primary",
-                    "ab_test_active": detector.ab_test_active,
-                }
-            return {"status": "loading", "scoring_mode": "loading"}
-
-        health_server.register_check("model", _model_check)
-
-        def _metrics_summary():
-            uptime = time.time() - detector.start_time
-            tps = detector.prediction_count / max(uptime, 1)
-            return {
-                "messages_processed": detector.prediction_count,
-                "fraud_detections": detector.fraud_detection_count,
-                "throughput_tps": round(tps, 2),
-                "ab_test_active": detector.ab_test_active,
-            }
-
-        health_server.set_metrics_summary_fn(_metrics_summary)
-
     detector.run()
 
 

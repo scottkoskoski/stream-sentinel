@@ -43,10 +43,15 @@ CONTEXT_FIELDS = [
     "partition",
     "offset",
     "component",
+    "correlation_id",
+    "span_id",
+    "parent_span_id",
 ]
 
 
-class StreamSentinelJsonFormatter(jsonlogger.JsonFormatter if JSON_LOGGER_AVAILABLE else logging.Formatter):
+class StreamSentinelJsonFormatter(
+    jsonlogger.JsonFormatter if JSON_LOGGER_AVAILABLE else logging.Formatter
+):
     """JSON formatter that always includes timestamp, level, logger name, and message."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -80,6 +85,32 @@ class StreamSentinelJsonFormatter(jsonlogger.JsonFormatter if JSON_LOGGER_AVAILA
             if value is not None:
                 log_record[field] = value
 
+        # Auto-inject tracing context from the active TracingContext when
+        # correlation_id is not already set via extra={}
+        if "correlation_id" not in log_record:
+            tracing_ctx = _get_active_tracing_context()
+            if tracing_ctx is not None:
+                for key, val in tracing_ctx.items():
+                    if key not in log_record:
+                        log_record[key] = val
+
+
+def _get_active_tracing_context() -> Optional[Dict[str, Any]]:
+    """Return the active TracingContext fields, or None.
+
+    Imports ``tracing.correlation.TracingContext`` lazily to avoid circular
+    imports (the tracing module may import logging utilities itself).
+    """
+    try:
+        from tracing.correlation import TracingContext
+
+        ctx = TracingContext.current()
+        if ctx is not None:
+            return ctx.to_dict()
+    except ImportError:
+        pass
+    return None
+
 
 class _PlainJsonFormatter(logging.Formatter):
     """Minimal JSON-ish fallback when python-json-logger is not installed.
@@ -98,6 +129,15 @@ class _PlainJsonFormatter(logging.Formatter):
             value = getattr(record, field, None)
             if value is not None:
                 extras.append(f"{field}={value}")
+
+        # Auto-inject tracing context when not already present
+        if not any(e.startswith("correlation_id=") for e in extras):
+            tracing_ctx = _get_active_tracing_context()
+            if tracing_ctx is not None:
+                for key, val in tracing_ctx.items():
+                    if not any(e.startswith(f"{key}=") for e in extras):
+                        extras.append(f"{key}={val}")
+
         if extras:
             return f"{base} | {' '.join(extras)}"
         return base

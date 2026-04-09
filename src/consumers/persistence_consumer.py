@@ -22,7 +22,12 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from kafka.config import get_kafka_config
 from persistence.database import close_persistence_layer, get_persistence_layer
-from persistence.schemas import AlertSeverity, AlertStatus, FraudAlert, TransactionRecord
+from persistence.schemas import (
+    AlertSeverity,
+    AlertStatus,
+    FraudAlert,
+    TransactionRecord,
+)
 from utils.logging import ContextLogger, configure_logging, get_logger
 
 try:
@@ -38,6 +43,15 @@ try:
     DLQ_AVAILABLE = True
 except ImportError:
     DLQ_AVAILABLE = False
+
+# Distributed tracing
+try:
+    from tracing.correlation import TracingContext, extract_correlation_id
+    from tracing.middleware import traced_consume
+
+    TRACING_AVAILABLE = True
+except ImportError:
+    TRACING_AVAILABLE = False
 
 
 class PersistenceConsumer:
@@ -64,9 +78,6 @@ class PersistenceConsumer:
         self.batch_timeout_ms = 1000
         self.current_batch = []
         self.last_batch_time = time.time()
-
-        # Health check server reference (set by main() after construction)
-        self._health_server = None
 
         self._initialize_consumer()
         self._setup_signal_handlers()
@@ -135,10 +146,6 @@ class PersistenceConsumer:
 
         try:
             while self.running:
-                # Signal liveness to health check server
-                if self._health_server is not None:
-                    self._health_server.heartbeat()
-
                 self._process_messages()
                 self._check_batch_timeout()
                 self._log_metrics()
@@ -180,9 +187,21 @@ class PersistenceConsumer:
 
     def _handle_message(self, msg):
         """Handle individual Kafka message."""
+        # Extract tracing context from message headers
+        tracing_ctx = None
+        if TRACING_AVAILABLE:
+            tracing_ctx = traced_consume(msg)
+
         try:
             topic = msg.topic()
             value = json.loads(msg.value().decode("utf-8"))
+
+            # Extract correlation_id from tracing context or message payload
+            correlation_id = None
+            if TRACING_AVAILABLE and tracing_ctx:
+                correlation_id = tracing_ctx.correlation_id
+            if correlation_id is None:
+                correlation_id = value.get("correlation_id")
 
             # Add to batch for processing
             self.current_batch.append(
@@ -192,6 +211,7 @@ class PersistenceConsumer:
                     "timestamp": datetime.now(timezone.utc),
                     "partition": msg.partition(),
                     "offset": msg.offset(),
+                    "correlation_id": correlation_id,
                 }
             )
 
@@ -233,11 +253,17 @@ class PersistenceConsumer:
                     )
                 except Exception as dlq_err:
                     self.logger.error(f"DLQ publish failed: {dlq_err}")
+        finally:
+            if tracing_ctx is not None:
+                tracing_ctx.detach()
 
     def _check_batch_timeout(self):
         """Check if batch should be processed due to timeout."""
         current_time = time.time()
-        if self.current_batch and (current_time - self.last_batch_time) * 1000 > self.batch_timeout_ms:
+        if (
+            self.current_batch
+            and (current_time - self.last_batch_time) * 1000 > self.batch_timeout_ms
+        ):
             self._process_batch()
 
     def _process_batch(self):
@@ -262,7 +288,9 @@ class PersistenceConsumer:
                 self._process_topic_batch(topic, messages)
 
             processing_time = (time.time() - start_time) * 1000
-            self.logger.debug(f"Processed batch of {batch_size} messages in {processing_time:.2f}ms")
+            self.logger.debug(
+                f"Processed batch of {batch_size} messages in {processing_time:.2f}ms"
+            )
 
         except Exception as e:
             self.logger.error(f"Error processing batch: {e}")
@@ -317,7 +345,9 @@ class PersistenceConsumer:
                         severity=AlertSeverity(data.get("severity")),
                         fraud_score=transaction.fraud_score,
                         ml_prediction=float(data.get("ml_prediction", 0)),
-                        business_rules_triggered=data.get("business_rules_triggered", []),
+                        business_rules_triggered=data.get(
+                            "business_rules_triggered", []
+                        ),
                         explanation=data.get("explanation", {}),
                     )
 
@@ -331,7 +361,9 @@ class PersistenceConsumer:
                     )
                 else:
                     # Just persist transaction record to ClickHouse
-                    self.persistence_layer.clickhouse.insert_transaction_record(transaction)
+                    self.persistence_layer.clickhouse.insert_transaction_record(
+                        transaction
+                    )
 
             except Exception as e:
                 self.logger.error(f"Error processing fraud detection message: {e}")
@@ -380,7 +412,9 @@ class PersistenceConsumer:
                 self.processing_errors += 1
 
         if transactions:
-            success = self.persistence_layer.clickhouse.batch_insert_transactions(transactions)
+            success = self.persistence_layer.clickhouse.batch_insert_transactions(
+                transactions
+            )
             if not success:
                 self.processing_errors += len(transactions)
 
@@ -408,7 +442,9 @@ class PersistenceConsumer:
                 self.processing_errors += 1
 
         if metrics:
-            success = self.persistence_layer.clickhouse.insert_performance_metrics(metrics)
+            success = self.persistence_layer.clickhouse.insert_performance_metrics(
+                metrics
+            )
             if not success:
                 self.processing_errors += len(metrics)
 
@@ -475,7 +511,9 @@ class PersistenceConsumer:
         try:
             # Process any remaining batch
             if self.current_batch:
-                self.logger.info(f"Processing final batch of {len(self.current_batch)} messages")
+                self.logger.info(
+                    f"Processing final batch of {len(self.current_batch)} messages"
+                )
                 self._process_batch()
 
             # Close Kafka consumer
@@ -506,44 +544,21 @@ def main():
     logger = get_logger(__name__)
     logger.info("Starting Stream-Sentinel Persistence Consumer")
 
-    # Start combined Prometheus metrics + health check server on port 8002
-    health_server = None
+    # Start Prometheus metrics server on port 8002 (daemon thread, non-blocking)
     if METRICS_AVAILABLE:
         try:
-            from monitoring.health import HealthCheckServer, make_database_check, make_kafka_check
-
             metrics = get_prometheus_metrics(component_name="persistence-consumer")
-            health_server = HealthCheckServer(registry=metrics.registry)
-            metrics.set_health_server(health_server)
             metrics.start_metrics_server(port=8002)
-            logger.info("Combined metrics + health server started on port 8002")
+            logger.info("Prometheus metrics server started on port 8002")
         except Exception as e:
-            logger.warning(f"Failed to start metrics server: {e} -- continuing without metrics endpoint")
+            logger.warning(
+                f"Failed to start metrics server: {e} -- continuing without metrics endpoint"
+            )
     else:
         logger.info("Prometheus metrics not available, skipping metrics server")
 
     try:
         consumer = PersistenceConsumer()
-
-        # Register health checks now that the consumer is fully initialised
-        if health_server is not None:
-            consumer._health_server = health_server
-            health_server.register_check("kafka", make_kafka_check(consumer.consumer))
-            health_server.register_check("database", make_database_check(consumer.persistence_layer))
-
-            def _metrics_summary():
-                uptime = time.time() - consumer.start_time
-                mps = consumer.messages_processed / max(uptime, 1)
-                error_rate = consumer.processing_errors / max(consumer.messages_processed, 1)
-                return {
-                    "messages_processed": consumer.messages_processed,
-                    "processing_errors": consumer.processing_errors,
-                    "error_rate": round(error_rate, 4),
-                    "throughput_mps": round(mps, 2),
-                }
-
-            health_server.set_metrics_summary_fn(_metrics_summary)
-
         consumer.start()
     except Exception as e:
         logger.error("Failed to start persistence consumer", extra={"error": str(e)})

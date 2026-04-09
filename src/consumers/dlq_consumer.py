@@ -28,6 +28,15 @@ from confluent_kafka import Consumer, KafkaError, KafkaException
 sys.path.append(str(Path(__file__).parent.parent))
 from kafka.config import get_kafka_config
 
+# Distributed tracing
+try:
+    from tracing.correlation import extract_correlation_id
+    from tracing.middleware import traced_consume
+
+    TRACING_AVAILABLE = True
+except ImportError:
+    TRACING_AVAILABLE = False
+
 DLQ_TOPIC = "dead-letter-queue"
 DEFAULT_OUTPUT_PATH = "/tmp/stream-sentinel-dlq.jsonl"
 
@@ -106,6 +115,11 @@ class DLQConsumer:
     # ------------------------------------------------------------------
     def _handle_message(self, msg) -> None:
         """Process a single DLQ message."""
+        # Extract tracing context from message headers
+        tracing_ctx = None
+        if TRACING_AVAILABLE:
+            tracing_ctx = traced_consume(msg)
+
         try:
             raw = msg.value()
             envelope = json.loads(raw.decode("utf-8")) if raw else {}
@@ -117,16 +131,26 @@ class DLQConsumer:
         envelope["_dlq_partition"] = msg.partition()
         envelope["_dlq_offset"] = msg.offset()
 
+        # Include correlation ID from tracing context or message payload
+        correlation_id = None
+        if tracing_ctx:
+            correlation_id = tracing_ctx.correlation_id
+        if correlation_id is None:
+            correlation_id = envelope.get("correlation_id")
+        if correlation_id:
+            envelope["_dlq_correlation_id"] = correlation_id
+
         # Log with full context
         failure_reason = envelope.get("failure_reason", "unknown")
         source_topic = envelope.get("source_topic", "unknown")
         error_message = envelope.get("error_message", "N/A")
 
         logger.warning(
-            "DLQ message: reason=%s source_topic=%s error=%s",
+            "DLQ message: reason=%s source_topic=%s error=%s correlation_id=%s",
             failure_reason,
             source_topic,
             error_message,
+            correlation_id or "none",
         )
 
         # Persist to JSONL file
@@ -134,7 +158,9 @@ class DLQConsumer:
             with open(self.output_path, "a") as fh:
                 fh.write(json.dumps(envelope, default=str) + "\n")
         except OSError as io_err:
-            logger.error("Failed to write DLQ record to %s: %s", self.output_path, io_err)
+            logger.error(
+                "Failed to write DLQ record to %s: %s", self.output_path, io_err
+            )
 
         self.consumer.commit(msg)
         self.processed += 1
@@ -148,6 +174,10 @@ class DLQConsumer:
                 elapsed,
                 self.processed / max(elapsed, 1),
             )
+
+        # Detach tracing context after processing
+        if tracing_ctx is not None:
+            tracing_ctx.detach()
 
     # ------------------------------------------------------------------
     def _shutdown(self) -> None:
