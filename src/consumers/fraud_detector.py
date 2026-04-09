@@ -38,6 +38,7 @@ from utils.logging import get_logger, configure_logging, ContextLogger
 from monitoring.metrics import get_metrics as get_prometheus_metrics
 from kafka.dlq import get_dlq_publisher
 from kafka.lag_monitor import FlowController
+from validation.transaction_validator import TransactionValidator, ValidationResult
 
 # Schema Registry integration (optional -- falls back to plain JSON)
 try:
@@ -332,6 +333,10 @@ class FraudDetector:
         self.blocked_count = 0
         self.rules_fallback_count = 0
         self.start_time = time.time()
+
+        # Transaction input validator
+        self._validator = TransactionValidator()
+        self.logger.info("TransactionValidator initialized for input validation")
 
         # Schema Registry integration (optional)
         self._schema_helper = None
@@ -1705,6 +1710,37 @@ class FraudDetector:
                     else:
                         transaction = json.loads(msg.value().decode('utf-8'))
 
+                    # Validate transaction before processing
+                    validation = self._validator.validate(transaction)
+                    if not validation.is_valid:
+                        self.logger.warning(
+                            "Transaction validation failed: %s", validation.errors
+                        )
+                        try:
+                            dlq = get_dlq_publisher()
+                            dlq.publish(
+                                failed_value=msg.value(),
+                                error=ValueError("; ".join(validation.errors)),
+                                failure_reason="validation_error",
+                                source_topic=self.input_topic,
+                                consumer_group=self.consumer_group,
+                                partition=msg.partition(),
+                                offset=msg.offset(),
+                                extra_context={
+                                    "validation_errors": validation.errors,
+                                    "validation_time_ms": validation.validation_time_ms,
+                                },
+                            )
+                        except Exception as dlq_err:
+                            self.logger.error(f"DLQ publish also failed: {dlq_err}")
+                        self.consumer.commit(msg)  # Skip invalid message
+                        continue
+
+                    if validation.warnings:
+                        self.logger.debug(
+                            "Transaction validation warnings: %s", validation.warnings
+                        )
+
                     # Process transaction for fraud detection
                     self.process_transaction(transaction)
 
@@ -1782,6 +1818,40 @@ class FraudDetector:
                         transaction = json.loads(
                             msg.value().decode("utf-8")
                         )
+
+                        # Validate transaction before adding to batch
+                        validation = self._validator.validate(transaction)
+                        if not validation.is_valid:
+                            self.logger.warning(
+                                "Transaction validation failed (batch): %s",
+                                validation.errors,
+                            )
+                            try:
+                                dlq = get_dlq_publisher()
+                                dlq.publish(
+                                    failed_value=msg.value(),
+                                    error=ValueError("; ".join(validation.errors)),
+                                    failure_reason="validation_error",
+                                    source_topic=self.input_topic,
+                                    consumer_group=self.consumer_group,
+                                    partition=msg.partition(),
+                                    offset=msg.offset(),
+                                    extra_context={
+                                        "validation_errors": validation.errors,
+                                        "validation_time_ms": validation.validation_time_ms,
+                                    },
+                                )
+                            except Exception:
+                                pass
+                            self.consumer.commit(msg)
+                            continue
+
+                        if validation.warnings:
+                            self.logger.debug(
+                                "Transaction validation warnings (batch): %s",
+                                validation.warnings,
+                            )
+
                         msg_buffer.append(msg)
                         txn_buffer.append(transaction)
 
@@ -1793,17 +1863,19 @@ class FraudDetector:
                             f"Failed to parse transaction JSON: {e}"
                         )
                         # Publish to DLQ before committing the bad message
-                        if self._dlq_publisher is not None:
-                            try:
-                                self._dlq_publisher.publish(
-                                    original_message=msg.value(),
-                                    error=e,
-                                    source_topic=msg.topic(),
-                                    partition=msg.partition(),
-                                    offset=msg.offset(),
-                                )
-                            except Exception:
-                                pass
+                        try:
+                            dlq = get_dlq_publisher()
+                            dlq.publish(
+                                failed_value=msg.value(),
+                                error=e,
+                                failure_reason="json_decode_error",
+                                source_topic=self.input_topic,
+                                consumer_group=self.consumer_group,
+                                partition=msg.partition(),
+                                offset=msg.offset(),
+                            )
+                        except Exception:
+                            pass
                         self.consumer.commit(msg)
 
                 elif msg is not None and msg.error():
