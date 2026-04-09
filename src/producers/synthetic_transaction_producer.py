@@ -25,7 +25,9 @@ import json
 import time
 import uuid
 import random
+import argparse
 import threading
+import multiprocessing
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -33,6 +35,12 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import logging
 from pathlib import Path
+
+# Prefer ujson for faster serialization (3-5x over stdlib json on typical payloads)
+try:
+    import ujson as _json
+except ImportError:
+    _json = json
 
 from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
@@ -475,6 +483,19 @@ class SyntheticTransactionProducer:
             "address_firstseen": {},   # address -> first seen timestamp
         }
 
+        # Pre-compute weighted choice lists to avoid rebuilding each call
+        self._card4_names = list(gen_config.CARD4_DISTRIBUTION.keys())
+        self._card4_weights = list(gen_config.CARD4_DISTRIBUTION.values())
+        self._card6_names = list(gen_config.CARD6_DISTRIBUTION.keys())
+        self._card6_weights = list(gen_config.CARD6_DISTRIBUTION.values())
+        self._p_email_names = list(gen_config.P_EMAIL_DOMAINS.keys())
+        self._p_email_weights = list(gen_config.P_EMAIL_DOMAINS.values())
+        self._r_email_names = list(gen_config.R_EMAIL_DOMAINS.keys())
+        self._r_email_weights = list(gen_config.R_EMAIL_DOMAINS.values())
+
+        # Transaction ID prefix (overridden by run_production for multi-worker)
+        self._id_prefix = "T"
+
         # Topic configuration
         self.topic_name = gen_config.DEFAULT_TOPIC_NAME
 
@@ -669,17 +690,13 @@ class SyntheticTransactionProducer:
         card3 = gen_config.CARD3_COMMON_VALUE
 
         # card4: Card network -- weighted by IEEE-CIS distribution
-        card4_names = list(gen_config.CARD4_DISTRIBUTION.keys())
-        card4_weights = list(gen_config.CARD4_DISTRIBUTION.values())
-        card4 = random.choices(card4_names, weights=card4_weights)[0]
+        card4 = random.choices(self._card4_names, weights=self._card4_weights)[0]
 
         # card5: Card category
         card5 = random.randint(gen_config.CARD5_RANGE[0], gen_config.CARD5_RANGE[1])
 
         # card6: Card type -- weighted by IEEE-CIS distribution
-        card6_names = list(gen_config.CARD6_DISTRIBUTION.keys())
-        card6_weights = list(gen_config.CARD6_DISTRIBUTION.values())
-        card6 = random.choices(card6_names, weights=card6_weights)[0]
+        card6 = random.choices(self._card6_names, weights=self._card6_weights)[0]
 
         return card1, card2, card3, card4, card5, card6
 
@@ -713,17 +730,13 @@ class SyntheticTransactionProducer:
         if random.random() < gen_config.P_EMAIL_MISSING_RATE:
             p_email = None
         else:
-            names = list(gen_config.P_EMAIL_DOMAINS.keys())
-            weights = list(gen_config.P_EMAIL_DOMAINS.values())
-            p_email = random.choices(names, weights=weights)[0]
+            p_email = random.choices(self._p_email_names, weights=self._p_email_weights)[0]
 
         # R_emaildomain: ~77% missing
         if random.random() < gen_config.R_EMAIL_MISSING_RATE:
             r_email = None
         else:
-            names = list(gen_config.R_EMAIL_DOMAINS.keys())
-            weights = list(gen_config.R_EMAIL_DOMAINS.values())
-            r_email = random.choices(names, weights=weights)[0]
+            r_email = random.choices(self._r_email_names, weights=self._r_email_weights)[0]
 
         return p_email, r_email
 
@@ -1450,9 +1463,10 @@ class SyntheticTransactionProducer:
         if is_fraud:
             self._apply_fraud_correlations(counting_features, time_delta_features)
 
-        # Create transaction
+        # Create transaction (use _id_prefix for multi-worker uniqueness)
+        id_prefix = getattr(self, "_id_prefix", "T")
         transaction = Transaction(
-            transaction_id=f"T{self.transaction_counter:010d}",
+            transaction_id=f"{id_prefix}{self.transaction_counter:010d}",
             is_fraud=1 if is_fraud else 0,
             transaction_dt=transaction_dt,
             transaction_amt=amount,
@@ -1591,15 +1605,6 @@ class SyntheticTransactionProducer:
             self.stats["errors"] += 1
         else:
             self.stats["total_produced"] += 1
-            # Parse message to update fraud/legitimate stats
-            try:
-                transaction_data = json.loads(msg.value().decode("utf-8"))
-                if transaction_data.get("is_fraud", 0) == 1:
-                    self.stats["fraud_produced"] += 1
-                else:
-                    self.stats["legitimate_produced"] += 1
-            except:
-                pass  # Skip stats update on parse error
 
     def produce_transaction(self, transaction: Transaction):
         """Produce a single transaction to Kafka.
@@ -1610,6 +1615,12 @@ class SyntheticTransactionProducer:
         try:
             transaction_dict = asdict(transaction)
             message_key = transaction.transaction_id
+
+            # Track fraud/legitimate counts directly (avoids re-parsing in callback)
+            if transaction.is_fraud:
+                self.stats["fraud_produced"] += 1
+            else:
+                self.stats["legitimate_produced"] += 1
 
             # Use Avro serialization when Schema Registry is reachable
             if (
@@ -1624,7 +1635,7 @@ class SyntheticTransactionProducer:
                     self.topic_name,
                 )
             else:
-                message_value = json.dumps(transaction_dict).encode("utf-8")
+                message_value = _json.dumps(transaction_dict).encode("utf-8")
 
             # Produce to Kafka
             self.producer.produce(
@@ -1643,6 +1654,8 @@ class SyntheticTransactionProducer:
         target_tps: int = 1000,
         duration_seconds: int = 300,
         user_count: int = 1000,
+        total_transactions: int = 0,
+        id_prefix: str = "T",
     ):
         """
         Run transaction production at specified rate.
@@ -1651,10 +1664,13 @@ class SyntheticTransactionProducer:
             target_tps: Target transactions per second
             duration_seconds: How long to run production
             user_count: Number of simulated users
+            total_transactions: If > 0, stop after this many (overrides duration)
+            id_prefix: Prefix for transaction IDs (for multi-worker uniqueness)
         """
         self.logger.info(
             f"Starting production: {target_tps} TPS for {duration_seconds}s with {user_count} users"
         )
+        self._id_prefix = id_prefix
 
         if not self.setup_topic():
             self.logger.error("Failed to setup topic, aborting production")
@@ -1666,24 +1682,34 @@ class SyntheticTransactionProducer:
         # Pre-create some users for realistic patterns
         user_pool = [f"user_{i:06d}" for i in range(user_count)]
 
-        # Calculate timing parameters
-        target_interval = 1.0 / target_tps  # Seconds between transactions
+        # Batch-based rate limiting: process POLL_BATCH messages, then
+        # sleep for the remainder of the time that batch *should* have taken.
+        # This avoids per-message sleep overhead and gives much more accurate
+        # throughput control.
+        poll_batch = 100
 
         try:
             end_time = self.start_time + duration_seconds
             last_stats_time = self.start_time
+            messages_sent = 0
+            max_messages = total_transactions if total_transactions > 0 else 0
 
-            while self.running and time.time() < end_time:
+            while self.running and time.time() < end_time and (max_messages == 0 or messages_sent < max_messages):
                 batch_start = time.time()
+                remaining = max_messages - messages_sent if max_messages > 0 else poll_batch
+                batch_count = min(poll_batch, remaining)
 
-                # Generate and produce transaction
-                user_id = random.choice(user_pool)
-                transaction = self._generate_transaction(user_id)
-                self.produce_transaction(transaction)
+                for _ in range(batch_count):
+                    if time.time() >= end_time:
+                        break
+                    # Generate and produce transaction
+                    user_id = random.choice(user_pool)
+                    transaction = self._generate_transaction(user_id)
+                    self.produce_transaction(transaction)
+                    messages_sent += 1
 
-                # Periodic flush and stats
-                if self.transaction_counter % 100 == 0:
-                    self.producer.flush(timeout=1)
+                # Non-blocking poll to trigger delivery callbacks
+                self.producer.poll(0)
 
                 # Print statistics every 10 seconds
                 current_time = time.time()
@@ -1691,9 +1717,10 @@ class SyntheticTransactionProducer:
                     self._print_statistics()
                     last_stats_time = current_time
 
-                # Rate limiting
-                processing_time = time.time() - batch_start
-                sleep_time = target_interval - processing_time
+                # Batch-level rate limiting
+                batch_elapsed = time.time() - batch_start
+                expected_batch_time = batch_count / target_tps
+                sleep_time = expected_batch_time - batch_elapsed
                 if sleep_time > 0:
                     time.sleep(sleep_time)
 
@@ -1753,19 +1780,144 @@ class SyntheticTransactionProducer:
         self.logger.info("=" * 60)
 
 
-def main():
-    """Main function for running the synthetic producer."""
+def _worker_process(
+    worker_id: int,
+    target_tps: int,
+    duration_seconds: int,
+    user_count: int,
+    total_transactions: int,
+    result_dict: dict,
+):
+    """Entry point for a single producer worker process.
+
+    Each worker gets its own SyntheticTransactionProducer (own Kafka connection
+    and entity tracking state) and a unique transaction ID prefix to avoid
+    collisions across workers.
+    """
+    id_prefix = f"T{worker_id}_"
     producer = SyntheticTransactionProducer()
+    producer.logger.info(f"Worker {worker_id} started (prefix={id_prefix}, tps={target_tps})")
 
     try:
         producer.run_production(
-            target_tps=gen_config.DEFAULT_TARGET_TPS,
-            duration_seconds=gen_config.DEFAULT_DURATION_SECONDS,
-            user_count=gen_config.DEFAULT_USER_COUNT,
+            target_tps=target_tps,
+            duration_seconds=duration_seconds,
+            user_count=user_count,
+            total_transactions=total_transactions,
+            id_prefix=id_prefix,
         )
     except Exception as e:
-        producer.logger.error(f"Production failed: {e}")
-        raise
+        producer.logger.error(f"Worker {worker_id} failed: {e}")
+
+    # Store per-worker stats in the shared dict
+    elapsed = time.time() - producer.start_time
+    result_dict[worker_id] = {
+        "total_produced": producer.stats["total_produced"],
+        "fraud_produced": producer.stats["fraud_produced"],
+        "legitimate_produced": producer.stats["legitimate_produced"],
+        "errors": producer.stats["errors"],
+        "elapsed": elapsed,
+        "tps": producer.stats["total_produced"] / max(0.001, elapsed),
+    }
+
+
+def main():
+    """Main function for running the synthetic producer."""
+    parser = argparse.ArgumentParser(description="Synthetic Transaction Producer")
+    parser.add_argument(
+        "--workers", type=int, default=1,
+        help="Number of parallel producer processes (default: 1)",
+    )
+    parser.add_argument(
+        "--tps", type=int, default=gen_config.DEFAULT_TARGET_TPS,
+        help=f"Target transactions per second (default: {gen_config.DEFAULT_TARGET_TPS})",
+    )
+    parser.add_argument(
+        "--duration", type=int, default=gen_config.DEFAULT_DURATION_SECONDS,
+        help=f"Duration in seconds (default: {gen_config.DEFAULT_DURATION_SECONDS})",
+    )
+    parser.add_argument(
+        "--users", type=int, default=gen_config.DEFAULT_USER_COUNT,
+        help=f"Number of simulated users (default: {gen_config.DEFAULT_USER_COUNT})",
+    )
+    parser.add_argument(
+        "--total", type=int, default=0,
+        help="Total transactions to produce (0 = use duration, default: 0)",
+    )
+    args = parser.parse_args()
+
+    num_workers = args.workers
+
+    if num_workers <= 1:
+        # Single-process mode (backward compatible)
+        producer = SyntheticTransactionProducer()
+        try:
+            producer.run_production(
+                target_tps=args.tps,
+                duration_seconds=args.duration,
+                user_count=args.users,
+                total_transactions=args.total,
+            )
+        except Exception as e:
+            producer.logger.error(f"Production failed: {e}")
+            raise
+    else:
+        # Multi-process mode: split TPS and transactions across workers
+        per_worker_tps = max(1, args.tps // num_workers)
+        per_worker_txns = max(0, args.total // num_workers) if args.total > 0 else 0
+
+        logger = logging.getLogger("producer_main")
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+
+        logger.info(
+            f"Launching {num_workers} workers: {per_worker_tps} TPS each "
+            f"(aggregate target: {per_worker_tps * num_workers} TPS)"
+        )
+
+        manager = multiprocessing.Manager()
+        result_dict = manager.dict()
+        processes = []
+
+        start = time.time()
+        for wid in range(num_workers):
+            p = multiprocessing.Process(
+                target=_worker_process,
+                args=(wid, per_worker_tps, args.duration, args.users, per_worker_txns, result_dict),
+            )
+            p.start()
+            processes.append(p)
+
+        for p in processes:
+            p.join()
+
+        total_elapsed = time.time() - start
+
+        # Aggregate statistics
+        agg_total = sum(r["total_produced"] for r in result_dict.values())
+        agg_fraud = sum(r["fraud_produced"] for r in result_dict.values())
+        agg_legit = sum(r["legitimate_produced"] for r in result_dict.values())
+        agg_errors = sum(r["errors"] for r in result_dict.values())
+        agg_tps = agg_total / max(0.001, total_elapsed)
+
+        logger.info("=" * 60)
+        logger.info("AGGREGATE PRODUCTION STATISTICS")
+        logger.info("=" * 60)
+        for wid in sorted(result_dict.keys()):
+            r = result_dict[wid]
+            logger.info(f"  Worker {wid}: {r['total_produced']:,} txns, {r['tps']:.0f} TPS")
+        logger.info(f"Total Transactions: {agg_total:,}")
+        logger.info(f"Fraudulent: {agg_fraud:,}")
+        logger.info(f"Legitimate: {agg_legit:,}")
+        logger.info(
+            f"Fraud Rate: {agg_fraud / max(1, agg_total) * 100:.3f}%"
+        )
+        logger.info(f"Aggregate TPS: {agg_tps:.0f}")
+        logger.info(f"Errors: {agg_errors}")
+        logger.info(f"Wall-clock Duration: {total_elapsed:.1f}s")
+        logger.info("=" * 60)
 
 
 if __name__ == "__main__":
