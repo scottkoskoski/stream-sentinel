@@ -33,7 +33,8 @@ class StreamSentinelMetrics:
         """
         self.registry = registry or CollectorRegistry()
         self.component_name = component_name
-        
+        self._health_server = None  # set via set_health_server()
+
         # System info
         self.info = Info(
             'stream_sentinel_build_info',
@@ -439,9 +440,28 @@ class StreamSentinelMetrics:
         return generate_latest(self.registry)
     
     def start_metrics_server(self, port: int = 8000):
-        """Start HTTP server for metrics endpoint"""
-        start_http_server(port, registry=self.registry)
+        """Start HTTP server for metrics endpoint.
+
+        If a :class:`~monitoring.health.HealthCheckServer` has been attached
+        via :meth:`set_health_server`, this starts the combined server
+        (metrics + health endpoints) instead of the plain Prometheus one.
+        """
+        if self._health_server is not None:
+            self._health_server.start(port)
+        else:
+            start_http_server(port, registry=self.registry)
         logger.info(f"Started metrics server on port {port}")
+
+    # -- Health server integration -----------------------------------------
+
+    def set_health_server(self, health_server) -> None:
+        """Attach a :class:`~monitoring.health.HealthCheckServer` so that
+        :meth:`start_metrics_server` starts the combined HTTP server."""
+        self._health_server = health_server
+
+    def get_health_server(self):
+        """Return the attached HealthCheckServer, or *None*."""
+        return self._health_server
 
 # Global metrics instance
 _metrics_instance: Optional[StreamSentinelMetrics] = None

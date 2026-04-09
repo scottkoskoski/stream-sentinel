@@ -191,6 +191,9 @@ class EnhancedFraudDetector:
         self.feature_buffer = []
         self.max_buffer_size = 1000
 
+        # Health check server reference (set by main() after construction)
+        self._health_server = None
+
         # Graceful shutdown
         self.running = False
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -320,6 +323,10 @@ class EnhancedFraudDetector:
         
         try:
             while self.running:
+                # Signal liveness to health check server
+                if self._health_server is not None:
+                    self._health_server.heartbeat()
+
                 # Poll for new transactions
                 message = self.consumer.poll(timeout=1.0)
                 
@@ -865,12 +872,18 @@ def main():
     """Main entry point."""
     configure_logging()
 
-    # Start Prometheus metrics server on port 8003 (daemon thread, non-blocking)
+    # Start combined Prometheus metrics + health check server on port 8003
+    health_server = None
     try:
+        from monitoring.health import (
+            HealthCheckServer, make_kafka_check, make_redis_check,
+        )
         metrics = get_prometheus_metrics(component_name="enhanced-fraud-detector")
+        health_server = HealthCheckServer(registry=metrics.registry)
+        metrics.set_health_server(health_server)
         metrics.start_metrics_server(port=8003)
         get_logger(__name__).info(
-            "Prometheus metrics server started on port 8003"
+            "Combined metrics + health server started on port 8003"
         )
     except Exception as e:
         get_logger(__name__).warning(
@@ -878,6 +891,38 @@ def main():
         )
 
     detector = EnhancedFraudDetector()
+
+    # Register health checks now that the detector is fully initialised
+    if health_server is not None:
+        detector._health_server = health_server
+        health_server.register_check("kafka", make_kafka_check(detector.consumer))
+        health_server.register_check("redis", make_redis_check(detector.redis_client))
+
+        # Custom model check for enhanced detector (uses current_model, not ml_model)
+        def _model_check():
+            if detector.current_model is not None:
+                return {
+                    "status": "loaded",
+                    "model_type": type(detector.current_model).__name__,
+                    "scoring_mode": "ml_primary",
+                    "ab_test_active": detector.ab_test_active,
+                }
+            return {"status": "loading", "scoring_mode": "loading"}
+
+        health_server.register_check("model", _model_check)
+
+        def _metrics_summary():
+            uptime = time.time() - detector.start_time
+            tps = detector.prediction_count / max(uptime, 1)
+            return {
+                "messages_processed": detector.prediction_count,
+                "fraud_detections": detector.fraud_detection_count,
+                "throughput_tps": round(tps, 2),
+                "ab_test_active": detector.ab_test_active,
+            }
+
+        health_server.set_metrics_summary_fn(_metrics_summary)
+
     detector.run()
 
 

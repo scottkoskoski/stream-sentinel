@@ -161,6 +161,9 @@ class AlertProcessor:
             except Exception as e:
                 self.logger.warning(f"Schema helper init failed: {e}")
 
+        # Health check server reference (set by main() after construction)
+        self._health_server = None
+
         # Graceful shutdown
         self.running = True
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -937,9 +940,13 @@ class AlertProcessor:
     def run(self):
         """Main processing loop for alert response system."""
         self.logger.info("Starting alert response processor...")
-        
+
         try:
             while self.running:
+                # Signal liveness to health check server
+                if self._health_server is not None:
+                    self._health_server.heartbeat()
+
                 # Poll for messages with timeout
                 msg = self.consumer.poll(timeout=1.0)
                 
@@ -1025,12 +1032,18 @@ def main():
     logger = get_logger(__name__)
 
     try:
-        # Start Prometheus metrics server on port 8001 (daemon thread, non-blocking)
+        # Start combined Prometheus metrics + health check server on port 8001
+        health_server = None
         try:
+            from monitoring.health import (
+                HealthCheckServer, make_kafka_check, make_redis_check,
+            )
             metrics = get_prometheus_metrics(component_name="alert-processor")
+            health_server = HealthCheckServer(registry=metrics.registry)
+            metrics.set_health_server(health_server)
             metrics.start_metrics_server(port=8001)
             logging.getLogger("stream_sentinel.alert_processor").info(
-                "Prometheus metrics server started on port 8001"
+                "Combined metrics + health server started on port 8001"
             )
         except Exception as e:
             logging.getLogger("stream_sentinel.alert_processor").warning(
@@ -1041,6 +1054,24 @@ def main():
             consumer_group="alert-response-group",
             notification_email="fraud-team@company.com"
         )
+
+        # Register health checks now that the processor is fully initialised
+        if health_server is not None:
+            processor._health_server = health_server
+            health_server.register_check("kafka", make_kafka_check(processor.consumer))
+            health_server.register_check("redis", make_redis_check(processor.redis_client))
+
+            def _metrics_summary():
+                uptime = time.time() - processor.start_time
+                aps = processor.processed_alerts / max(uptime, 1)
+                return {
+                    "messages_processed": processor.processed_alerts,
+                    "blocked_users": processor.blocked_users,
+                    "notifications_sent": processor.notifications_sent,
+                    "throughput_aps": round(aps, 2),
+                }
+
+            health_server.set_metrics_summary_fn(_metrics_summary)
 
         processor.run()
 
