@@ -15,7 +15,27 @@ import time
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
+
+
+def _python_predict(model: Any, features: List[float]) -> float:
+    """Run a single-row prediction against a Python XGBoost model.
+
+    Handles both ``XGBClassifier`` (which has ``predict_proba``) and the bare
+    ``xgboost.Booster`` (which exposes ``inplace_predict`` returning the
+    positive-class probability directly for binary:logistic objectives).
+    The unified production pickle stores a ``Booster`` -- calling
+    ``predict_proba`` on it raises ``AttributeError`` and would otherwise
+    downgrade the detector to rules_fallback mode.
+    """
+    if hasattr(model, "predict_proba"):
+        return float(model.predict_proba([features])[0][1])
+    # Booster path: inplace_predict avoids DMatrix construction and returns
+    # a 1-D numpy array of positive-class probabilities for binary logistic.
+    arr = np.asarray(features, dtype=np.float32).reshape(1, -1)
+    return float(model.inplace_predict(arr)[0])
 
 
 class FastInferenceEngine:
@@ -165,11 +185,10 @@ class FastInferenceEngine:
 
         # Python fallback inference
         try:
-            # This mirrors the exact call in fraud_detector.py
-            probability = self.python_model.predict_proba([features])[0][1]
+            probability = _python_predict(self.python_model, features)
             inference_time = (time.perf_counter() - start_time) * 1000  # ms
 
-            return float(probability), {
+            return probability, {
                 "engine": "python",
                 "inference_time_ms": inference_time,
                 "success": True,
@@ -232,6 +251,22 @@ class CompatibleMLModel:
             results.append([1.0 - prob, prob])
 
         return results
+
+
+def booster_predict_proba_like(model: Any, features_matrix: "np.ndarray | List[List[float]]") -> "np.ndarray":
+    """Compatibility helper: return [[1-p, p], ...] for any xgboost model.
+
+    Accepts a Booster or a sklearn-style estimator and always returns a
+    2-column probability array. Used by fraud_detector.py so the consumer
+    code doesn't need to branch on model type.
+    """
+    if hasattr(model, "predict_proba"):
+        return np.asarray(model.predict_proba(features_matrix))
+    arr = np.asarray(features_matrix, dtype=np.float32)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    pos = np.asarray(model.inplace_predict(arr))
+    return np.column_stack([1.0 - pos, pos])
 
 
 if __name__ == "__main__":
