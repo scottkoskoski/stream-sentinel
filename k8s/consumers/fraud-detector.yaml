@@ -79,7 +79,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /readiness
+              path: /health/ready
               port: metrics
             initialDelaySeconds: 15
             periodSeconds: 5
@@ -92,13 +92,10 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             failureThreshold: 12
-          volumeMounts:
-            - name: models
-              mountPath: /app/models
-              readOnly: true
-      volumes:
-        - name: models
-          emptyDir: {}
+          # Model files are baked into the image at /app/models/.
+          # For runtime model updates, use ModelRegistry (Redis).
+          # To mount external models, replace this comment with a
+          # PVC or ConfigMap volume mount.
 
 ---
 apiVersion: v1

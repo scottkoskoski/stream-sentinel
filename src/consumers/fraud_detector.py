@@ -882,28 +882,17 @@ class FraudDetector:
     ) -> float:
         """Score a transaction with a specific model (used by A/B testing).
 
-        Temporarily swaps model components, scores, then restores originals.
-        This is safe because the caller already holds no locks and the
-        _model_lock protects the default model state.
+        Does NOT mutate instance state — extracts features and scores
+        directly with the provided model components. This avoids a data
+        race with the background model-refresh thread.
         """
-        # Save originals
-        orig_model = self.ml_model
-        orig_scaler = self.scaler
-        orig_encoders = self.label_encoders
-        orig_features = self.model_features
-
         try:
-            self.ml_model = model
-            self.scaler = scaler
-            self.label_encoders = label_encoders
-            self.model_features = model_features
+            features = self._extract_ml_features(transaction, user_profile)
+            fraud_probability = model.predict_proba([features])[0][1]
+            return float(fraud_probability)
+        except Exception as e:
+            self.logger.warning(f"A/B variant scoring failed: {e}, falling back to production model")
             return self._calculate_ml_fraud_score(transaction, user_profile)
-        finally:
-            # Restore originals
-            self.ml_model = orig_model
-            self.scaler = orig_scaler
-            self.label_encoders = orig_encoders
-            self.model_features = orig_features
 
     def _signal_handler(self, signum: int, frame) -> None:
         """Handle graceful shutdown signals."""

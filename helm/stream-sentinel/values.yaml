@@ -106,7 +106,7 @@ consumers:
         cpu: "500m"
     antiAffinity: true
     modelVolume:
-      enabled: true
+      enabled: false  # Disabled: emptyDir shadows image-baked models. Use ModelRegistry (Redis) for runtime updates.
     hpa:
       enabled: true
       minReplicas: 2
@@ -180,7 +180,7 @@ probes:
     timeoutSeconds: 5
     failureThreshold: 3
   readiness:
-    path: /readiness
+    path: /health/ready
     initialDelaySeconds: 15
     periodSeconds: 5
     timeoutSeconds: 3
