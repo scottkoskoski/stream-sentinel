@@ -217,6 +217,60 @@ C_FEATURE_NULL_RATES: Dict[str, float] = {
 
 
 # ---------------------------------------------------------------------------
+# C-feature mean counts (from IEEE-CIS dataset analysis, non-null rows).
+#
+# These replace the previous "accumulate from entity-tracking dicts"
+# approach, which inflated counts 7x-3000x vs the real dataset because the
+# producer's in-memory entity dicts grow unboundedly at high TPS (a single
+# email may accumulate hundreds of thousands of observations in a 3-minute
+# run, while in the real dataset an email rarely repeats). Sampling from
+# Poisson(mean) matches the shape of the real distribution and keeps memory
+# constant.
+#
+# Fraud correlations (2-5x inflation for a subset of C-features) are
+# applied on top of these base samples in _apply_fraud_correlations.
+# ---------------------------------------------------------------------------
+C_FEATURE_IEEE_MEANS: Dict[str, float] = {
+    "c1": 1.68,
+    "c2": 1.33,
+    "c3": 0.06,
+    "c4": 0.27,
+    "c5": 0.19,
+    "c6": 1.01,
+    "c7": 0.31,
+    "c8": 0.12,
+    "c9": 0.72,
+    "c10": 0.14,
+    "c11": 1.22,
+    "c12": 1.36,
+    "c13": 13.12,
+    "c14": 1.22,
+}
+
+
+# ---------------------------------------------------------------------------
+# D-feature historical offset means (in days), for the "first observation"
+# bootstrap of entity-tracking timestamps.
+#
+# The previous implementation initialized card_firstseen/user_created/etc.
+# to `current_time` on first observation, making D1/D3/D11/D13 always ~0
+# days at high TPS (no real history ever accumulated). We now sample a
+# historical offset from a lognormal distribution with these medians, so
+# the "first event" timestamp is plausibly in the past even on the very
+# first transaction for an entity.
+# ---------------------------------------------------------------------------
+D_FEATURE_HISTORICAL_OFFSET_DAYS: Dict[str, float] = {
+    "d1_user_created": 132.0,  # Account age (IEEE mean 132 days)
+    "d3_card_firstuse": 168.0,  # Card age (IEEE mean 168 days)
+    "d5_user_lastfraud": 107.0,  # Days since last fraud report (IEEE mean 107 days)
+    "d8_merchant_firstuse": 90.0,  # Per-merchant first use (est.)
+    "d11_address_firstseen": 99.0,  # Address age (IEEE mean 99 days)
+    "d13_profile_updated": 132.0,  # Tracks D1 by default
+}
+D_FEATURE_HISTORICAL_OFFSET_SIGMA: float = 0.8  # lognormal sigma
+
+
+# ---------------------------------------------------------------------------
 # D-feature (time delta) null rates
 #
 # From IEEE-CIS dataset:

@@ -73,6 +73,41 @@ except ImportError:
     SCHEMA_UTILS_AVAILABLE = False
 
 
+# ---------------------------------------------------------------------------
+# Distribution sampling helpers used by C/D feature generation.
+# Kept as module-level functions so they avoid per-call self lookup and
+# can be unit-tested independently.
+# ---------------------------------------------------------------------------
+def _poisson(lam: float) -> int:
+    """Sample a non-negative integer from Poisson(lam) using Knuth's method.
+
+    Fast and exact for small lambda (all our C-feature means are < 14).
+    Returns 0 when lam <= 0.
+    """
+    if lam <= 0:
+        return 0
+    L = math.exp(-lam)
+    k = 0
+    p = 1.0
+    while True:
+        k += 1
+        p *= random.random()
+        if p <= L:
+            return k - 1
+
+
+def _historical_offset_seconds(mean_days: float, sigma: float = 0.8) -> float:
+    """Sample a positive historical offset in seconds with the given median in days.
+
+    Uses a lognormal so the distribution is right-skewed (most entities are
+    moderately old, some are very old). Median is `mean_days`; the mean of
+    the distribution is slightly higher due to the lognormal skew.
+    """
+    if mean_days <= 0:
+        return 0.0
+    return random.lognormvariate(math.log(mean_days), sigma) * 86400.0
+
+
 @dataclass
 class Transaction:
     """
@@ -463,27 +498,23 @@ class SyntheticTransactionProducer:
         self.user_profiles: Dict[str, UserProfile] = {}
         self.running = False
 
-        # Enhanced feature tracking for C/D/M features
+        # Entity tracking for D-features (time deltas) only. C-features
+        # are now sampled from IEEE-CIS-calibrated Poisson distributions
+        # instead of accumulated from in-memory dicts, so the old per-entity
+        # sets/lists used for cumulative counts (address_cards, card_emails,
+        # email_transactions, device_transactions, etc.) are gone.
+        # Memory usage is now bounded by the number of distinct users /
+        # cards / addresses observed, not by the transaction volume.
         self.entity_tracking = {
-            # For counting features (C1-C14)
-            "card_addresses": {},  # card -> set of addresses
-            "address_cards": {},  # address -> set of cards
-            "email_transactions": {},  # email -> list of transaction times
-            "user_merchants": {},  # user -> set of merchants used
-            "card_emails": {},  # card -> set of email domains
-            "email_addresses": {},  # email -> set of addresses
-            "device_transactions": {},  # device -> list of transaction times
-            "card_firstseen": {},  # card -> first seen timestamp
-            "user_cards": {},  # user -> set of cards used
-            # For time delta features (D1-D15)
-            "user_created": {},  # user -> creation timestamp
-            "user_lasttxn": {},  # user -> last transaction timestamp
-            "card_firstuse": {},  # card -> first use timestamp
-            "device_lasttxn": {},  # device -> last transaction timestamp
-            "user_lastfraud": {},  # user -> last fraud report timestamp
-            "email_lasttxn": {},  # email -> last transaction timestamp
-            "merchant_firstuse": {},  # merchant -> first use timestamp
-            "address_firstseen": {},  # address -> first seen timestamp
+            "user_created": {},       # user -> historical creation timestamp
+            "user_lasttxn": {},       # user -> last transaction timestamp
+            "card_firstuse": {},      # card -> historical first-use timestamp
+            "card_firstseen": {},     # card -> historical first-seen timestamp (shared with C14)
+            "device_lasttxn": {},     # device -> last transaction timestamp
+            "user_lastfraud": {},     # user -> last fraud report timestamp
+            "email_lasttxn": {},      # email -> last transaction timestamp
+            "merchant_firstuse": {},  # merchant -> historical first-use timestamp
+            "address_firstseen": {},  # address -> historical first-seen timestamp
         }
 
         # Pre-compute weighted choice lists to avoid rebuilding each call
@@ -753,116 +784,40 @@ class SyntheticTransactionProducer:
         product_cd: str,
         current_time: float,
     ) -> Dict[str, Optional[float]]:
-        """Generate C1-C14 counting features from entity tracking state.
+        """Generate C1-C14 counting features from IEEE-CIS-calibrated distributions.
 
-        Every C-feature is derived from actual entity relationship dictionaries
-        that accumulate state across transactions. Null rates come from
-        gen_config.C_FEATURE_NULL_RATES which mirror the IEEE-CIS dataset.
+        Previously these values were accumulated from in-memory entity dicts
+        (e.g. number of transactions seen today for this email). At high TPS
+        that accumulation inflated counts 7x-3000x vs the real dataset -- in
+        a 3-minute run a single email would accumulate hundreds of thousands
+        of observations, while in IEEE-CIS an email domain repeating at all
+        is rare. We now sample each count from Poisson(IEEE_mean) which
+        matches the real shape and keeps memory constant.
+
+        C14 is "days since card first seen" -- we derive it from the D-feature
+        historical offset so it stays consistent with D3 for the same card.
+
+        Null rates come from gen_config.C_FEATURE_NULL_RATES.
+        Fraud-specific inflation (2-5x multipliers) is applied afterwards by
+        _apply_fraud_correlations.
         """
         null_rates = gen_config.C_FEATURE_NULL_RATES
-
-        # Deterministic device id for this user (stable across calls for same user)
-        device_id = f"device_{user.user_id}_{hash(user.user_id) % gen_config.USER_DEVICE_RANGE[1] + 1}"
-
-        current_day = int(current_time // 86400)
+        means = gen_config.C_FEATURE_IEEE_MEANS
 
         features: Dict[str, Optional[float]] = {}
 
-        # --- C1: Cards associated with this address ---
-        addr_cards = self.entity_tracking["address_cards"]
-        if addr1 not in addr_cards:
-            addr_cards[addr1] = set()
-        addr_cards[addr1].add(card1)
-        features["c1"] = self._apply_null(float(len(addr_cards[addr1])), "c1", null_rates)
-
-        # --- C2: Addresses associated with this card ---
-        card_addrs = self.entity_tracking["card_addresses"]
-        if card1 not in card_addrs:
-            card_addrs[card1] = set()
-        card_addrs[card1].add(addr1)
-        features["c2"] = self._apply_null(float(len(card_addrs[card1])), "c2", null_rates)
-
-        # --- C3: Transactions with this email domain today ---
-        if p_email:
-            email_txns = self.entity_tracking["email_transactions"]
-            if p_email not in email_txns:
-                email_txns[p_email] = []
-            email_txns[p_email].append(current_time)
-            today_count = sum(1 for t in email_txns[p_email] if int(t // 86400) == current_day)
-            features["c3"] = self._apply_null(float(today_count), "c3", null_rates)
-        else:
-            features["c3"] = None
-
-        # --- C4: Unique merchants (product codes) for this user ---
-        user_merchants = self.entity_tracking["user_merchants"]
-        if user.user_id not in user_merchants:
-            user_merchants[user.user_id] = set()
-        user_merchants[user.user_id].add(product_cd)
-        features["c4"] = self._apply_null(float(len(user_merchants[user.user_id])), "c4", null_rates)
-
-        # --- C5: Unique email domains associated with this card ---
-        card_emails = self.entity_tracking["card_emails"]
-        if card1 not in card_emails:
-            card_emails[card1] = set()
-        if p_email:
-            card_emails[card1].add(p_email)
-        features["c5"] = self._apply_null(float(len(card_emails[card1])), "c5", null_rates)
-
-        # --- C6: Addresses associated with this email domain ---
-        if p_email:
-            email_addrs = self.entity_tracking["email_addresses"]
-            if p_email not in email_addrs:
-                email_addrs[p_email] = set()
-            email_addrs[p_email].add(addr1)
-            features["c6"] = self._apply_null(float(len(email_addrs[p_email])), "c6", null_rates)
-        else:
-            features["c6"] = None
-
-        # --- C7: Transactions from this device today ---
-        dev_txns = self.entity_tracking["device_transactions"]
-        if device_id not in dev_txns:
-            dev_txns[device_id] = []
-        dev_txns[device_id].append(current_time)
-        today_device = sum(1 for t in dev_txns[device_id] if int(t // 86400) == current_day)
-        features["c7"] = self._apply_null(float(today_device), "c7", null_rates)
-
-        # --- C8: Unique email domains for this card (same set as C5) ---
-        features["c8"] = self._apply_null(float(len(card_emails.get(card1, set()))), "c8", null_rates)
-
-        # --- C9: Total transactions for this card (proxy: user txn count) ---
-        features["c9"] = self._apply_null(float(user.total_transactions + 1), "c9", null_rates)
-
-        # --- C10: Unique addresses for this card ---
-        features["c10"] = self._apply_null(float(len(card_addrs.get(card1, set()))), "c10", null_rates)
-
-        # --- C11: Transactions from this IP today ---
-        # IP is not explicitly tracked; use device-day count as proxy with
-        # slight random scaling (multiple IPs per device, NAT, etc.)
-        ip_proxy = today_device + random.randint(0, 3)
-        features["c11"] = self._apply_null(float(ip_proxy), "c11", null_rates)
-
-        # --- C12: Unique cards for this user ---
-        user_cards = self.entity_tracking["user_cards"]
-        if user.user_id not in user_cards:
-            user_cards[user.user_id] = set()
-        user_cards[user.user_id].add(card1)
-        features["c12"] = self._apply_null(float(len(user_cards[user.user_id])), "c12", null_rates)
-
-        # --- C13: Transactions with this product code today ---
-        # Track per-product-code daily counts
-        pc_key = f"{product_cd}_{current_day}"
-        if "product_daily_counts" not in self.entity_tracking:
-            self.entity_tracking["product_daily_counts"] = {}
-        pc_counts = self.entity_tracking["product_daily_counts"]
-        pc_counts[pc_key] = pc_counts.get(pc_key, 0) + 1
-        features["c13"] = self._apply_null(float(pc_counts[pc_key]), "c13", null_rates)
-
-        # --- C14: Days since first transaction with this card ---
-        card_first = self.entity_tracking["card_firstseen"]
-        if card1 not in card_first:
-            card_first[card1] = current_time
-        days_since = (current_time - card_first[card1]) / 86400.0
-        features["c14"] = self._apply_null(float(max(0, days_since)), "c14", null_rates)
+        # All C-features are Poisson-sampled counts matching IEEE-CIS means.
+        # Features tied to p_email (C3, C6) stay null when the email domain
+        # itself is null, preserving the conditional structure.
+        # Note: IEEE-CIS treats C14 as a count (mean 1.22), not a "days
+        # since first seen" value. The prior implementation's days-based
+        # C14 never matched the real distribution -- Poisson is correct.
+        for key in ("c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8",
+                    "c9", "c10", "c11", "c12", "c13", "c14"):
+            if key in ("c3", "c6") and not p_email:
+                features[key] = None
+                continue
+            features[key] = self._apply_null(float(_poisson(means[key])), key, null_rates)
 
         return features
 
@@ -883,67 +838,93 @@ class SyntheticTransactionProducer:
         Null rates come from gen_config.D_FEATURE_NULL_RATES.
         """
         null_rates = gen_config.D_FEATURE_NULL_RATES
+        offset_days = gen_config.D_FEATURE_HISTORICAL_OFFSET_DAYS
+        sigma = gen_config.D_FEATURE_HISTORICAL_OFFSET_SIGMA
         features: Dict[str, Optional[float]] = {}
 
         # Deterministic device id (must match the one used in C-features)
         device_id = f"device_{user.user_id}_{hash(user.user_id) % gen_config.USER_DEVICE_RANGE[1] + 1}"
 
         # --- D1: Days since account creation ---
+        # The previous implementation initialized user_created to
+        # user.created_at, which is just time.time() at producer start --
+        # so D1 was always ~0 days for the whole run. We now bootstrap
+        # each user's creation timestamp to a historical offset the first
+        # time we see them (lognormal with median D1_HISTORICAL_OFFSET_DAYS,
+        # default 132 days to match IEEE-CIS mean).
         user_created = self.entity_tracking["user_created"]
         if user.user_id not in user_created:
-            user_created[user.user_id] = user.created_at
+            user_created[user.user_id] = current_time - _historical_offset_seconds(
+                offset_days["d1_user_created"], sigma
+            )
         d1_val = (current_time - user_created[user.user_id]) / 86400.0
-        features["d1"] = self._apply_null(float(max(0, d1_val)), "d1", null_rates)
+        features["d1"] = self._apply_null(float(max(0.0, d1_val)), "d1", null_rates)
 
         # --- D2: Days since last transaction ---
         user_lasttxn = self.entity_tracking["user_lasttxn"]
         last_txn = user_lasttxn.get(user.user_id, current_time)
         d2_val = (current_time - last_txn) / 86400.0
-        features["d2"] = self._apply_null(float(max(0, d2_val)), "d2", null_rates)
+        features["d2"] = self._apply_null(float(max(0.0, d2_val)), "d2", null_rates)
         user_lasttxn[user.user_id] = current_time
 
         # --- D3: Days since first transaction with this card ---
+        # Same bootstrap fix as D1: on first observation of a card, seed
+        # its first-use timestamp to a historical offset (median ~168 days).
         card_first = self.entity_tracking["card_firstuse"]
         if card1 not in card_first:
-            card_first[card1] = current_time
+            card_first[card1] = current_time - _historical_offset_seconds(
+                offset_days["d3_card_firstuse"], sigma
+            )
         d3_val = (current_time - card_first[card1]) / 86400.0
-        features["d3"] = self._apply_null(float(max(0, d3_val)), "d3", null_rates)
+        features["d3"] = self._apply_null(float(max(0.0, d3_val)), "d3", null_rates)
 
         # --- D4: Hours since last transaction from this device ---
         dev_last = self.entity_tracking["device_lasttxn"]
         last_dev = dev_last.get(device_id, current_time - 3600)
         d4_val = (current_time - last_dev) / 3600.0
-        features["d4"] = self._apply_null(float(max(0, d4_val)), "d4", null_rates)
+        features["d4"] = self._apply_null(float(max(0.0, d4_val)), "d4", null_rates)
         dev_last[device_id] = current_time
 
         # --- D5: Days since last fraud report on this account ---
-        last_fraud = self.entity_tracking["user_lastfraud"].get(user.user_id, current_time - 30 * 86400)
-        d5_val = (current_time - last_fraud) / 86400.0
-        features["d5"] = self._apply_null(float(max(0, d5_val)), "d5", null_rates)
+        user_lastfraud = self.entity_tracking["user_lastfraud"]
+        if user.user_id not in user_lastfraud:
+            user_lastfraud[user.user_id] = current_time - _historical_offset_seconds(
+                offset_days["d5_user_lastfraud"], sigma
+            )
+        d5_val = (current_time - user_lastfraud[user.user_id]) / 86400.0
+        features["d5"] = self._apply_null(float(max(0.0, d5_val)), "d5", null_rates)
 
         # --- D6: Days since card was first seen in system ---
-        # Use card_firstseen (populated by C-features); fallback to card_firstuse
+        # Shares state with card_firstseen (populated by C14). On first
+        # observation, bootstrap to the same D3-scale historical offset.
         card_firstseen = self.entity_tracking["card_firstseen"]
-        first_seen = card_firstseen.get(card1, card_first.get(card1, current_time))
-        d6_val = (current_time - first_seen) / 86400.0
-        features["d6"] = self._apply_null(float(max(0, d6_val)), "d6", null_rates)
+        if card1 not in card_firstseen:
+            card_firstseen[card1] = current_time - _historical_offset_seconds(
+                offset_days["d3_card_firstuse"], sigma
+            )
+        d6_val = (current_time - card_firstseen[card1]) / 86400.0
+        features["d6"] = self._apply_null(float(max(0.0, d6_val)), "d6", null_rates)
 
         # --- D7: Hours since last transaction with this email ---
         if p_email:
             email_last = self.entity_tracking["email_lasttxn"]
             prev_email = email_last.get(p_email, current_time - 3600)
             d7_val = (current_time - prev_email) / 3600.0
-            features["d7"] = self._apply_null(float(max(0, d7_val)), "d7", null_rates)
+            features["d7"] = self._apply_null(float(max(0.0, d7_val)), "d7", null_rates)
             email_last[p_email] = current_time
         else:
             features["d7"] = None
 
         # --- D8: Days since first transaction with this merchant ---
+        # Bootstrap merchant first-use to a historical offset so D8 isn't 0
+        # on the very first txn of a run.
         merch_first = self.entity_tracking["merchant_firstuse"]
         if product_cd not in merch_first:
-            merch_first[product_cd] = current_time
+            merch_first[product_cd] = current_time - _historical_offset_seconds(
+                offset_days["d8_merchant_firstuse"], sigma
+            )
         d8_val = (current_time - merch_first[product_cd]) / 86400.0
-        features["d8"] = self._apply_null(float(max(0, d8_val)), "d8", null_rates)
+        features["d8"] = self._apply_null(float(max(0.0, d8_val)), "d8", null_rates)
 
         # --- D9: Days since last transaction in this amount range ---
         # Track by amount bucket: <10, 10-100, 100-500, 500+
@@ -963,21 +944,25 @@ class SyntheticTransactionProducer:
             bucket_key, current_time - random.uniform(1, 7) * 86400
         )
         d9_val = (current_time - amt_last) / 86400.0
-        features["d9"] = self._apply_null(float(max(0, d9_val)), "d9", null_rates)
+        features["d9"] = self._apply_null(float(max(0.0, d9_val)), "d9", null_rates)
         self.entity_tracking["amount_range_lasttxn"][bucket_key] = current_time
 
         # --- D10: Hours since last login from this device ---
         # Derive from device last txn with a small offset (login happens before txn)
         login_offset = random.uniform(0.1, 2.0)  # Hours between login and transaction
         d10_val = d4_val + login_offset if d4_val is not None else random.uniform(0.5, 12)
-        features["d10"] = self._apply_null(float(max(0, d10_val)), "d10", null_rates)
+        features["d10"] = self._apply_null(float(max(0.0, d10_val)), "d10", null_rates)
 
         # --- D11: Days since address was first seen ---
+        # Same bootstrap treatment: addresses get a historical offset the
+        # first time they're observed (median ~99 days per IEEE-CIS).
         addr_first = self.entity_tracking["address_firstseen"]
         if addr1 not in addr_first:
-            addr_first[addr1] = current_time
+            addr_first[addr1] = current_time - _historical_offset_seconds(
+                offset_days["d11_address_firstseen"], sigma
+            )
         d11_val = (current_time - addr_first[addr1]) / 86400.0
-        features["d11"] = self._apply_null(float(max(0, d11_val)), "d11", null_rates)
+        features["d11"] = self._apply_null(float(max(0.0, d11_val)), "d11", null_rates)
 
         # --- D12: Hours since last failed transaction ---
         # Track failed txns (only some users have them)
@@ -988,31 +973,36 @@ class SyntheticTransactionProducer:
             current_time - random.uniform(12, 168) * 3600,  # 12h to 7 days ago
         )
         d12_val = (current_time - last_failed) / 3600.0
-        features["d12"] = self._apply_null(float(max(0, d12_val)), "d12", null_rates)
+        features["d12"] = self._apply_null(float(max(0.0, d12_val)), "d12", null_rates)
 
         # --- D13: Days since profile was last updated ---
+        # Defaults to the user's (now-historical) creation time so D13
+        # stays on the same scale as D1 rather than collapsing to 0.
         if "user_profile_updated" not in self.entity_tracking:
             self.entity_tracking["user_profile_updated"] = {}
         prof_updated = self.entity_tracking["user_profile_updated"].get(
-            user.user_id, user_created.get(user.user_id, current_time)
+            user.user_id, user_created[user.user_id]
         )
         d13_val = (current_time - prof_updated) / 86400.0
-        features["d13"] = self._apply_null(float(max(0, d13_val)), "d13", null_rates)
+        features["d13"] = self._apply_null(float(max(0.0, d13_val)), "d13", null_rates)
 
         # --- D14: Hours since last successful transaction ---
         # Very similar to D2 but in hours and counts only successful txns
         d14_val = d2_val * 24  # Convert D2 (days) to hours
-        features["d14"] = self._apply_null(float(max(0, d14_val)), "d14", null_rates)
+        features["d14"] = self._apply_null(float(max(0.0, d14_val)), "d14", null_rates)
 
         # --- D15: Days since last password change ---
+        # Bootstrap relative to the user's historical creation timestamp,
+        # minus a random 0-90 day offset to represent the time between
+        # account creation and the last password change.
         if "user_password_changed" not in self.entity_tracking:
             self.entity_tracking["user_password_changed"] = {}
         pw_changed = self.entity_tracking["user_password_changed"].get(
             user.user_id,
-            user_created.get(user.user_id, current_time) - random.uniform(0, 90) * 86400,
+            user_created[user.user_id] + random.uniform(0, 90) * 86400,
         )
         d15_val = (current_time - pw_changed) / 86400.0
-        features["d15"] = self._apply_null(float(max(0, d15_val)), "d15", null_rates)
+        features["d15"] = self._apply_null(float(max(0.0, d15_val)), "d15", null_rates)
 
         return features
 
