@@ -29,7 +29,7 @@ python-dotenv==1.0.0
 python-json-logger==3.2.1
 python-lsp-jsonrpc==1.1.2
 python-lsp-server==1.13.0
-pytz==2025.2
+pytz==2026.1.post1
 redis==5.0.1
 seaborn==0.13.2
 six==1.17.0
