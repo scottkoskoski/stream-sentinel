@@ -49,6 +49,18 @@ fraud_alerts (
     status VARCHAR(20) DEFAULT 'PENDING',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+```
+
+> **Note on severity casing:** Two `AlertSeverity` enums coexist in the
+> code -- `src/persistence/schemas.py` (upper-case, DB-facing, matches
+> the CHECK constraint above) and `src/consumers/alert_processor.py`
+> (lower-case, JSON-facing on the `alert-responses` Kafka topic). To
+> make the DB insert boundary robust to accidental mixing,
+> `FraudAlert.to_dict()` upper-cases both `severity` and `status` on
+> output. Any value reaching the CHECK constraint will already be in
+> the accepted form.
+
+```sql
 
 -- User account management
 user_accounts (
