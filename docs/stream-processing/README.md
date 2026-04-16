@@ -511,7 +511,7 @@ class RealTimeFraudScorer:
 class EnsembleFraudScorer:
     def __init__(self):
         self.models = {
-            'xgboost': self.load_xgboost_model(),  # Primary model (97.07% AUC)
+            'xgboost': self.load_xgboost_model(),  # Primary model (99.42% production AUC)
             'random_forest': self.load_rf_model(),
             'neural_network': self.load_nn_model()
         }
@@ -804,7 +804,15 @@ logger.info("Transaction processed", extra={
 })
 ```
 
-Each consumer exposes Prometheus metrics on dedicated ports (8000-8003) for operational monitoring.
+Each consumer exposes Prometheus metrics on dedicated ports (fraud_detector=8000, alert_processor=8001, persistence_consumer=8002, enhanced_fraud_detector=8003, dlq_consumer=8004) and health endpoints (`/health`, `/health/ready`, `/health/details`) served by `src/monitoring/health.py`.
+
+### Distributed Tracing
+
+Every consumer uses the `src/tracing/` helpers (`traced_consume`, `traced_produce`) to propagate a correlation ID on every Kafka message. A transaction that enters at `synthetic-transactions` can be followed through `fraud-detection-results`, `fraud-alerts`, and persistence via a single `correlation_id` field in every log line and output payload.
+
+### Input Validation at Ingestion
+
+Consumers validate incoming transactions with `src/validation/transaction_validator.py` before any feature extraction or scoring. Malformed messages (missing required fields, invalid types, out-of-range values) are rejected directly to the DLQ with structured error metadata so the rest of the pipeline only sees well-formed records.
 
 ## Next Steps
 

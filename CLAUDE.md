@@ -69,7 +69,10 @@ python src/consumers/fraud_detector.py
 # Fraud detection consumer (batch mode for higher throughput)
 python src/consumers/fraud_detector.py --batch --batch-size 32 --batch-timeout-ms 100
 
-# Enhanced fraud detector (with online learning)
+# Override default fraud threshold (default: 0.3)
+python src/consumers/fraud_detector.py --threshold 0.5
+
+# Enhanced fraud detector (alternate variant with online learning integration)
 python src/consumers/enhanced_fraud_detector.py
 
 # Alert processor
@@ -84,9 +87,27 @@ python -m src.kafka.lag_monitor
 # Retraining trigger (listens for drift alerts)
 python -m src.ml.online_learning.retraining_trigger
 
+# Model deployment CLI (register / promote / rollback / ab-test / status)
+python scripts/deploy_model.py register --model-path models/new.pkl --version 2.0.0
+python scripts/deploy_model.py promote --version 2.0.0 --strategy canary
+python scripts/deploy_model.py ab-test --control 1.0.0 --treatment 2.0.0
+
 # Online learning demo
 python scripts/online_learning_demo.py
 ```
+
+### Production Deployment
+
+```bash
+# Deploy to Kubernetes via Helm (k8s/ + helm/stream-sentinel/)
+helm install stream-sentinel helm/stream-sentinel/
+
+# Or apply raw manifests
+kubectl apply -f k8s/namespace.yaml -f k8s/serviceaccount.yaml
+kubectl apply -f k8s/config/ -f k8s/consumers/ -f k8s/hpa/ -f k8s/monitoring/
+```
+
+Consumer image is built from `docker/Dockerfile.consumer` (multi-stage, non-root). CI/CD pipelines live in `.github/workflows/` (ci.yml, performance.yml, security.yml). Operational runbooks are under `docs/runbooks/`.
 
 ## Architecture
 
@@ -117,20 +138,22 @@ Producers -> Kafka -> Fraud Detection Consumers -> Alerts/Persistence
 ### Source Layout (`src/`)
 - **producers/** - Transaction data generation. `config.py` centralizes all generation parameters (fraud rates, feature distributions, entity tracking).
 - **consumers/** - Stream consumers:
-  - `fraud_detector.py` - Core consumer with ML-primary scoring, blocking enforcement, batch mode, drift monitoring
-  - `enhanced_fraud_detector.py` - Extended variant with online learning integration
+  - `fraud_detector.py` - Core consumer with ML-primary scoring (ModelRegistry + filesystem fallback), blocking enforcement, batch mode, drift monitoring, live A/B testing
+  - `enhanced_fraud_detector.py` - Alternate variant with extended online learning integration
   - `alert_processor.py` - Severity classification, response actions, user blocking
   - `persistence_consumer.py` - Batch persistence to PostgreSQL/ClickHouse
   - `dlq_consumer.py` - Dead letter queue processing
 - **kafka/** - `config.py` (centralized settings), `dlq.py` (DLQ publisher), `schema_utils.py` (optional Avro/Schema Registry), `lag_monitor.py` (backpressure monitoring)
 - **ml/** - Machine learning subsystem:
   - `features/feature_engineer.py` - Unified feature engineering for both batch training and streaming inference
-  - `training/core/` - Modular training pipeline with `pipeline_orchestrator.py` and `hyperparameter_optimizer.py` (Optuna)
+  - `training/core/` - Modular training pipeline with `pipeline_orchestrator.py` and `hyperparameter_optimizer.py` (Optuna, F2-score with cost-sensitive learning)
   - `online_learning/` - Drift detection (`live_drift_monitor.py`), model registry, A/B testing, feedback collection, `retraining_trigger.py`
   - `serving/` - Model export (pickle, JSON, ONNX)
 - **inference/** - Python/C++ hybrid inference. `export_model.py` converts pickle to native XGBoost JSON for C++ path.
 - **persistence/** - PostgreSQL and ClickHouse database layer with schema definitions
-- **monitoring/** - Prometheus metrics (counters, histograms, gauges). Each consumer exposes metrics on a dedicated port (8000-8003).
+- **monitoring/** - Prometheus metrics (`metrics.py`) and health endpoints (`health.py` serves `/health`, `/health/ready`, `/health/details`). Each consumer exposes metrics on a dedicated port: fraud_detector=8000, alert_processor=8001, persistence_consumer=8002, enhanced_fraud_detector=8003, dlq_consumer=8004.
+- **tracing/** - Distributed tracing with correlation IDs across the Kafka topic chain (`correlation.py`, `traced_consume`, `traced_produce`).
+- **validation/** - Transaction input validation at Kafka consumer ingestion (`transaction_validator.py`); invalid messages are rejected to DLQ before scoring.
 - **utils/** - `logging.py` provides structured JSON logging across all consumers
 
 ### Kafka Topics
@@ -144,7 +167,20 @@ Producers -> Kafka -> Fraud Detection Consumers -> Alerts/Persistence
 
 ### Infrastructure (Docker Compose)
 Core: Zookeeper, Kafka (9092), Schema Registry, Kafka UI (8080), Redis (6379), Redis Insight (8001), PostgreSQL, ClickHouse.
-Monitoring: Prometheus (9090), Grafana (3000) with pre-built fraud detection dashboard.
+Monitoring: Prometheus (9090), Grafana (3000) with pre-built fraud detection dashboard. Prometheus alert rules live at `docker/prometheus/alert_rules.yml`.
+
+### Kubernetes / Helm
+- `k8s/` - raw manifests (namespace, service account, ConfigMap, Secrets, 4 consumer Deployments with health probes, HPA min=2/max=12, Prometheus+Grafana)
+- `helm/stream-sentinel/` - Helm chart with templated manifests and configurable `values.yaml` for all infrastructure endpoints
+- `docker/Dockerfile.consumer` - multi-stage, non-root runtime image for all consumers
+
+### CI/CD
+GitHub Actions at `.github/workflows/`: `ci.yml` (lint/test/build), `performance.yml` (throughput checks), `security.yml` (dependency/secret scanning).
+
+### Operational Runbooks
+Production on-call references live under `docs/runbooks/`:
+- `incident-response.md`, `alert-response.md`, `disaster-recovery.md`
+- `scaling.md`, `model-operations.md`, `troubleshooting.md`, `capacity-planning.md`
 
 ### Configuration
 Environment-based config via `.env` files (see `.env.example`). Kafka config is centralized in `src/kafka/config.py` with development/staging/production profiles. Producer data generation is configured in `src/producers/config.py`.
@@ -153,7 +189,8 @@ Environment-based config via `.env` files (see `.env.example`). Kafka config is 
 
 - **Python 3.13+** required
 - **Kafka**: confluent-kafka client, 12 partitions, LZ4 compression. Schema Registry integration is optional (falls back to JSON).
-- **ML models**: XGBoost (99.42% production AUC, 200 features), trained on full-feature synthetic data with GPU (RTX 5070) + 75 Optuna trials. Model at `models/synthetic_fraud_model_production.pkl`. Loaded from ModelRegistry (Redis) or filesystem fallback. `model_status` tracks: `ml_primary` / `rules_fallback` / `loading`. Label encoders saved in pickle for proper categorical encoding at inference. Default fraud threshold is 0.5.
+- **ML models**: XGBoost (99.42% production AUC, 200 features), trained on full-feature synthetic data with GPU (RTX 5070) + 75 Optuna trials. Training pipeline optimizes **F2-score** with cost-sensitive learning (replaces prior ROC-AUC objective) to weight recall over precision. Model at `models/synthetic_fraud_model_production.pkl`. Loaded from ModelRegistry (Redis) first, with filesystem fallback. A background refresh thread hot-swaps new registry versions every 60s under a threading lock. `model_status` tracks: `ml_primary` / `rules_fallback` / `loading`. Label encoders saved in pickle for proper categorical encoding at inference. Default fraud threshold is 0.3 (tunable via `--threshold`).
+- **A/B testing**: Wired into the streaming fraud detector via `ABTestManager`. Users are assigned to control/treatment variants by consistent MD5 hashing when an experiment is active. Use `scripts/deploy_model.py` to register/promote/rollback models and create experiments.
 - **Feature engineering**: Velocity, merchant risk, amount z-score, temporal, interaction features. Unified module works for both training (DataFrame) and inference (dict).
 - **Drift detection**: PSI-based live monitoring in fraud_detector, configurable check interval. Alerts trigger retraining evaluation with guard conditions (min samples, cooldown, severity threshold).
 - **C++ inference**: Optional native XGBoost acceleration. Use `src/inference/export_model.py` to convert pickle to native format, build via `src/inference/cpp/Makefile`.

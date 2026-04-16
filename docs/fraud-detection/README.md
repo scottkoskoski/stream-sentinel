@@ -1,6 +1,6 @@
 # Real-Time Fraud Detection Pipeline
 
-The fraud detection consumer (`src/consumers/fraud_detector.py`) is the core runtime component of Stream Sentinel. It consumes transactions from Kafka, enforces user blocking, extracts enriched features, scores via ML model (with rules-based fallback), monitors for model drift, and publishes alerts.
+The fraud detection consumer (`src/consumers/fraud_detector.py`) is the core runtime component of Stream Sentinel. It validates incoming transactions, enforces user blocking, extracts enriched features, scores via an ML model loaded from the Redis `ModelRegistry` (with filesystem fallback and optional A/B variant routing), emits distributed-tracing correlation IDs downstream, monitors for model drift, and publishes alerts. A background thread hot-swaps new registry versions without restart.
 
 ## Pipeline Overview
 
@@ -8,6 +8,8 @@ The fraud detection consumer (`src/consumers/fraud_detector.py`) is the core run
 synthetic-transactions (Kafka)
         |
         v
+ Input validation (src/validation/transaction_validator.py)
+        |
  +--- Blocked user check (Redis SISMEMBER) ---+
  |                                             |
  | blocked                              not blocked
@@ -17,6 +19,10 @@ blocked-transactions topic              Load user profile (Redis)
                                                v
                                         Feature engineering
                                         (FeatureEngineer)
+                                               |
+                                               v
+                                        A/B variant assignment
+                                        (if experiment active)
                                                |
                                                v
                                         ML scoring (XGBoost primary)
@@ -29,16 +35,13 @@ blocked-transactions topic              Load user profile (Redis)
                                         Live drift monitor (PSI)
                                                |
                                                v
-                                  +--- score >= threshold (0.7)? ---+
+                                  +--- score >= threshold (0.3)? ---+
                                   |                                 |
                                   v                                 v
                            fraud-alerts topic              fraud-detection-results
-                                  |
-                                  v
-                           fraud-detection-results
 ```
 
-Failed messages at any stage are routed to the dead letter queue via `src/kafka/dlq.py`.
+Correlation IDs (via `src/tracing/`) are stamped on every output message so a transaction can be traced end-to-end across Kafka hops. Failed messages at any stage are routed to the dead letter queue via `src/kafka/dlq.py`.
 
 ## Blocking Enforcement
 
@@ -78,13 +81,19 @@ These enriched features are computed from the user profile stored in Redis (30-d
 
 ### ML-Primary Scoring
 
-The primary scoring path uses an XGBoost model (97.05% CV AUC). The `model_status` field tracks the current state:
+The primary scoring path uses an XGBoost model (99.42% production AUC on 200 features, trained with F2-score + cost-sensitive learning). The `model_status` field tracks the current state:
 
 - `ml_primary` -- ML model loaded and serving predictions
 - `rules_fallback` -- ML model unavailable, using rule-based scoring
 - `loading` -- Model is being loaded
 
-The model is loaded from the ModelRegistry (Redis) with filesystem fallback. If a scaler was saved alongside the model, it is applied to the feature vector before inference.
+### Model Loading and Hot-Swap
+
+On startup, the detector tries the Redis-backed `ModelRegistry` first and falls back to `models/synthetic_fraud_model_production.pkl` if Redis is unavailable. A background thread refreshes the registry every 60 seconds; when it finds a newer production version, it hot-swaps the model, scaler, encoders, and feature names under a `threading.Lock` so in-flight scoring does not observe a partial state. If a scaler was saved alongside the model, it is applied to the feature vector before inference.
+
+### A/B Test Variant Routing
+
+When `ABTestManager` reports an active experiment, users are assigned to control or treatment variants via consistent MD5 hashing of `user_id`. Each variant is scored against its own pickled model (cached in-process); the emitted result includes `ab_test.variant_id` and `ab_test.experiment_id` for downstream statistical analysis. If the treatment model cannot be loaded, the path falls back to the control (production) model transparently. Experiments are created via `python scripts/deploy_model.py ab-test`.
 
 ### Rules-Based Fallback
 
@@ -151,17 +160,22 @@ python src/consumers/enhanced_fraud_detector.py
 ### Configuration
 
 - `consumer_group` -- Kafka consumer group (default: `fraud-detection-group`)
-- `fraud_threshold` -- Alert threshold, 0.0-1.0 (default: 0.7)
-- `model_path` -- Path to model pickle file
+- `fraud_threshold` -- Alert threshold, 0.0-1.0 (default: 0.3; CLI: `--threshold`)
+- `model_path` -- Path to model pickle file (default: `models/synthetic_fraud_model_production.pkl`)
 - Kafka and Redis connection settings via environment variables (see `.env.example`)
 
 C++ inference acceleration is available as an optional optimization. Use `src/inference/export_model.py` to convert the model to native XGBoost JSON format and build via `src/inference/cpp/Makefile`.
+
+## Health and Metrics
+
+- **Health endpoints** (via `src/monitoring/health.py`): `/health` (liveness), `/health/ready` (readiness -- returns 503 during startup grace period), `/health/details` (verbose dependency status). Used as Kubernetes liveness/readiness probes.
+- **Prometheus metrics** on port 8000: processing latency histograms, throughput counters, fraud alert counters, model status gauge (1=ml_primary, 0=rules_fallback), model version info, drift PSI, A/B variant counts.
 
 ## Performance Targets
 
 - **Throughput**: 10,000+ TPS sustained
 - **Latency**: <100ms P99
-- **Model AUC**: 97.05% (XGBoost, validated on IEEE-CIS dataset)
+- **Model AUC**: 99.42% (XGBoost, 200 features, production test set)
 - **Graceful degradation**: Automatic fallback to rules-based scoring if ML model fails
 
 ## Related Documentation
@@ -169,3 +183,4 @@ C++ inference acceleration is available as an optional optimization. Use `src/in
 - [Alert Response System](../alert-response/README.md) -- Downstream alert processing and user blocking
 - [Machine Learning Pipeline](../machine-learning/README.md) -- Model training and hyperparameter optimization
 - [State Management](../state-management/README.md) -- Redis patterns for user profiles and blocking
+- [Model Operations Runbook](../runbooks/model-operations.md) -- Deployment, rollback, A/B test setup

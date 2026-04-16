@@ -1,6 +1,6 @@
 # Machine Learning Pipeline
 
-Stream Sentinel uses XGBoost for real-time fraud detection, achieving 97.05% CV AUC. The ML subsystem covers training, feature engineering, model export, online learning, and production inference.
+Stream Sentinel uses XGBoost for real-time fraud detection. The current production model scores **99.42% AUC on 200 features** with training optimized for **F2-score** (recall-weighted) using cost-sensitive learning. The ML subsystem covers training, feature engineering, model export, online learning, runtime deployment, and production inference.
 
 ## Training Pipeline
 
@@ -27,7 +27,9 @@ src/ml/training/
 
 ### Hyperparameter Optimization
 
-`hyperparameter_optimizer.py` uses Optuna with TPE sampling and MedianPruner for efficient search. Key search spaces include:
+`hyperparameter_optimizer.py` uses Optuna with TPE sampling and MedianPruner for efficient search. The optimizer targets **F2-score** (β=2, weights recall 4x over precision) as the objective rather than ROC-AUC -- a deliberate choice for fraud detection where missed fraud is costlier than false positives. Cost-sensitive learning is applied via `scale_pos_weight` to handle the extreme class imbalance of fraud data.
+
+Key search spaces include:
 
 - `n_estimators`: 500-3000
 - `max_depth`: 3-15
@@ -37,7 +39,7 @@ src/ml/training/
 - `min_child_weight`: 0.1-20
 - `scale_pos_weight`: 1-10 (class imbalance handling)
 
-Validation uses StratifiedKFold cross-validation with early stopping. The optimizer supports convergence detection and trial pruning.
+Validation uses StratifiedKFold cross-validation with early stopping. The optimizer supports convergence detection and trial pruning; failed trials are pruned from the study before final model selection.
 
 ### Checkpointing
 
@@ -49,10 +51,16 @@ After training completes, `pipeline_orchestrator.py` auto-registers the model to
 
 ## Model Performance
 
-**Production XGBoost Model:**
-- Cross-validation AUC: 97.05%
-- Model type: XGBoost with Optuna hyperparameter optimization
+**Production XGBoost Model** (`models/synthetic_fraud_model_production.pkl`):
+- Training AUC: 99.59%
+- **Production AUC: 99.42%** (held-out test set)
+- Precision/Recall at threshold=0.5: 0.62 / 0.91
+- Features: 200 (full IEEE-CIS compatible feature set)
+- Optimization objective: F2-score with cost-sensitive learning
+- Hardware: GPU-accelerated XGBoost (RTX 5070) + 75 Optuna trials
 - Validation: StratifiedKFold cross-validation
+
+See `models/TRAINING_REPORT.md` and `docs/model-performance-report.md` for the full performance breakdown and feature importance rankings.
 
 ## Feature Engineering
 
@@ -207,8 +215,15 @@ python -m src.ml.online_learning.retraining_trigger
 
 # Run online learning demo
 python scripts/online_learning_demo.py
+
+# Deploy a model via the ModelRegistry CLI
+python scripts/deploy_model.py register --model-path models/new.pkl --version 2.0.0
+python scripts/deploy_model.py promote --version 2.0.0 --strategy canary
+python scripts/deploy_model.py rollback --version 1.0.0
+python scripts/deploy_model.py ab-test --control 1.0.0 --treatment 2.0.0
+python scripts/deploy_model.py status
 ```
 
 ---
 
-**Navigation:** [Documentation Index](../README.md) | [Online Learning Details](../../src/ml/online_learning/README.md)
+**Navigation:** [Documentation Index](../README.md) | [Online Learning Details](../../src/ml/online_learning/README.md) | [Model Operations Runbook](../runbooks/model-operations.md)

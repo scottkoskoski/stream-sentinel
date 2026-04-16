@@ -90,8 +90,12 @@ A production-grade online learning system that enables fraud detection models to
 
 | Component | Purpose | Integration Points |
 |-----------|---------|------------------|
-| `EnhancedFraudDetector` | Integrate online learning with existing fraud detection | Model loading, A/B testing, performance tracking |
+| `FraudDetector` (primary consumer) | Production streaming fraud detection wired to `ModelRegistry` + `ABTestManager` | Registry-first model loading, 60s background hot-swap, consistent-hash A/B variant routing, filesystem fallback |
+| `EnhancedFraudDetector` | Alternate variant with extended online learning instrumentation | Model loading, A/B testing, performance tracking |
 | `OnlineLearningDemo` | Demonstrate system capabilities | End-to-end workflow showcase, component testing |
+| `scripts/deploy_model.py` | Operator CLI for the registry | `register`, `promote` (full/canary/blue-green/rolling), `rollback`, `ab-test`, `status` |
+
+> **Note:** As of the Tier 3 deployment rollout, `ModelRegistry` and `ABTestManager` are integrated directly into the primary `src/consumers/fraud_detector.py` (not only the enhanced variant). Models are promoted via `scripts/deploy_model.py` and the detector picks them up on its next 60-second refresh cycle without requiring a restart.
 
 ## Installation & Setup
 

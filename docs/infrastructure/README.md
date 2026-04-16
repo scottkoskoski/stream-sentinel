@@ -41,9 +41,18 @@ Grafana ships with a pre-built fraud detection dashboard. Each consumer exposes 
 | fraud_detector | 8000 |
 | alert_processor | 8001 |
 | persistence_consumer | 8002 |
-| dlq_consumer | 8003 |
+| enhanced_fraud_detector | 8003 |
+| dlq_consumer | 8004 |
 
-Prometheus scrapes these endpoints and stores time-series metrics (counters, histograms, gauges) defined in `src/monitoring/`.
+Prometheus scrapes these endpoints and stores time-series metrics (counters, histograms, gauges) defined in `src/monitoring/metrics.py`. Production alert rules live in `docker/prometheus/alert_rules.yml` (16+ alerts covering consumer availability, lag, latency, model drift, error rates, and A/B experiment health). Alertmanager routing is configured via `docker/prometheus/alertmanager.yml`.
+
+In addition to metrics, every consumer exposes health probes via `src/monitoring/health.py`:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/health` | Liveness probe (returns 503 during startup grace, then 200 while healthy) |
+| `/health/ready` | Readiness probe (checks Kafka/Redis/model dependencies) |
+| `/health/details` | Verbose dependency status for debugging (toggleable via `HEALTH_DETAILS_ENABLED`) |
 
 ### Secure Stack (`docker/docker-compose.secure.yml`)
 
@@ -153,11 +162,49 @@ The pre-built dashboard (available at http://localhost:3000) displays:
 
 ### Alerting
 
-Prometheus alerting can be configured for:
-- Consumer lag exceeding thresholds
-- Inference latency degradation
-- Error rate spikes
-- Service health failures
+Prometheus alert rules at `docker/prometheus/alert_rules.yml` cover:
+- Consumer availability (FraudDetectorDown, AlertProcessorDown, PersistenceConsumerDown)
+- Consumer lag exceeding thresholds (HighConsumerLag)
+- Inference latency degradation (HighFraudDetectionLatency)
+- Model health (ModelScoringDegraded, ModelDriftDetected)
+- Error rate spikes, fraud rate anomalies, and A/B experiment statistical signals
+
+## Kubernetes Deployment
+
+The `k8s/` directory contains raw Kubernetes manifests and `helm/stream-sentinel/` provides a Helm chart for production deployment.
+
+```bash
+# Option A: Helm (recommended for production)
+helm install stream-sentinel helm/stream-sentinel/ -f helm/stream-sentinel/values.yaml
+
+# Option B: Raw manifests
+kubectl apply -f k8s/namespace.yaml -f k8s/serviceaccount.yaml
+kubectl apply -f k8s/config/ -f k8s/consumers/ -f k8s/hpa/ -f k8s/monitoring/
+```
+
+Contents:
+
+| Resource | File(s) |
+|----------|---------|
+| Namespace + RBAC | `k8s/namespace.yaml`, `k8s/serviceaccount.yaml` |
+| Configuration | `k8s/config/` (ConfigMap, Secrets) |
+| Consumer Deployments | `k8s/consumers/{fraud-detector,alert-processor,persistence-consumer,dlq-consumer}.yaml` |
+| Autoscaling | `k8s/hpa/` (min=2, max=12, CPU >70% target) |
+| Monitoring | `k8s/monitoring/` (Prometheus + Grafana) |
+
+Consumer pods use the `docker/Dockerfile.consumer` image -- a multi-stage, non-root build that installs the slim runtime dependencies and bakes in the production model. Runtime model updates go through the Redis `ModelRegistry` rather than a mounted volume (see [Model Operations Runbook](../runbooks/model-operations.md)).
+
+Liveness probe: `/health` on port 8080. Readiness probe: `/health/ready` on port 8080.
+
+## CI/CD
+
+GitHub Actions workflows live under `.github/workflows/`:
+
+| Workflow | Purpose |
+|----------|---------|
+| `ci.yml` | Lint (black/isort/flake8), unit + integration tests, image build |
+| `performance.yml` | Throughput and latency regression checks |
+| `security.yml` | Dependency and secret scanning |
 
 ## Operations
 
@@ -200,4 +247,4 @@ All consumers use JSON-formatted structured logging via `src/utils/logging.py`, 
 
 ---
 
-**Navigation:** [Documentation Index](../README.md) | [Docker Compose](../../docker/docker-compose.yml) | [Kafka Config](../../src/kafka/config.py)
+**Navigation:** [Documentation Index](../README.md) | [Docker Compose](../../docker/docker-compose.yml) | [Kafka Config](../../src/kafka/config.py) | [Runbooks](../runbooks/README.md) | [Helm Chart](../../helm/stream-sentinel/)
