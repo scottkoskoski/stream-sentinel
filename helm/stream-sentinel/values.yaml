@@ -1,0 +1,216 @@
+# Default values for stream-sentinel Helm chart.
+# Override these in a per-environment values file (e.g. values-production.yaml).
+
+# -- Global settings --------------------------------------------------------
+global:
+  # Container image shared by all consumers
+  image:
+    repository: stream-sentinel-consumer
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  # imagePullSecrets:
+  #   - name: registry-credentials
+
+  # Namespace (created by the chart when create is true)
+  namespace:
+    name: stream-sentinel
+    create: true
+
+  # Environment identifier passed to all consumers
+  environment: production
+
+  # Logging
+  logLevel: WARNING
+  logFormat: json
+
+# -- ServiceAccount ---------------------------------------------------------
+serviceAccount:
+  create: true
+  name: stream-sentinel
+  annotations: {}
+
+# -- ConfigMap values -------------------------------------------------------
+config:
+  kafka:
+    bootstrapServers: "kafka-headless.stream-sentinel.svc.cluster.local:9092"
+    schemaRegistryUrl: "http://schema-registry.stream-sentinel.svc.cluster.local:8081"
+    maxPollRecords: "500"
+    fetchMinBytes: "1024"
+    fetchMaxWaitMs: "500"
+  topics:
+    transactions: "synthetic-transactions"
+    fraudAlerts: "fraud-alerts"
+    results: "fraud-detection-results"
+    blocked: "blocked-transactions"
+    driftAlerts: "model-drift-alerts"
+    retraining: "model-retraining-jobs"
+    dlq: "dead-letter-queue"
+  redis:
+    host: "redis-headless.stream-sentinel.svc.cluster.local"
+    port: "6379"
+    database: "0"
+  postgres:
+    host: "postgres.stream-sentinel.svc.cluster.local"
+    port: "5432"
+    database: "stream_sentinel"
+  clickhouse:
+    host: "clickhouse.stream-sentinel.svc.cluster.local"
+    port: "9000"
+    httpPort: "8123"
+    database: "stream_sentinel"
+  fraud:
+    threshold: "0.5"
+    modelPath: "/app/models/synthetic_fraud_model_production.pkl"
+  batch:
+    size: "32"
+    timeoutMs: "100"
+  drift:
+    threshold: "0.05"
+    minSamples: "1000"
+  monitoring:
+    prometheusEnabled: "true"
+    prometheusNamespace: "stream_sentinel"
+
+# -- Secrets (base64-encoded placeholders) ----------------------------------
+# In production, use sealed-secrets, external-secrets-operator, or Vault.
+secrets:
+  redis:
+    password: "Q0hBTkdFTUUtcmVkaXMtcGFzc3dvcmQ="
+  postgres:
+    user: "c3RyZWFtX3NlbnRpbmVsX3VzZXI="
+    password: "Q0hBTkdFTUUtcG9zdGdyZXMtcGFzc3dvcmQ="
+  clickhouse:
+    user: "c3RyZWFtX3NlbnRpbmVsX3VzZXI="
+    password: "Q0hBTkdFTUUtY2xpY2tob3VzZS1wYXNzd29yZA=="
+  kafka:
+    username: "c3RyZWFtX3NlbnRpbmVsX3VzZXI="
+    password: "Q0hBTkdFTUUta2Fma2EtcGFzc3dvcmQ="
+  schemaRegistry:
+    username: "c2NoZW1hX3JlZ2lzdHJ5X3VzZXI="
+    password: "Q0hBTkdFTUUtc2NoZW1hLXJlZ2lzdHJ5LXBhc3N3b3Jk"
+
+# -- Consumer deployments ---------------------------------------------------
+consumers:
+  fraudDetector:
+    enabled: true
+    replicas: 3
+    command: ["python", "-m"]
+    args: ["src.consumers.fraud_detector", "--batch", "--batch-size", "32", "--batch-timeout-ms", "100"]
+    metricsPort: 8000
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+    antiAffinity: true
+    modelVolume:
+      enabled: true
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 12
+      targetCPUUtilization: 70
+      targetMemoryUtilization: 80
+
+  alertProcessor:
+    enabled: true
+    replicas: 2
+    command: ["python", "-m"]
+    args: ["src.consumers.alert_processor"]
+    metricsPort: 8001
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+    antiAffinity: true
+    modelVolume:
+      enabled: false
+    hpa:
+      enabled: false
+
+  persistenceConsumer:
+    enabled: true
+    replicas: 2
+    command: ["python", "-m"]
+    args: ["src.consumers.persistence_consumer"]
+    metricsPort: 8002
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+    antiAffinity: true
+    modelVolume:
+      enabled: false
+    hpa:
+      enabled: false
+
+  dlqConsumer:
+    enabled: true
+    replicas: 1
+    command: ["python", "-m"]
+    args: ["src.consumers.dlq_consumer"]
+    metricsPort: 8004
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "250m"
+    antiAffinity: false
+    modelVolume:
+      enabled: false
+    hpa:
+      enabled: false
+
+# -- Probes (shared defaults for all consumers) -----------------------------
+probes:
+  liveness:
+    path: /health
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /readiness
+    initialDelaySeconds: 15
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 12
+
+# -- Monitoring (Grafana) --------------------------------------------------
+grafana:
+  enabled: true
+  image:
+    repository: grafana/grafana
+    tag: "10.4.1"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+  adminPassword: "Q0hBTkdFTUUtZ3JhZmFuYS1hZG1pbg=="
+
+# -- Monitoring (Prometheus config) -----------------------------------------
+prometheus:
+  # When true the chart creates a ConfigMap with scrape config and alert rules.
+  # Set to false if you manage Prometheus externally (e.g. via kube-prometheus-stack).
+  configMap:
+    enabled: true
+  scrapeInterval: "15s"
+  evaluationInterval: "15s"

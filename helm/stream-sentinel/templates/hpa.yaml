@@ -1,0 +1,57 @@
+{{/*
+Generates an HPA for each consumer that has hpa.enabled = true.
+*/}}
+
+{{- $namespace := include "stream-sentinel.namespace" . -}}
+{{- $root := . -}}
+
+{{- range $key, $consumer := .Values.consumers }}
+{{- if and $consumer.enabled (and $consumer.hpa $consumer.hpa.enabled) }}
+{{- $consumerName := $key | kebabcase }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $consumerName }}-hpa
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "stream-sentinel.consumerLabels" (dict "root" $root "consumerName" $consumerName) | nindent 4 }}
+    app.kubernetes.io/component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $consumerName }}
+  minReplicas: {{ $consumer.hpa.minReplicas }}
+  maxReplicas: {{ $consumer.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $consumer.hpa.targetCPUUtilization }}
+    {{- if $consumer.hpa.targetMemoryUtilization }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ $consumer.hpa.targetMemoryUtilization }}
+    {{- end }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+
+{{- end }}
+{{- end }}

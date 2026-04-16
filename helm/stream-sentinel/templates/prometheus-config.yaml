@@ -1,0 +1,122 @@
+{{- if .Values.prometheus.configMap.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stream-sentinel.fullname" . }}-prometheus
+  namespace: {{ include "stream-sentinel.namespace" . }}
+  labels:
+    {{- include "stream-sentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: {{ .Values.prometheus.scrapeInterval }}
+      evaluation_interval: {{ .Values.prometheus.evaluationInterval }}
+      scrape_timeout: 10s
+
+    rule_files:
+      - /etc/prometheus/alert_rules.yml
+
+    scrape_configs:
+      {{- range $key, $consumer := .Values.consumers }}
+      {{- if $consumer.enabled }}
+      {{- $consumerName := $key | kebabcase }}
+      - job_name: {{ $consumerName | quote }}
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - {{ $.Values.global.namespace.name }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            regex: {{ $consumerName }}
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      {{- end }}
+      {{- end }}
+
+      - job_name: "kubernetes-pods"
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - {{ .Values.global.namespace.name }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+  alert_rules.yml: |
+    groups:
+      - name: stream-sentinel-consumer-alerts
+        rules:
+          - alert: ConsumerDown
+            expr: up == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Consumer {{`{{ $labels.job }}`}} is down"
+              description: "No metric scrape from {{`{{ $labels.pod }}`}} for 2 minutes."
+
+          - alert: HighFraudDetectionLatency
+            expr: histogram_quantile(0.99, rate(fraud_detection_latency_seconds_bucket{job="fraud-detector"}[5m])) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Fraud detection P99 latency exceeds 100ms"
+              description: "P99 latency is {{`{{ $value }}`}}s on pod {{`{{ $labels.pod }}`}}."
+
+          - alert: HighConsumerLag
+            expr: kafka_consumer_lag_messages > 10000
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Kafka consumer lag is high"
+              description: "Consumer {{`{{ $labels.job }}`}} has {{`{{ $value }}`}} messages of lag."
+
+          - alert: DLQMessagesIncreasing
+            expr: rate(dlq_messages_total[5m]) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Dead letter queue messages are increasing"
+              description: "DLQ is receiving {{`{{ $value }}`}} messages/sec."
+
+          - alert: ModelDriftDetected
+            expr: model_drift_psi_score > 0.2
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "ML model drift detected"
+              description: "PSI score {{`{{ $value }}`}} exceeds threshold."
+
+          - alert: HighConsumerErrorRate
+            expr: rate(consumer_errors_total[5m]) / rate(consumer_messages_processed_total[5m]) > 0.01
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Consumer error rate exceeds 1%"
+              description: "{{`{{ $labels.job }}`}} error rate is {{`{{ $value | humanizePercentage }}`}}."
+{{- end }}

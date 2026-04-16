@@ -1,0 +1,28 @@
+Stream Sentinel has been deployed to namespace: {{ include "stream-sentinel.namespace" . }}
+
+Consumers:
+{{- range $key, $consumer := .Values.consumers }}
+{{- if $consumer.enabled }}
+  - {{ $key | kebabcase }}: {{ $consumer.replicas }} replica(s), metrics on port {{ $consumer.metricsPort }}
+{{- end }}
+{{- end }}
+
+To check consumer status:
+  kubectl get pods -n {{ include "stream-sentinel.namespace" . }} -l app.kubernetes.io/part-of=stream-sentinel
+
+To view logs from the fraud detector:
+  kubectl logs -n {{ include "stream-sentinel.namespace" . }} -l app.kubernetes.io/name=fraud-detector -f
+
+{{- if .Values.grafana.enabled }}
+
+Grafana is available at:
+  kubectl port-forward -n {{ include "stream-sentinel.namespace" . }} svc/{{ include "stream-sentinel.fullname" . }}-grafana 3000:3000
+  Then open http://localhost:3000 (admin / <secret>)
+{{- end }}
+
+To scale the fraud detector manually:
+  kubectl scale deployment fraud-detector -n {{ include "stream-sentinel.namespace" . }} --replicas=6
+
+NOTE: Secrets in this release use base64-encoded placeholders.
+      Replace them with real credentials before going to production.
+      Consider using sealed-secrets or external-secrets-operator.

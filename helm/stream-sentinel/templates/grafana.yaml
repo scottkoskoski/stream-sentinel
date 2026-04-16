@@ -1,0 +1,157 @@
+{{- if .Values.grafana.enabled }}
+{{- $fullname := include "stream-sentinel.fullname" . -}}
+{{- $namespace := include "stream-sentinel.namespace" . -}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-grafana
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "stream-sentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "stream-sentinel.labels" . | nindent 8 }}
+        app.kubernetes.io/component: monitoring
+        app.kubernetes.io/name: grafana
+    spec:
+      securityContext:
+        fsGroup: 472
+        runAsUser: 472
+        runAsGroup: 472
+      containers:
+        - name: grafana
+          image: "{{ .Values.grafana.image.repository }}:{{ .Values.grafana.image.tag }}"
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $fullname }}-grafana-secrets
+                  key: admin-password
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          resources:
+            {{- toYaml .Values.grafana.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+            - name: grafana-datasources
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+            - name: grafana-dashboard-providers
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+      volumes:
+        - name: grafana-storage
+          emptyDir: {}
+        - name: grafana-datasources
+          configMap:
+            name: {{ $fullname }}-grafana-datasources
+        - name: grafana-dashboard-providers
+          configMap:
+            name: {{ $fullname }}-grafana-dashboard-providers
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-grafana
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "stream-sentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/name: grafana
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $fullname }}-grafana-secrets
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "stream-sentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+type: Opaque
+data:
+  admin-password: {{ .Values.grafana.adminPassword | quote }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-grafana-datasources
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "stream-sentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+data:
+  prometheus.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.{{ $namespace }}.svc.cluster.local:9090
+        isDefault: true
+        editable: true
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-grafana-dashboard-providers
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "stream-sentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+data:
+  dashboards.yml: |
+    apiVersion: 1
+    providers:
+      - name: "Stream-Sentinel"
+        orgId: 1
+        folder: "Stream-Sentinel"
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false
+{{- end }}

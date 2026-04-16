@@ -1,0 +1,132 @@
+{{/*
+Generates a Deployment + Service for each enabled consumer defined in .Values.consumers.
+Each consumer entry must have: enabled, replicas, command, args, metricsPort, resources.
+*/}}
+
+{{- $root := . -}}
+{{- $fullname := include "stream-sentinel.fullname" . -}}
+{{- $namespace := include "stream-sentinel.namespace" . -}}
+
+{{- range $key, $consumer := .Values.consumers }}
+{{- if $consumer.enabled }}
+{{- $consumerName := $key | kebabcase }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $consumerName }}
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "stream-sentinel.consumerLabels" (dict "root" $root "consumerName" $consumerName) | nindent 4 }}
+spec:
+  replicas: {{ $consumer.replicas }}
+  selector:
+    matchLabels:
+      {{- include "stream-sentinel.consumerSelectorLabels" (dict "root" $root "consumerName" $consumerName) | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "stream-sentinel.consumerLabels" (dict "root" $root "consumerName" $consumerName) | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $consumer.metricsPort | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "stream-sentinel.serviceAccountName" $root }}
+      terminationGracePeriodSeconds: 60
+      {{- if $consumer.antiAffinity }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - {{ $consumerName }}
+                topologyKey: kubernetes.io/hostname
+      {{- end }}
+      containers:
+        - name: {{ $consumerName }}
+          image: "{{ $root.Values.global.image.repository }}:{{ $root.Values.global.image.tag }}"
+          imagePullPolicy: {{ $root.Values.global.image.pullPolicy }}
+          command:
+            {{- toYaml $consumer.command | nindent 12 }}
+          args:
+            {{- toYaml $consumer.args | nindent 12 }}
+          ports:
+            - name: metrics
+              containerPort: {{ $consumer.metricsPort }}
+              protocol: TCP
+          env:
+            - name: METRICS_PORT
+              value: {{ $consumer.metricsPort | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ $fullname }}-config
+            - secretRef:
+                name: {{ $fullname }}-secrets
+          resources:
+            {{- toYaml $consumer.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ $root.Values.probes.liveness.path }}
+              port: metrics
+            initialDelaySeconds: {{ $root.Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ $root.Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $root.Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $root.Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ $root.Values.probes.readiness.path }}
+              port: metrics
+            initialDelaySeconds: {{ $root.Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ $root.Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $root.Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $root.Values.probes.readiness.failureThreshold }}
+          startupProbe:
+            httpGet:
+              path: {{ $root.Values.probes.startup.path }}
+              port: metrics
+            initialDelaySeconds: {{ $root.Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ $root.Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ $root.Values.probes.startup.failureThreshold }}
+          {{- if and $consumer.modelVolume $consumer.modelVolume.enabled }}
+          volumeMounts:
+            - name: models
+              mountPath: /app/models
+              readOnly: true
+          {{- end }}
+      {{- if and $consumer.modelVolume $consumer.modelVolume.enabled }}
+      volumes:
+        - name: models
+          emptyDir: {}
+      {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $consumerName }}
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "stream-sentinel.consumerLabels" (dict "root" $root "consumerName" $consumerName) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "stream-sentinel.consumerSelectorLabels" (dict "root" $root "consumerName" $consumerName) | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ $consumer.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+
+{{- end }}
+{{- end }}

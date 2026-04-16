@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stream-sentinel.fullname" . }}-config
+  namespace: {{ include "stream-sentinel.namespace" . }}
+  labels:
+    {{- include "stream-sentinel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config
+data:
+  # Environment
+  STREAM_SENTINEL_ENV: {{ .Values.global.environment | quote }}
+  LOG_LEVEL: {{ .Values.global.logLevel | quote }}
+  LOG_FORMAT: {{ .Values.global.logFormat | quote }}
+
+  # Kafka
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.config.kafka.bootstrapServers | quote }}
+  SCHEMA_REGISTRY_URL: {{ .Values.config.kafka.schemaRegistryUrl | quote }}
+  KAFKA_MAX_POLL_RECORDS: {{ .Values.config.kafka.maxPollRecords | quote }}
+  KAFKA_FETCH_MIN_BYTES: {{ .Values.config.kafka.fetchMinBytes | quote }}
+  KAFKA_FETCH_MAX_WAIT_MS: {{ .Values.config.kafka.fetchMaxWaitMs | quote }}
+
+  # Topics
+  KAFKA_TOPIC_TRANSACTIONS: {{ .Values.config.topics.transactions | quote }}
+  KAFKA_TOPIC_FRAUD_ALERTS: {{ .Values.config.topics.fraudAlerts | quote }}
+  KAFKA_TOPIC_RESULTS: {{ .Values.config.topics.results | quote }}
+  KAFKA_TOPIC_BLOCKED: {{ .Values.config.topics.blocked | quote }}
+  KAFKA_TOPIC_DRIFT_ALERTS: {{ .Values.config.topics.driftAlerts | quote }}
+  KAFKA_TOPIC_RETRAINING: {{ .Values.config.topics.retraining | quote }}
+  KAFKA_TOPIC_DLQ: {{ .Values.config.topics.dlq | quote }}
+
+  # Redis
+  REDIS_HOST: {{ .Values.config.redis.host | quote }}
+  REDIS_PORT: {{ .Values.config.redis.port | quote }}
+  REDIS_DATABASE: {{ .Values.config.redis.database | quote }}
+
+  # PostgreSQL
+  POSTGRES_HOST: {{ .Values.config.postgres.host | quote }}
+  POSTGRES_PORT: {{ .Values.config.postgres.port | quote }}
+  POSTGRES_DB: {{ .Values.config.postgres.database | quote }}
+
+  # ClickHouse
+  CLICKHOUSE_HOST: {{ .Values.config.clickhouse.host | quote }}
+  CLICKHOUSE_PORT: {{ .Values.config.clickhouse.port | quote }}
+  CLICKHOUSE_HTTP_PORT: {{ .Values.config.clickhouse.httpPort | quote }}
+  CLICKHOUSE_DB: {{ .Values.config.clickhouse.database | quote }}
+
+  # Fraud detection
+  FRAUD_THRESHOLD: {{ .Values.config.fraud.threshold | quote }}
+  FRAUD_MODEL_PATH: {{ .Values.config.fraud.modelPath | quote }}
+
+  # Batch mode
+  BATCH_SIZE: {{ .Values.config.batch.size | quote }}
+  BATCH_TIMEOUT_MS: {{ .Values.config.batch.timeoutMs | quote }}
+
+  # Drift detection
+  DRIFT_DETECTION_THRESHOLD: {{ .Values.config.drift.threshold | quote }}
+  DRIFT_DETECTION_MIN_SAMPLES: {{ .Values.config.drift.minSamples | quote }}
+
+  # Monitoring
+  PROMETHEUS_ENABLED: {{ .Values.config.monitoring.prometheusEnabled | quote }}
+  PROMETHEUS_NAMESPACE: {{ .Values.config.monitoring.prometheusNamespace | quote }}
