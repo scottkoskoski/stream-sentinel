@@ -925,7 +925,7 @@ redis-cli -p 6379 SMEMBERS blocked_users
 # If false positive spike due to data shift:
 # Temporarily increase fraud threshold
 # Restart fraud detector with higher threshold
-python src/consumers/fraud_detector.py --fraud-threshold 0.7 &
+python src/consumers/fraud_detector.py --threshold 0.7 &
 ```
 
 ### Verify

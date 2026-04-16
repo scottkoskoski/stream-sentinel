@@ -214,7 +214,7 @@ python -m src.ml.online_learning.retraining_trigger &
 kill -TERM $(pgrep -f fraud_detector.py)
 sleep 5
 # Higher threshold = fewer false positives (but may miss real fraud)
-python src/consumers/fraud_detector.py --fraud-threshold 0.7 &
+python src/consumers/fraud_detector.py --threshold 0.7 &
 
 # If specific users are being incorrectly flagged:
 # Check and potentially unblock

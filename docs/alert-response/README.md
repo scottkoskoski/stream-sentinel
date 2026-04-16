@@ -97,11 +97,11 @@ The alert processor monitors response times against SLA targets for each severit
 - SLA violation count and details
 - P50, P95, P99 response time distributions
 
-SLA violations are logged and surfaced through Prometheus metrics (exposed on port 8002).
+SLA violations are logged and surfaced through Prometheus metrics (exposed on port 8001).
 
 ## Observability
 
-The alert processor exposes Prometheus metrics on port 8002, including:
+The alert processor exposes Prometheus metrics on port 8001, including:
 
 - Alerts processed (counter, by severity)
 - Users blocked (counter)

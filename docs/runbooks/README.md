@@ -35,6 +35,7 @@ Production runbooks for the Stream Sentinel real-time fraud detection system.
 | Alert Processor metrics | 8001 | HTTP |
 | Persistence Consumer metrics | 8002 | HTTP |
 | Enhanced Fraud Detector metrics | 8003 | HTTP |
+| DLQ Consumer metrics | 8004 | HTTP |
 
 ### Kafka Topics
 
