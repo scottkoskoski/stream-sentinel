@@ -66,6 +66,7 @@ Production on-call references. See [runbooks/README.md](runbooks/README.md) for 
 | Guide | What it covers |
 |-------|---------------|
 | [Project Logs](project-logs/README.md) | Phase-by-phase implementation history and design decisions |
+| [Roadmap](roadmap.md) | Recommended next steps, ranked by priority (ship-blockers, correctness/observability, nice-to-have) |
 
 ## Reading Order
 
