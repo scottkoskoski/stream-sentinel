@@ -290,12 +290,27 @@ class FraudAlert:
     created_at: datetime = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for database insertion."""
+        """Convert to dictionary for database insertion.
+
+        `severity` and `status` are normalized to upper-case before being
+        emitted because the PostgreSQL schema enforces
+        ``CHECK (severity IN ('MINIMAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'))``
+        (see line 44). Two independent ``AlertSeverity`` enums exist in
+        the codebase -- the one in this module uses upper-case values
+        (DB-facing), while ``consumers.alert_processor.AlertSeverity`` uses
+        lower-case values (JSON-facing on the alert-responses topic). If a
+        caller mixes them by accident (passing ``alert_processor.AlertSeverity.HIGH``
+        here, whose ``.value`` is ``"high"``), the raw ``.value`` would
+        violate the DB check constraint. Upper-casing on output makes this
+        a safe conversion instead of a runtime DB insert failure.
+        """
+        severity_value = self.severity.value if hasattr(self.severity, "value") else str(self.severity)
+        status_value = self.status.value if hasattr(self.status, "value") else str(self.status)
         return {
             "transaction_id": self.transaction_id,
             "user_id": self.user_id,
-            "severity": self.severity.value,
-            "status": self.status.value,
+            "severity": severity_value.upper(),
+            "status": status_value.upper(),
             "fraud_score": self.fraud_score,
             "ml_prediction": self.ml_prediction,
             "business_rules_triggered": self.business_rules_triggered,
