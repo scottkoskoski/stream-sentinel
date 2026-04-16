@@ -1,7 +1,9 @@
 # C++ Model Serving Pipeline Verification Report
 
 **Date:** 2026-04-08
-**Model:** ieee_fraud_model_production.pkl (XGBClassifier, 200 features, 97.05% CV AUC)
+**Model:** ieee_fraud_model_production.pkl (XGBClassifier, 200 features, 97.05% CV AUC on IEEE-CIS)
+
+> **Note:** 97.05% AUC is the cross-validation score on the original IEEE-CIS training run. The subsequent production model (`synthetic_fraud_model_production.pkl`, retrained on the full synthetic 200-feature dataset with F2-score optimization) scores 99.42% AUC on its held-out test set. See `models/TRAINING_REPORT.md` for the current production model details.
 
 ## 1. Model Export Verification
 

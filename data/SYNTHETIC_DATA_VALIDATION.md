@@ -4,6 +4,8 @@ Generated: 2026-04-08T18:42:26.383829
 Sample size: 2000 transactions
 Fraud count: 49 (2.45%)
 
+> **Note (2026-04-09 follow-up):** Sections referencing "missing V-features" or a "28-feature" synthetic record reflect the pre-2026-04-09 state. The producer was subsequently updated to emit all 200 IEEE-CIS-compatible features, and the production model was retrained on the full feature set (99.42% AUC). See `models/TRAINING_REPORT.md` and `docs/model-performance-report.md` for the current baseline. Distribution statistics below remain valid as of the generation date.
+
 ## 1. TransactionAmt Distribution
 
 | Statistic | IEEE-CIS | Synthetic | % Diff |
