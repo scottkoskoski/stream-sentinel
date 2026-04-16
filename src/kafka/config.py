@@ -134,13 +134,21 @@ class KafkaConfig:
             "bootstrap.servers": self.bootstrap_servers,
         }
 
-        # Producer-specific optimizations (very basic for confluent-kafka)
+        # Producer-specific optimizations (confluent-kafka / librdkafka).
+        # For the transaction producer we deliberately batch aggressively --
+        # the synthetic producer is a throughput-bound workload and Kafka's
+        # theoretical maximum is far above our per-message generation cost,
+        # so the right trade-off is bigger batches / more compression.
         producer_configs = {
             "transaction": {
-                "linger.ms": 5,
+                "linger.ms": 50,                    # wait up to 50ms to fill a batch
+                "batch.size": 1_048_576,            # 1 MiB per-partition batch buffer
+                "compression.type": "lz4",           # fast compression, high ratio
+                "queue.buffering.max.messages": 1_000_000,
+                "queue.buffering.max.kbytes": 1_048_576,
             },
             "market_data": {
-                "linger.ms": 1,
+                "linger.ms": 1,                     # low-latency path
             },
             "sentiment": {
                 "linger.ms": 100,

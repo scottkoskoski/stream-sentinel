@@ -60,7 +60,9 @@ PEAK_FRAUD_HOURS: List[int] = [
     3,
     4,
     5,
-]  # IEEE-CIS high-risk hours (was [2,3,4])
+    22,
+    23,
+]  # IEEE-CIS high-risk hours; hours 22-23 contribute >3% fraud rate in the real data
 
 
 # ---------------------------------------------------------------------------

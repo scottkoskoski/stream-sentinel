@@ -24,6 +24,7 @@ Architecture Concepts Demonstrated:
 import argparse
 import json
 import logging
+import math
 import multiprocessing
 import random
 import threading
@@ -634,8 +635,9 @@ class SyntheticTransactionProducer:
 
         std_log = self.transaction_patterns["amount_distribution"]["std_log"]
 
-        # Generate log-normal amount
-        amount = np.random.lognormal(mean=mean_log, sigma=std_log)
+        # Generate log-normal amount (random.lognormvariate is ~5x faster
+        # than np.random.lognormal for single-value draws -- no numpy setup)
+        amount = random.lognormvariate(mean_log, std_log)
 
         # Clamp to reasonable bounds
         min_amount = self.transaction_patterns["amount_distribution"]["min_amount"]
@@ -650,11 +652,12 @@ class SyntheticTransactionProducer:
         """Generate product code based on learned distribution."""
         product_codes = self.transaction_patterns.get("product_codes", {"W": 1.0})
 
-        # Weighted random selection
+        # Weighted random selection (random.choices is ~10x faster than
+        # np.random.choice for single-value draws)
         codes = list(product_codes.keys())
         weights = list(product_codes.values())
 
-        return np.random.choice(codes, p=weights)
+        return random.choices(codes, weights=weights, k=1)[0]
 
     def _generate_card_features(
         self,
@@ -1158,16 +1161,22 @@ class SyntheticTransactionProducer:
             else:
                 features[key] = float(random.choices([0, 1], weights=[0.2, 0.8])[0])
 
+        # NOTE: all per-value sampling below uses stdlib `random` rather than
+        # `np.random.*`. For single scalar draws, stdlib is 3-10x faster --
+        # numpy RNG has per-call setup overhead that dwarfs the actual draw.
+        # With 150+ V-feature draws per transaction, this is the dominant
+        # producer hot-loop cost.
+
         # --- V12-V14: Time-based aggregations [0, 300] ---
         for i in [12, 13, 14]:
             key = f"v{i}"
-            base_val = np.random.lognormal(mean=3.0, sigma=1.0)
+            base_val = random.lognormvariate(3.0, 1.0)
             base_val = min(base_val, 300.0)
             hi_imp = gen_config.V_HIGH_IMPORTANCE.get(f"V{i}", 1.0)
             if is_fraud:
                 base_val *= hi_imp * fraud_intensity
                 base_val = min(base_val, 300.0)
-            features[key] = round(float(base_val), 4)
+            features[key] = round(base_val, 4)
 
         # --- V19-V94: Transaction velocity/frequency ---
         for v_name in gen_config.V_VELOCITY_FEATURES:
@@ -1180,7 +1189,7 @@ class SyntheticTransactionProducer:
             # Vary mean/std by position for diversity
             mean_base = 0.5 + (num % 7) * 0.3
             std_base = 1.0 + (num % 5) * 0.2
-            val = float(np.random.lognormal(mean=np.log(mean_base + 0.1), sigma=np.log(std_base + 0.5)))
+            val = random.lognormvariate(math.log(mean_base + 0.1), math.log(std_base + 0.5))
             if is_fraud:
                 val *= fraud_intensity
             features[key] = round(val, 4)
@@ -1188,7 +1197,7 @@ class SyntheticTransactionProducer:
         # --- V107-V125: Critical time-based features (high importance) ---
         for v_name in gen_config.V_CRITICAL_TIME:
             key = v_name.lower()
-            val = float(np.random.lognormal(mean=2.0, sigma=1.5))
+            val = random.lognormvariate(2.0, 1.5)
             val = min(val, 1000.0)
             if is_fraud:
                 # Strong fraud correlation for critical features
@@ -1199,25 +1208,28 @@ class SyntheticTransactionProducer:
         # --- V170-V176: Advanced low-range [0, 10] ---
         for v_name in gen_config.V_ADVANCED_LOW:
             key = v_name.lower()
-            val = max(0.0, np.random.normal(loc=1.0, scale=2.0))
+            val = max(0.0, random.gauss(1.0, 2.0))
             val = min(val, 10.0)
             if is_fraud:
                 val *= fraud_intensity
                 val = min(val, 10.0)
-            features[key] = round(float(val), 4)
+            features[key] = round(val, 4)
 
         # --- V186-V204: Advanced mid-range [0, 10] ---
         for v_name in gen_config.V_ADVANCED_MID:
             key = v_name.lower()
-            val = max(0.0, np.random.normal(loc=1.0, scale=2.0))
+            val = max(0.0, random.gauss(1.0, 2.0))
             val = min(val, 10.0)
             hi_imp = gen_config.V_HIGH_IMPORTANCE.get(f"V{key[1:]}", 1.0)
             if is_fraud:
                 val *= hi_imp * fraud_intensity
                 val = min(val, 10.0)
-            features[key] = round(float(val), 4)
+            features[key] = round(val, 4)
 
         # --- V211-V265: Log-normal features [0, 100] ---
+        # Precompute V258-specific means (this loop fires for every txn)
+        _v258_fraud_mean = math.log(2.0)
+        _v258_legit_mean = math.log(0.5)
         for v_name in gen_config.V_LOGNORMAL:
             key = v_name.lower()
             num = int(v_name[1:])
@@ -1226,11 +1238,11 @@ class SyntheticTransactionProducer:
             if v_name == "V258":
                 # THE most important feature (gain=717.91)
                 if is_fraud:
-                    val = float(np.random.lognormal(mean=np.log(2.0), sigma=0.5))
+                    val = random.lognormvariate(_v258_fraud_mean, 0.5)
                 else:
-                    val = float(np.random.lognormal(mean=np.log(0.5), sigma=0.5))
+                    val = random.lognormvariate(_v258_legit_mean, 0.5)
             else:
-                val = float(np.random.lognormal(mean=np.log(1.0 + (num % 10) * 0.1), sigma=0.8))
+                val = random.lognormvariate(math.log(1.0 + (num % 10) * 0.1), 0.8)
                 if is_fraud:
                     val *= hi_imp * fraud_intensity
 
@@ -1243,7 +1255,7 @@ class SyntheticTransactionProducer:
             if random.random() < 0.40:
                 features[key] = None
                 continue
-            val = float(np.random.lognormal(mean=1.5, sigma=1.0))
+            val = random.lognormvariate(1.5, 1.0)
             val = min(val, 50.0)
             if is_fraud:
                 val *= fraud_intensity
