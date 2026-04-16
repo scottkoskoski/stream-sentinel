@@ -81,7 +81,7 @@ jobs:
         continue-on-error: false
 
       - name: Upload unit test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: unit-test-results
@@ -121,7 +121,7 @@ jobs:
         continue-on-error: false
 
       - name: Upload contract test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: contract-test-results
@@ -183,7 +183,7 @@ jobs:
           CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
 
       - name: Upload integration test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: integration-test-results
@@ -249,7 +249,7 @@ jobs:
           CLICKHOUSE_PASSWORD: ci-test-clickhouse-password-not-production
 
       - name: Upload e2e test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-test-results
