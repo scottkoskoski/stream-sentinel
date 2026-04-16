@@ -50,7 +50,7 @@ joblib==1.4.2
 # not carry it.
 
 # Database Dependencies
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
 clickhouse-driver==0.2.9
 sqlalchemy==2.0.32
 alembic==1.14.0
