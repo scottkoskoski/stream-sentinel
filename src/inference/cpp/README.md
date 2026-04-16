@@ -7,10 +7,17 @@ extension is not compiled.
 
 ## Prerequisites
 
-- g++ with C++17 support
-- Python 3.10+ with `pybind11` and `xgboost` installed
+- g++ with C++17 support (tested with GCC 15.x)
+- Python 3.13+ with `xgboost` (from `requirements.txt`) and `pybind11`
+  (from `requirements-build.txt`) installed
 - The XGBoost shared library (`libxgboost.so`) -- installed automatically
   by `pip install xgboost`
+
+Install build-only dependencies:
+
+```bash
+pip install -r requirements-build.txt
+```
 
 ## Building
 
@@ -24,8 +31,15 @@ make
 ./build_python_extension.sh
 ```
 
-This produces `simple_xgboost_cpp.<suffix>.so` in the current directory.
-`fast_inference.py` adds this directory to `sys.path` at runtime.
+This produces `simple_xgboost_cpp.<suffix>.so` in the current directory
+with an RPATH pointing at the xgboost package's `lib/`, so the extension
+resolves `libxgboost.so` at import time without requiring
+`LD_LIBRARY_PATH`. `fast_inference.py` adds this directory to `sys.path`
+at runtime.
+
+The consumer Docker image (`docker/Dockerfile.consumer`) performs this
+build automatically; nothing further is needed for containerized
+deployments.
 
 ## Exporting the Model
 

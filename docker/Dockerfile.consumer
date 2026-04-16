@@ -29,11 +29,19 @@ RUN apt-get update && \
         libpq-dev \
         && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.txt requirements-build.txt ./
 
+# Install runtime dependencies into the venv that will be promoted to
+# the runtime stage.
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# Build-only dependencies (pybind11) are installed temporarily into the
+# same venv so `make` can find pybind11's headers and libxgboost.so in
+# the same Python environment. After the C++ build finishes we uninstall
+# pybind11 so the runtime image does not ship it.
+RUN /opt/venv/bin/pip install --no-cache-dir -r requirements-build.txt
 
 # Build the native C++ XGBoost inference wrapper. This produces
 # simple_xgboost_cpp.cpython-*.so in src/inference/cpp/ which is then
@@ -44,6 +52,9 @@ RUN PATH="/opt/venv/bin:$PATH" \
     && make clean \
     && make \
     && ls -la *.so
+
+# Remove build-only packages so the runtime venv stays lean.
+RUN /opt/venv/bin/pip uninstall -y pybind11
 
 # ---------------------------------------------------------------------------
 # Stage 2: Slim runtime image

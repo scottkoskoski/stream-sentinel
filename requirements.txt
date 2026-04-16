@@ -45,10 +45,9 @@ lightgbm==4.5.0
 catboost==1.2.5
 optuna==4.1.0
 joblib==1.4.2
-# pybind11 is only needed when building the native C++ inference wrapper
-# (src/inference/cpp/). Consumers load the prebuilt .so at runtime and do
-# not require this package; the Docker build stage does.
-pybind11==3.0.3
+# Note: pybind11 is a BUILD-ONLY dependency for the native C++ inference
+# wrapper. It lives in requirements-build.txt so the runtime image does
+# not carry it.
 
 # Database Dependencies
 psycopg2-binary==2.9.9

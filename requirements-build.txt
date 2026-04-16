@@ -1,0 +1,11 @@
+# Build-only Python dependencies.
+#
+# These packages are needed ONLY to compile the native C++ inference
+# wrapper (src/inference/cpp/) during the Docker builder stage. They
+# are not imported at runtime by any consumer, so we deliberately keep
+# them out of requirements.txt to avoid bloating the runtime image.
+#
+# Use this file in CI, local builds, and the Dockerfile builder stage:
+#     pip install -r requirements-build.txt
+
+pybind11==3.0.3
