@@ -122,12 +122,21 @@ class PostgreSQLManager:
                     RETURNING alert_id
                 """
 
+                # Upper-case severity at the DB boundary -- the fraud_alerts
+                # CHECK constraint only accepts upper-case values, and two
+                # AlertSeverity enums with different case conventions
+                # coexist (schemas.AlertSeverity is upper, alert_processor
+                # .AlertSeverity is lower). See FraudAlert.to_dict for
+                # the same normalization on the serialization path.
+                severity_value = (
+                    alert.severity.value if hasattr(alert.severity, "value") else str(alert.severity)
+                ).upper()
                 cursor.execute(
                     insert_query,
                     (
                         alert.transaction_id,
                         alert.user_id,
-                        alert.severity.value,
+                        severity_value,
                         alert.fraud_score,
                         alert.ml_prediction,
                         alert.business_rules_triggered,
@@ -153,8 +162,10 @@ class PostgreSQLManager:
 
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
+                # Same boundary-normalization as insert_fraud_alert above.
+                status_value = (status.value if hasattr(status, "value") else str(status)).upper()
                 update_fields = ["status = %s", "updated_at = CURRENT_TIMESTAMP"]
-                values = [status.value]
+                values = [status_value]
 
                 if status == AlertStatus.INVESTIGATING:
                     update_fields.append("investigated_at = CURRENT_TIMESTAMP")
@@ -205,11 +216,15 @@ class PostgreSQLManager:
 
                 current_time = datetime.now(timezone.utc)
 
+                # Same DB-boundary normalization applied elsewhere. UserStatus
+                # values are already upper-case but this keeps all paths
+                # writing to the user_accounts.status CHECK constraint uniform.
+                status_value = (status.value if hasattr(status, "value") else str(status)).upper()
                 cursor.execute(
                     upsert_query,
                     (
                         user_id,
-                        status.value,
+                        status_value,
                         1 if increment_alerts else 0,
                         1 if increment_high_severity else 0,
                         current_time,
