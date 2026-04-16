@@ -21,6 +21,12 @@ PYTHON    := python3
 PY_INCLUDES := $(shell $(PYTHON) -m pybind11 --includes)
 PY_EXT_SUFFIX := $(shell $(PYTHON) -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
 XGBOOST_LIB := $(shell $(PYTHON) -c "import xgboost; from pathlib import Path; print(Path(xgboost.__file__).parent / 'lib' / 'libxgboost.so')")
+XGBOOST_LIB_DIR := $(shell $(PYTHON) -c "import xgboost; from pathlib import Path; print(Path(xgboost.__file__).parent / 'lib')")
+
+# Embed the xgboost lib directory into the .so so the runtime loader can
+# find libxgboost.so without requiring LD_LIBRARY_PATH. We bake the path
+# of the build-time xgboost install directly via -Wl,-rpath.
+LDFLAGS := -Wl,-rpath,$(XGBOOST_LIB_DIR)
 
 BUILD_DIR := build_simple
 OBJ       := $(BUILD_DIR)/simple_xgboost_wrapper.o
@@ -43,6 +49,7 @@ $(TARGET): $(OBJ) simple_python_bindings.cpp simple_xgboost_wrapper.hpp
 		-I xgboost_headers \
 		$(OBJ) simple_python_bindings.cpp \
 		$(XGBOOST_LIB) \
+		$(LDFLAGS) \
 		-o $@
 
 clean:

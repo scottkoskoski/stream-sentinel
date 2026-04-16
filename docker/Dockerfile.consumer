@@ -11,17 +11,21 @@
 #   docker run stream-sentinel-consumer:latest python -m src.consumers.enhanced_fraud_detector
 
 # ---------------------------------------------------------------------------
-# Stage 1: Install Python dependencies
+# Stage 1: Install Python dependencies and build the native C++ inference
+# extension. The resulting simple_xgboost_cpp.*.so is copied into the
+# runtime image so consumers can use the accelerated inference path.
 # ---------------------------------------------------------------------------
 FROM python:3.13-slim AS builder
 
 WORKDIR /build
 
-# Install system dependencies needed to compile native extensions
+# Install system dependencies needed to compile native extensions and the
+# C++ inference wrapper (requires g++ with C++17 support, make).
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
         g++ \
+        make \
         libpq-dev \
         && rm -rf /var/lib/apt/lists/*
 
@@ -30,6 +34,16 @@ COPY requirements.txt .
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# Build the native C++ XGBoost inference wrapper. This produces
+# simple_xgboost_cpp.cpython-*.so in src/inference/cpp/ which is then
+# copied into the runtime image.
+COPY src/inference/cpp /build/src/inference/cpp
+RUN PATH="/opt/venv/bin:$PATH" \
+    && cd /build/src/inference/cpp \
+    && make clean \
+    && make \
+    && ls -la *.so
 
 # ---------------------------------------------------------------------------
 # Stage 2: Slim runtime image
@@ -56,6 +70,10 @@ WORKDIR /app
 # Copy application source code and model artifacts
 COPY src/ src/
 COPY models/ models/
+
+# Copy the prebuilt C++ inference wrapper from the builder stage so the
+# consumer can use the accelerated path without rebuilding at runtime.
+COPY --from=builder /build/src/inference/cpp/*.so /app/src/inference/cpp/
 
 # Ensure the non-root user owns the application directory
 RUN chown -R sentinel:sentinel /app
