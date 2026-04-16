@@ -721,6 +721,11 @@ class FraudDetector:
         check that costs ~1-2ms on a 200-element single-row transform.
         For scoring, (x - mean) / scale is just two vector ops. We cache
         the parameters once and apply them directly in the hot path.
+
+        Preserve the training dtype (typically float64) so the fast path
+        matches sklearn's transform bit-for-bit -- a float32 cast here
+        would silently reduce precision vs what the model saw during
+        training.
         """
         self._scaler_mean = None
         self._scaler_scale = None
@@ -730,8 +735,8 @@ class FraudDetector:
             mean = getattr(self.scaler, "mean_", None)
             scale = getattr(self.scaler, "scale_", None)
             if mean is not None and scale is not None:
-                self._scaler_mean = np.asarray(mean, dtype=np.float32)
-                self._scaler_scale = np.asarray(scale, dtype=np.float32)
+                self._scaler_mean = np.asarray(mean)
+                self._scaler_scale = np.asarray(scale)
         except Exception:
             # Fall back to sklearn's transform in the hot path if params
             # don't look like a StandardScaler-shaped object.
@@ -1424,9 +1429,11 @@ class FraudDetector:
         # transform -- sklearn's StandardScaler.transform has DataFrame
         # validation overhead that dominates for single-row inputs
         # (~1-2ms vs <0.1ms for a direct numpy op on a 200-vec).
+        # The cached arrays keep their training-time dtype (typically
+        # float64), so this produces bit-identical output to sklearn.
         if self._scaler_mean is not None and self._scaler_scale is not None:
             try:
-                arr = np.asarray(features, dtype=np.float32)
+                arr = np.asarray(features, dtype=self._scaler_mean.dtype)
                 features = ((arr - self._scaler_mean) / self._scaler_scale).tolist()
             except Exception as e:
                 self.logger.debug(f"Fast scaler failed, falling back to sklearn: {e}")
