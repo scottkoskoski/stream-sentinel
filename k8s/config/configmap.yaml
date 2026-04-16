@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stream-sentinel-config
+  namespace: stream-sentinel
+  labels:
+    app.kubernetes.io/name: stream-sentinel
+    app.kubernetes.io/component: config
+    app.kubernetes.io/part-of: stream-sentinel
+data:
+  # -- Environment ----------------------------------------------------------
+  STREAM_SENTINEL_ENV: "production"
+  LOG_LEVEL: "WARNING"
+  LOG_FORMAT: "json"
+
+  # -- Kafka ----------------------------------------------------------------
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-headless.stream-sentinel.svc.cluster.local:9092"
+  SCHEMA_REGISTRY_URL: "http://schema-registry.stream-sentinel.svc.cluster.local:8081"
+
+  # Kafka topics
+  KAFKA_TOPIC_TRANSACTIONS: "synthetic-transactions"
+  KAFKA_TOPIC_FRAUD_ALERTS: "fraud-alerts"
+  KAFKA_TOPIC_RESULTS: "fraud-detection-results"
+  KAFKA_TOPIC_BLOCKED: "blocked-transactions"
+  KAFKA_TOPIC_DRIFT_ALERTS: "model-drift-alerts"
+  KAFKA_TOPIC_RETRAINING: "model-retraining-jobs"
+  KAFKA_TOPIC_DLQ: "dead-letter-queue"
+
+  # Kafka consumer tuning
+  KAFKA_MAX_POLL_RECORDS: "500"
+  KAFKA_FETCH_MIN_BYTES: "1024"
+  KAFKA_FETCH_MAX_WAIT_MS: "500"
+
+  # -- Redis ----------------------------------------------------------------
+  REDIS_HOST: "redis-headless.stream-sentinel.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DATABASE: "0"
+
+  # -- PostgreSQL -----------------------------------------------------------
+  POSTGRES_HOST: "postgres.stream-sentinel.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "stream_sentinel"
+
+  # -- ClickHouse -----------------------------------------------------------
+  CLICKHOUSE_HOST: "clickhouse.stream-sentinel.svc.cluster.local"
+  CLICKHOUSE_PORT: "9000"
+  CLICKHOUSE_HTTP_PORT: "8123"
+  CLICKHOUSE_DB: "stream_sentinel"
+
+  # -- Fraud Detection ------------------------------------------------------
+  FRAUD_THRESHOLD: "0.5"
+  FRAUD_MODEL_PATH: "/app/models/synthetic_fraud_model_production.pkl"
+
+  # -- Batch mode settings --------------------------------------------------
+  BATCH_SIZE: "32"
+  BATCH_TIMEOUT_MS: "100"
+
+  # -- Drift detection ------------------------------------------------------
+  DRIFT_DETECTION_THRESHOLD: "0.05"
+  DRIFT_DETECTION_MIN_SAMPLES: "1000"
+
+  # -- Monitoring -----------------------------------------------------------
+  PROMETHEUS_ENABLED: "true"
+  PROMETHEUS_NAMESPACE: "stream_sentinel"

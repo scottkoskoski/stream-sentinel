@@ -1,0 +1,204 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: stream-sentinel
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: stream-sentinel
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      scrape_timeout: 10s
+
+    rule_files:
+      - /etc/prometheus/alert_rules.yml
+
+    scrape_configs:
+      # Fraud Detector consumer pods (discovered via Kubernetes service)
+      - job_name: "fraud-detector"
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - stream-sentinel
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            regex: fraud-detector
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Alert Processor consumer pods
+      - job_name: "alert-processor"
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - stream-sentinel
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            regex: alert-processor
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Persistence Consumer pods
+      - job_name: "persistence-consumer"
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - stream-sentinel
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            regex: persistence-consumer
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # DLQ Consumer pods
+      - job_name: "dlq-consumer"
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - stream-sentinel
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            regex: dlq-consumer
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Auto-discover all pods with prometheus.io annotations
+      - job_name: "kubernetes-pods"
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - stream-sentinel
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+  alert_rules.yml: |
+    groups:
+      - name: stream-sentinel-consumer-alerts
+        rules:
+          # Consumer is down (no successful scrape in 2 minutes)
+          - alert: ConsumerDown
+            expr: up{job=~"fraud-detector|alert-processor|persistence-consumer|dlq-consumer"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Consumer {{ $labels.job }} is down"
+              description: "No successful metric scrape from {{ $labels.pod }} for 2 minutes."
+
+          # High fraud detection latency (P99 > 100ms)
+          - alert: HighFraudDetectionLatency
+            expr: histogram_quantile(0.99, rate(fraud_detection_latency_seconds_bucket{job="fraud-detector"}[5m])) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Fraud detection P99 latency exceeds 100ms"
+              description: "P99 latency is {{ $value }}s on pod {{ $labels.pod }}."
+
+          # Kafka consumer lag is too high
+          - alert: HighConsumerLag
+            expr: kafka_consumer_lag_messages > 10000
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Kafka consumer lag is high"
+              description: "Consumer {{ $labels.job }} has {{ $value }} messages of lag."
+
+          # DLQ messages increasing (processing failures)
+          - alert: DLQMessagesIncreasing
+            expr: rate(dlq_messages_total[5m]) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Dead letter queue messages are increasing"
+              description: "DLQ is receiving {{ $value }} messages/sec."
+
+          # Model drift detected
+          - alert: ModelDriftDetected
+            expr: model_drift_psi_score > 0.2
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "ML model drift detected"
+              description: "PSI score {{ $value }} exceeds threshold on {{ $labels.pod }}."
+
+          # High error rate on any consumer
+          - alert: HighConsumerErrorRate
+            expr: rate(consumer_errors_total[5m]) / rate(consumer_messages_processed_total[5m]) > 0.01
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Consumer error rate exceeds 1%"
+              description: "{{ $labels.job }} error rate is {{ $value | humanizePercentage }}."
+
+      - name: stream-sentinel-resource-alerts
+        rules:
+          # Pod memory usage > 80% of limit
+          - alert: HighMemoryUsage
+            expr: container_memory_working_set_bytes{namespace="stream-sentinel"} / container_spec_memory_limit_bytes{namespace="stream-sentinel"} > 0.8
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory usage on {{ $labels.pod }}"
+              description: "Memory usage is {{ $value | humanizePercentage }} of limit."
+
+          # Pod CPU usage > 80% of limit
+          - alert: HighCPUUsage
+            expr: rate(container_cpu_usage_seconds_total{namespace="stream-sentinel"}[5m]) / container_spec_cpu_quota{namespace="stream-sentinel"} * 100000 > 0.8
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU usage on {{ $labels.pod }}"
+              description: "CPU usage is {{ $value | humanizePercentage }} of limit."
+
+          # Pod restarts
+          - alert: PodRestartLoop
+            expr: rate(kube_pod_container_status_restarts_total{namespace="stream-sentinel"}[15m]) > 0
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Pod {{ $labels.pod }} is restarting"
+              description: "Pod has restarted {{ $value }} times in the last 15 minutes."

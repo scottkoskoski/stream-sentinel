@@ -1,0 +1,15 @@
+apiVersion: v2
+name: stream-sentinel
+description: Real-time fraud detection system with ML-based scoring on event-driven streaming architecture
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - fraud-detection
+  - kafka
+  - machine-learning
+  - streaming
+  - xgboost
+home: https://github.com/stream-sentinel/stream-sentinel
+maintainers:
+  - name: Stream Sentinel Team
