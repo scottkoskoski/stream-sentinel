@@ -1,0 +1,196 @@
+groups:
+  - name: stream_sentinel_alerts
+    rules:
+      # --- Consumer Health ---
+
+      - alert: FraudDetectorDown
+        expr: up{job="fraud-detector"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fraud detector is unreachable"
+          description: "The fraud-detector metrics endpoint (port 8000) has been down for over 1 minute. No transactions are being scored."
+          runbook_url: "docs/runbooks/alert-response.md#alert-frauddetectordown"
+
+      - alert: AlertProcessorDown
+        expr: up{job="alert-processor"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alert processor is unreachable"
+          description: "The alert-processor metrics endpoint (port 8001) has been down for over 1 minute. Fraud alerts are not being classified or acted upon."
+          runbook_url: "docs/runbooks/alert-response.md#alert-alertprocessordown"
+
+      - alert: PersistenceConsumerDown
+        expr: up{job="persistence-consumer"} == 0
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "Persistence consumer is unreachable"
+          description: "The persistence-consumer metrics endpoint (port 8002) has been down for over 5 minutes. Detection results are not being persisted to PostgreSQL/ClickHouse."
+          runbook_url: "docs/runbooks/alert-response.md#alert-persistenceconsumerdown"
+
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus target {{ $labels.job }} is down"
+          description: "Scrape target {{ $labels.instance }} for job {{ $labels.job }} has been unreachable for over 5 minutes."
+          runbook_url: "docs/runbooks/alert-response.md#alert-prometheustargetdown"
+
+      # --- Kafka ---
+
+      - alert: HighConsumerLag
+        expr: kafka_consumer_lag_messages > 50000
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "Kafka consumer lag exceeds 50,000 messages"
+          description: "Consumer group {{ $labels.consumer_group }} on topic {{ $labels.topic }} partition {{ $labels.partition }} has lag of {{ $value }} messages."
+          runbook_url: "docs/runbooks/alert-response.md#alert-highconsumerlag"
+
+      - alert: CriticalConsumerLag
+        expr: kafka_consumer_lag_messages > 200000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka consumer lag exceeds 200,000 messages"
+          description: "Consumer group {{ $labels.consumer_group }} has critical lag of {{ $value }} messages. Risk of data loss if Kafka retention is reached."
+          runbook_url: "docs/runbooks/alert-response.md#alert-highconsumerlag"
+
+      - alert: HighKafkaErrorRate
+        expr: rate(kafka_errors_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "Kafka error rate exceeds 0.5/sec on {{ $labels.component }}"
+          description: "Component {{ $labels.component }} is experiencing {{ $labels.operation }} errors of type {{ $labels.error_type }} at rate {{ $value }}/sec."
+          runbook_url: "docs/runbooks/alert-response.md#alert-higherrorrate"
+
+      # --- Latency ---
+
+      - alert: HighFraudDetectionLatency
+        expr: histogram_quantile(0.99, rate(fraud_detection_duration_seconds_bucket[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "Fraud detection P99 latency exceeds 100ms"
+          description: "The fraud detection pipeline P99 latency is {{ $value }}s, exceeding the 100ms target."
+          runbook_url: "docs/runbooks/alert-response.md#alert-highfrauddetectionlatency"
+
+      - alert: HighModelInferenceLatency
+        expr: histogram_quantile(0.99, rate(model_inference_duration_seconds_bucket[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model inference P99 latency exceeds 50ms"
+          description: "ML model inference P99 latency is {{ $value }}s for model version {{ $labels.model_version }}."
+          runbook_url: "docs/runbooks/alert-response.md#alert-highfrauddetectionlatency"
+
+      - alert: HighRedisLatency
+        expr: histogram_quantile(0.99, rate(redis_operation_duration_seconds_bucket[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis P99 latency exceeds 10ms"
+          description: "Redis {{ $labels.operation }} operations on database {{ $labels.database }} have P99 latency of {{ $value }}s."
+          runbook_url: "docs/runbooks/alert-response.md#alert-highredislatency"
+
+      # --- Model Health ---
+
+      - alert: ModelScoringDegraded
+        expr: model_status_info{status="rules_fallback"} == 1
+        for: 1m
+        labels:
+          severity: high
+        annotations:
+          summary: "Fraud detector using rules-based fallback instead of ML model"
+          description: "The ML model is unavailable. Fraud scoring has degraded to rules-based fallback with lower accuracy."
+          runbook_url: "docs/runbooks/alert-response.md#alert-modelscoringdegraded"
+
+      - alert: ModelDriftDetected
+        expr: fraud_model_drift_psi > 0.15
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model drift detected (PSI {{ $value }})"
+          description: "Population Stability Index is {{ $value }}, exceeding the 0.15 threshold. The fraud score distribution has shifted from the baseline."
+          runbook_url: "docs/runbooks/alert-response.md#alert-modeldriftdetected"
+
+      - alert: ModelDriftCritical
+        expr: fraud_model_drift_psi > 0.5
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical model drift (PSI {{ $value }})"
+          description: "PSI is {{ $value }}, indicating critical distribution shift. Model predictions may be unreliable."
+          runbook_url: "docs/runbooks/alert-response.md#alert-modeldriftdetected"
+
+      # --- Error Rates ---
+
+      - alert: HighErrorRate
+        expr: rate(errors_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "Error rate exceeds 1/sec on {{ $labels.component }}"
+          description: "Component {{ $labels.component }} has error type {{ $labels.error_type }} (severity: {{ $labels.severity }}) at rate {{ $value }}/sec."
+          runbook_url: "docs/runbooks/alert-response.md#alert-higherrorrate"
+
+      # --- Business Metrics ---
+
+      - alert: HighFraudRate
+        expr: fraud_rate{time_window="1h"} > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fraud rate exceeds 10% over the last hour"
+          description: "The fraud detection rate is {{ $value }}% for the 1h window. Investigate whether this is a genuine attack or a false positive spike."
+          runbook_url: "docs/runbooks/alert-response.md#alert-highfraudrate"
+
+      - alert: HighBlockedTransactionRate
+        expr: rate(transactions_blocked_total[5m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Blocked transaction rate exceeds 10/sec"
+          description: "Transactions are being blocked at {{ $value }}/sec for reason {{ $labels.reason }}. Check if users are correctly on the blocked list."
+          runbook_url: "docs/runbooks/alert-response.md#alert-highblockedtransactionrate"
+
+      - alert: HighDLQVolume
+        expr: rate(kafka_messages_produced_total{topic="dead-letter-queue"}[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dead letter queue receiving messages at sustained rate"
+          description: "Messages are being sent to the dead-letter-queue at {{ $value }}/sec. Investigate processing failures."
+          runbook_url: "docs/runbooks/alert-response.md#alert-highdlqvolume"
+
+      # --- Infrastructure Health ---
+
+      - alert: ComponentUnhealthy
+        expr: component_health_status == 0
+        for: 2m
+        labels:
+          severity: high
+        annotations:
+          summary: "Component {{ $labels.component_name }} is unhealthy"
+          description: "Health check {{ $labels.check_type }} for {{ $labels.component_name }} is reporting unhealthy."
+          runbook_url: "docs/runbooks/troubleshooting.md"
