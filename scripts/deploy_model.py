@@ -121,10 +121,7 @@ def cmd_promote(args):
         deployment_strategy=args.strategy,
     )
     if success:
-        print(
-            f"Promoted {model_id} to production "
-            f"(strategy={args.strategy}, traffic={traffic_pct}%)"
-        )
+        print(f"Promoted {model_id} to production " f"(strategy={args.strategy}, traffic={traffic_pct}%)")
     else:
         print("Promotion failed -- check logs for details")
         sys.exit(1)
@@ -266,12 +263,8 @@ def main():
 
     # --- register ---
     p_register = sub.add_parser("register", help="Register a model in the registry")
-    p_register.add_argument(
-        "--model-path", required=True, help="Path to model .pkl file"
-    )
-    p_register.add_argument(
-        "--version", required=True, help="Semantic version (e.g. 2.0.0)"
-    )
+    p_register.add_argument("--model-path", required=True, help="Path to model .pkl file")
+    p_register.add_argument("--version", required=True, help="Semantic version (e.g. 2.0.0)")
 
     # --- promote ---
     p_promote = sub.add_parser("promote", help="Promote a model to production")
@@ -291,9 +284,7 @@ def main():
 
     # --- rollback ---
     p_rollback = sub.add_parser("rollback", help="Rollback production to a version")
-    p_rollback.add_argument(
-        "--to-version", required=True, help="Version to roll back to"
-    )
+    p_rollback.add_argument("--to-version", required=True, help="Version to roll back to")
 
     # --- status ---
     sub.add_parser("status", help="Show registry and deployment status")

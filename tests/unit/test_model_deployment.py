@@ -148,9 +148,7 @@ class TestModelRegistryIntegration:
                     "consumers.fraud_detector.ModelRegistry",
                     return_value=mock_registry,
                 ):
-                    with patch(
-                        "consumers.fraud_detector.AB_TEST_MANAGER_AVAILABLE", False
-                    ):
+                    with patch("consumers.fraud_detector.AB_TEST_MANAGER_AVAILABLE", False):
                         detector = FraudDetector(use_ml_model=True)
                         detector.redis_client = mock_redis
 
@@ -170,9 +168,7 @@ class TestModelRegistryIntegration:
                     "consumers.fraud_detector.ModelRegistry",
                     side_effect=Exception("Redis down"),
                 ):
-                    with patch(
-                        "consumers.fraud_detector.AB_TEST_MANAGER_AVAILABLE", False
-                    ):
+                    with patch("consumers.fraud_detector.AB_TEST_MANAGER_AVAILABLE", False):
                         detector = FraudDetector(use_ml_model=False)
                         detector.redis_client = mock_redis
 
@@ -213,9 +209,7 @@ class TestModelRegistryIntegration:
                     "consumers.fraud_detector.ModelRegistry",
                     return_value=mock_registry,
                 ):
-                    with patch(
-                        "consumers.fraud_detector.AB_TEST_MANAGER_AVAILABLE", False
-                    ):
+                    with patch("consumers.fraud_detector.AB_TEST_MANAGER_AVAILABLE", False):
                         detector = FraudDetector(use_ml_model=False)
                         detector.redis_client = mock_redis
 
@@ -244,9 +238,7 @@ class TestModelHotSwap:
         mock_registry.get_active_model.return_value = new_model_dict
 
         with patch("consumers.fraud_detector.MODEL_REGISTRY_AVAILABLE", True):
-            with patch(
-                "consumers.fraud_detector.ModelRegistry", return_value=mock_registry
-            ):
+            with patch("consumers.fraud_detector.ModelRegistry", return_value=mock_registry):
                 detector = _build_detector(use_ml_model=False)
                 detector.model_registry = mock_registry
 
@@ -271,9 +263,7 @@ class TestModelHotSwap:
         }
 
         with patch("consumers.fraud_detector.MODEL_REGISTRY_AVAILABLE", True):
-            with patch(
-                "consumers.fraud_detector.ModelRegistry", return_value=mock_registry
-            ):
+            with patch("consumers.fraud_detector.ModelRegistry", return_value=mock_registry):
                 detector = _build_detector(use_ml_model=False)
                 detector.model_registry = mock_registry
 
@@ -297,9 +287,7 @@ class TestModelHotSwap:
         mock_registry.get_active_model.return_value = None
 
         with patch("consumers.fraud_detector.MODEL_REGISTRY_AVAILABLE", True):
-            with patch(
-                "consumers.fraud_detector.ModelRegistry", return_value=mock_registry
-            ):
+            with patch("consumers.fraud_detector.ModelRegistry", return_value=mock_registry):
                 detector = _build_detector(use_ml_model=False)
                 detector.model_registry = mock_registry
 

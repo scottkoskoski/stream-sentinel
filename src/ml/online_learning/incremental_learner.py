@@ -88,9 +88,7 @@ class TrainingBatch:
         if len(self.features) != len(self.labels):
             raise ValueError("Features and labels must have same length")
 
-        if self.sample_weights is not None and len(self.sample_weights) != len(
-            self.labels
-        ):
+        if self.sample_weights is not None and len(self.sample_weights) != len(self.labels):
             raise ValueError("Sample weights must have same length as labels")
 
 
@@ -243,9 +241,7 @@ class IncrementalLearner:
                     metadata_dict = json.loads(metadata)
                     self.model_version = metadata_dict.get("version", "1.0.0")
 
-                self.logger.info(
-                    f"Loaded model version {self.model_version} from Redis"
-                )
+                self.logger.info(f"Loaded model version {self.model_version} from Redis")
                 return True
 
             # Fallback to filesystem
@@ -327,9 +323,7 @@ class IncrementalLearner:
             # Store in Redis for persistence
             self._store_training_batch(batch)
 
-            self.logger.info(
-                f"Added training batch: {len(labels_array)} samples, {batch.fraud_rate:.3f} fraud rate"
-            )
+            self.logger.info(f"Added training batch: {len(labels_array)} samples, {batch.fraud_rate:.3f} fraud rate")
 
             # Trigger update if conditions met
             if self._should_trigger_update():
@@ -357,9 +351,7 @@ class IncrementalLearner:
                 "feature_columns": list(batch.features.columns),
             }
 
-            self.redis_models.setex(
-                f"{batch_key}:metadata", 86400, json.dumps(batch_metadata)
-            )
+            self.redis_models.setex(f"{batch_key}:metadata", 86400, json.dumps(batch_metadata))
 
             # Store features and labels as compressed numpy arrays
             import base64
@@ -373,9 +365,7 @@ class IncrementalLearner:
                 86400,
                 base64.b64encode(features_bytes).decode(),
             )
-            self.redis_models.setex(
-                f"{batch_key}:labels", 86400, base64.b64encode(labels_bytes).decode()
-            )
+            self.redis_models.setex(f"{batch_key}:labels", 86400, base64.b64encode(labels_bytes).decode())
 
             if batch.sample_weights is not None:
                 weights_bytes = gzip.compress(batch.sample_weights.tobytes())
@@ -408,10 +398,7 @@ class IncrementalLearner:
 
         elif self.update_strategy == UpdateStrategy.PERFORMANCE_BASED:
             # Check if performance has degraded
-            return (
-                self._has_performance_degraded()
-                and total_samples >= self.min_batch_size
-            )
+            return self._has_performance_degraded() and total_samples >= self.min_batch_size
 
         return False
 
@@ -436,9 +423,7 @@ class IncrementalLearner:
                 "trigger": "incremental_update",
                 "timestamp": datetime.now().isoformat(),
                 "batch_count": len(self.training_queue),
-                "total_samples": sum(
-                    batch.total_samples for batch in self.training_queue
-                ),
+                "total_samples": sum(batch.total_samples for batch in self.training_queue),
                 "update_strategy": self.update_strategy.value,
             }
 
@@ -454,9 +439,7 @@ class IncrementalLearner:
         except Exception as e:
             self.logger.error(f"Failed to schedule model update: {e}")
 
-    def perform_incremental_update(
-        self, force_update: bool = False
-    ) -> Optional[UpdateResult]:
+    def perform_incremental_update(self, force_update: bool = False) -> Optional[UpdateResult]:
         """
         Perform incremental model update with current training batches.
 
@@ -493,9 +476,7 @@ class IncrementalLearner:
 
             if new_model is None:
                 self.model_state = ModelState.FAILED
-                return self._create_failed_update_result(
-                    update_id, "Model update failed"
-                )
+                return self._create_failed_update_result(update_id, "Model update failed")
 
             self.model_state = ModelState.VALIDATING
 
@@ -508,9 +489,7 @@ class IncrementalLearner:
                 self.model_state = ModelState.IDLE
                 self.update_statistics["rollbacks"] += 1
 
-                return self._create_failed_update_result(
-                    update_id, "Validation failed", validation_result["errors"]
-                )
+                return self._create_failed_update_result(update_id, "Validation failed", validation_result["errors"])
 
             # Update was successful
             self.current_model = new_model
@@ -528,9 +507,7 @@ class IncrementalLearner:
             # Update statistics
             self.update_statistics["total_updates"] += 1
             self.update_statistics["successful_updates"] += 1
-            self.update_statistics[
-                "total_samples_processed"
-            ] += combined_batch.total_samples
+            self.update_statistics["total_samples_processed"] += combined_batch.total_samples
 
             # Create update result
             update_result = UpdateResult(
@@ -539,14 +516,10 @@ class IncrementalLearner:
                 timestamp=datetime.now().isoformat(),
                 old_performance=old_performance,
                 new_performance=new_performance,
-                performance_change=self._calculate_performance_change(
-                    old_performance, new_performance
-                ),
+                performance_change=self._calculate_performance_change(old_performance, new_performance),
                 samples_used=combined_batch.total_samples,
                 training_time_seconds=time.time() - start_time,
-                model_size_change=self._calculate_model_size_change(
-                    model_backup, new_model
-                ),
+                model_size_change=self._calculate_model_size_change(model_backup, new_model),
                 validation_passed=True,
                 model_version=self.model_version,
                 previous_version=self.model_version,  # Would increment in production
@@ -639,15 +612,11 @@ class IncrementalLearner:
                 # Scikit-learn style model
                 if hasattr(self.current_model, "partial_fit"):
                     # Models that support partial_fit
-                    self.current_model.partial_fit(
-                        X_train, y_train, sample_weight=sample_weights
-                    )
+                    self.current_model.partial_fit(X_train, y_train, sample_weight=sample_weights)
                 else:
                     # Models that don't support incremental learning
                     # We need to retrain with both old and new data
-                    self.logger.warning(
-                        "Model doesn't support incremental learning, falling back to retraining"
-                    )
+                    self.logger.warning("Model doesn't support incremental learning, falling back to retraining")
                     return self._retrain_model_with_memory(training_batch)
 
             elif hasattr(self.current_model, "booster"):
@@ -679,9 +648,7 @@ class IncrementalLearner:
             sample_weights = training_batch.sample_weights
 
             # Create LightGBM dataset
-            train_data = lgb.Dataset(
-                X_train, label=y_train, weight=sample_weights, free_raw_data=False
-            )
+            train_data = lgb.Dataset(X_train, label=y_train, weight=sample_weights, free_raw_data=False)
 
             # Get current model parameters
             current_params = self.current_model.params.copy()
@@ -765,9 +732,7 @@ class IncrementalLearner:
             self.logger.error(f"Failed to retrain model with memory: {e}")
             return None
 
-    def _validate_updated_model(
-        self, new_model, training_batch: TrainingBatch
-    ) -> Dict[str, Any]:
+    def _validate_updated_model(self, new_model, training_batch: TrainingBatch) -> Dict[str, Any]:
         """Validate the updated model before deployment."""
         validation_result = {"passed": True, "errors": [], "warnings": []}
 
@@ -780,9 +745,7 @@ class IncrementalLearner:
 
                 # Check prediction range
                 if not (0 <= predictions.min() <= predictions.max() <= 1):
-                    validation_result["errors"].append(
-                        "Predictions outside [0,1] range"
-                    )
+                    validation_result["errors"].append("Predictions outside [0,1] range")
                     validation_result["passed"] = False
 
                 # Check for NaN predictions
@@ -801,19 +764,13 @@ class IncrementalLearner:
                     auc_score = roc_auc_score(training_batch.labels, predictions)
 
                     if auc_score < 0.6:  # Minimum acceptable AUC
-                        validation_result["errors"].append(
-                            f"AUC too low: {auc_score:.3f}"
-                        )
+                        validation_result["errors"].append(f"AUC too low: {auc_score:.3f}")
                         validation_result["passed"] = False
                     elif auc_score < 0.7:
-                        validation_result["warnings"].append(
-                            f"Low AUC: {auc_score:.3f}"
-                        )
+                        validation_result["warnings"].append(f"Low AUC: {auc_score:.3f}")
 
                 except Exception as e:
-                    validation_result["warnings"].append(
-                        f"Performance validation failed: {str(e)}"
-                    )
+                    validation_result["warnings"].append(f"Performance validation failed: {str(e)}")
 
             # 3. Model comparison with previous version
             if validation_result["passed"] and self.current_model is not None:
@@ -825,14 +782,10 @@ class IncrementalLearner:
                     prediction_diff = np.abs(new_predictions - old_predictions).mean()
 
                     if prediction_diff > 0.5:  # Predictions too different
-                        validation_result["warnings"].append(
-                            f"Large prediction changes: {prediction_diff:.3f}"
-                        )
+                        validation_result["warnings"].append(f"Large prediction changes: {prediction_diff:.3f}")
 
                 except Exception as e:
-                    validation_result["warnings"].append(
-                        f"Model comparison failed: {str(e)}"
-                    )
+                    validation_result["warnings"].append(f"Model comparison failed: {str(e)}")
 
         except Exception as e:
             validation_result["errors"].append(f"Validation process failed: {str(e)}")
@@ -856,12 +809,8 @@ class IncrementalLearner:
 
                 # Binary predictions for precision/recall
                 binary_preds = (predictions > 0.5).astype(int)
-                precision = np.sum((binary_preds == 1) & (y_val == 1)) / max(
-                    1, np.sum(binary_preds == 1)
-                )
-                recall = np.sum((binary_preds == 1) & (y_val == 1)) / max(
-                    1, np.sum(y_val == 1)
-                )
+                precision = np.sum((binary_preds == 1) & (y_val == 1)) / max(1, np.sum(binary_preds == 1))
+                recall = np.sum((binary_preds == 1) & (y_val == 1)) / max(1, np.sum(y_val == 1))
                 f1 = 2 * precision * recall / max(1e-8, precision + recall)
 
                 return {
@@ -883,9 +832,7 @@ class IncrementalLearner:
             "f1": 0.0,
         }
 
-    def _calculate_performance_change(
-        self, old_perf: Dict[str, float], new_perf: Dict[str, float]
-    ) -> Dict[str, float]:
+    def _calculate_performance_change(self, old_perf: Dict[str, float], new_perf: Dict[str, float]) -> Dict[str, float]:
         """Calculate change in performance metrics."""
         changes = {}
 
@@ -975,9 +922,7 @@ class IncrementalLearner:
                 "current_model_version": self.model_version,
                 "model_state": self.model_state.value,
                 "training_queue_size": len(self.training_queue),
-                "total_queued_samples": sum(
-                    batch.total_samples for batch in self.training_queue
-                ),
+                "total_queued_samples": sum(batch.total_samples for batch in self.training_queue),
                 "update_strategy": self.update_strategy.value,
                 "has_validation_data": self.validation_data is not None,
                 "performance_history_size": len(self.performance_history),
