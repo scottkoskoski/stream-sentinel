@@ -328,11 +328,21 @@ See `docs/runbooks/` for on-call procedures (incident response, scaling, disaste
 
 | Metric | Measured |
 |--------|----------|
-| Transaction throughput | 1,865 TPS single / 3,714 TPS 2-worker / 7,587 TPS 4-worker |
-| Fraud detection latency | P50=7.1ms, P99=18.1ms |
+| Transaction throughput (producer) | ~3,700 TPS 2-worker / 7,500+ TPS 4-worker (synthetic generation) |
+| Fraud detector throughput per consumer | ~3,100 txn/sec on single-message path (with C++ inference) |
+| C++ XGBoost inference latency | 0.15 ms / prediction (native `libxgboost.so` via pybind11 wrapper) |
+| Feature extraction latency | 0.06 ms / call (200 features, precomputed encoder lookups) |
+| Full scoring path latency (end-to-end) | 0.32 ms / message, P99 under 1 ms |
 | ML model accuracy | 99.42% AUC in production (99.59% training) |
 | Precision / Recall | 0.62 / 0.91 at threshold=0.5 |
-| Alert response | < 5ms routing with SLA tracking |
+| Alert response | < 5 ms routing with SLA tracking |
+
+> Latency numbers reflect the built C++ inference extension (see
+> `src/inference/cpp/`) with precomputed categorical encoder lookup
+> tables and a cached StandardScaler. See
+> [Model Performance](docs/model-performance-report.md) and
+> [System Benchmarks](docs/system-benchmarks-report.md) for historical
+> baselines.
 
 ## Project Structure
 

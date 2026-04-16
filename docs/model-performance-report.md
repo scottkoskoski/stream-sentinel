@@ -98,7 +98,7 @@ The production pipeline uses `hash(value) % 1000` for categorical feature encodi
 
 ## Inference Benchmarks
 
-### Single Prediction Latency (Python XGBoost, 1000 iterations)
+### Single Prediction Latency (Python XGBoost, 1000 iterations, 2026-04-08 measurement)
 
 | Percentile | Latency |
 |-----------|---------|
@@ -106,6 +106,23 @@ The production pipeline uses `hash(value) % 1000` for categorical feature encodi
 | P95 | 34.9 ms |
 | P99 | 40.2 ms |
 | Throughput | ~44 predictions/sec |
+
+> **Update (2026-04-16):** The Python single-prediction numbers above
+> were measured before: (a) the C++ extension was actually built and
+> wired into the consumer hot path, and (b) the 31 sequential
+> `LabelEncoder.transform` calls + single-row `StandardScaler.transform`
+> in the feature extractor were replaced with precomputed O(1) lookup
+> tables. Current end-to-end measurement on the same model:
+>
+> | Stage | Latency |
+> |-------|---------|
+> | C++ XGBoost inference (alone) | 0.15 ms / prediction |
+> | Feature extraction (200 feats, fast path) | 0.06 ms / call |
+> | Full `_calculate_ml_fraud_score` end-to-end | 0.32 ms / message |
+> | Per-consumer throughput (single-message) | ~3,100 txn/sec |
+>
+> See `README.md` and `docs/fraud-detection/README.md` for current
+> performance claims.
 
 ### Batch Prediction Latency (Python XGBoost, 200 iterations each)
 
@@ -119,11 +136,11 @@ Batch mode delivers ~386x throughput improvement over single predictions. At bat
 
 ### FastInferenceEngine Wrapper
 
-The `FastInferenceEngine` wrapper adds negligible overhead (-4.4%, within measurement noise). It correctly auto-detects and falls back to Python XGBoost when the C++ extension is not compiled.
+The `FastInferenceEngine` auto-detects the compiled C++ extension on startup. When `simple_xgboost_cpp.*.so` is present (built by `docker/Dockerfile.consumer` or a local `make` in `src/inference/cpp/`), it routes every prediction through the pybind11 wrapper; otherwise it falls back to `Booster.inplace_predict` on the Python side.
 
 ### C++ Inference
 
-The C++ wrapper builds successfully but provides no latency benefit for Python consumers -- both paths call the same `libxgboost.so` C library underneath. The C++ wrapper is relevant only for non-Python deployment scenarios (e.g., C++ microservice).
+The C++ wrapper calls the same `libxgboost.so` C library as Python does, so the PER-PREDICTION speedup is limited to the Python-call overhead saved (roughly 0.05 ms / prediction). The larger win for the single-message path came from moving feature-engineering work out of the per-message critical section (see the dated note above).
 
 ### Model Export Verification
 

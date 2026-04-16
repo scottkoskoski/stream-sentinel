@@ -5,7 +5,9 @@
 | Parameter | Current Value | Source |
 |-----------|--------------|--------|
 | Target TPS | 10,000+ sustained | CLAUDE.md |
-| Latency target | <100ms P99 | CLAUDE.md |
+| Latency SLA (alert threshold) | P99 < 100 ms | docker/prometheus/alert_rules.yml |
+| Observed per-message latency | ~0.32 ms full scoring path (C++ inference, precomputed encoders) | benchmark 2026-04-16 |
+| Per-consumer throughput | ~3,100 txn/sec on single-message path | benchmark 2026-04-16 |
 | Input topic partitions | 12 | src/kafka/config.py |
 | Alert topic partitions | 6 | src/kafka/config.py |
 | Kafka retention (transactions) | 7 days | Topic config |
@@ -17,7 +19,7 @@
 | ClickHouse TTL (features) | 1 year | init script |
 | ClickHouse TTL (metrics) | 6 months | init script |
 | ML model features | 200 | CLAUDE.md |
-| Fraud threshold | 0.5 (default) | fraud_detector.py |
+| Fraud threshold | 0.3 (default) | fraud_detector.py |
 
 ---
 

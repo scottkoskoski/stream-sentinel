@@ -193,7 +193,11 @@ Environment-based config via `.env` files (see `.env.example`). Kafka config is 
 - **A/B testing**: Wired into the streaming fraud detector via `ABTestManager`. Users are assigned to control/treatment variants by consistent MD5 hashing when an experiment is active. Use `scripts/deploy_model.py` to register/promote/rollback models and create experiments.
 - **Feature engineering**: Velocity, merchant risk, amount z-score, temporal, interaction features. Unified module works for both training (DataFrame) and inference (dict).
 - **Drift detection**: PSI-based live monitoring in fraud_detector, configurable check interval. Alerts trigger retraining evaluation with guard conditions (min samples, cooldown, severity threshold).
-- **C++ inference**: Optional native XGBoost acceleration. Use `src/inference/export_model.py` to convert pickle to native format, build via `src/inference/cpp/Makefile`.
+- **C++ inference**: Native XGBoost acceleration is active by default. `docker/Dockerfile.consumer` compiles the pybind11 wrapper during image build; locally run `make` inside `src/inference/cpp/` after `pip install -r requirements-build.txt`. The built `.so` embeds an RPATH to xgboost's `libxgboost.so`, so no `LD_LIBRARY_PATH` is required at runtime. Use `src/inference/export_model.py` to convert a pickle to the `_cpp.json` format the wrapper loads.
 - **Batch mode**: `--batch` flag enables buffered inference (configurable batch_size and timeout). FlowController provides adaptive backpressure.
 - **Structured logging**: All consumers use JSON logging via `src/utils/logging.py` with contextual fields (transaction_id, user_id, consumer_group).
-- **Performance target**: 10k+ TPS sustained, <100ms P99 latency
+- **Measured performance** (single-message mode, C++ path, 200-feature model):
+  - C++ XGBoost inference: ~0.15 ms / prediction
+  - Feature extraction (with precomputed encoder + scaler lookups): ~0.06 ms / call
+  - Full scoring path end-to-end: ~0.32 ms / message => ~3,100 txn/sec per consumer
+  - Producer synthetic generation: ~1,800 TPS single / ~3,700 TPS 2-worker / ~7,500+ TPS 4-worker

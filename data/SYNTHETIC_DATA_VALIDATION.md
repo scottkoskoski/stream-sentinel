@@ -6,6 +6,8 @@ Fraud count: 49 (2.45%)
 
 > **Note (2026-04-09 follow-up):** Sections referencing "missing V-features" or a "28-feature" synthetic record reflect the pre-2026-04-09 state. The producer was subsequently updated to emit all 200 IEEE-CIS-compatible features, and the production model was retrained on the full feature set (99.42% AUC). See `models/TRAINING_REPORT.md` and `docs/model-performance-report.md` for the current baseline. Distribution statistics below remain valid as of the generation date.
 
+> **Note (2026-04-16 follow-up):** The C-feature inflation (Section 4 -- C3 at 3300x, C6 at 135x, etc.) and D-feature time-delta "all zeros" problem (Section 5) have both been fixed. C-features are now Poisson-sampled from IEEE-CIS-calibrated means (`C_FEATURE_IEEE_MEANS` in `src/producers/config.py`) and D-feature "first seen" timestamps bootstrap from historical offsets (`D_FEATURE_HISTORICAL_OFFSET_DAYS`). Measured synthetic distributions now match IEEE within ~10% for all C-features and have medians at the IEEE means for D1/D3/D5/D11/D15. Re-running this validation would produce different numbers for Sections 4 and 5; the historical tables below are preserved as a before-state reference.
+
 ## 1. TransactionAmt Distribution
 
 | Statistic | IEEE-CIS | Synthetic | % Diff |

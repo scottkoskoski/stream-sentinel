@@ -164,7 +164,7 @@ python src/consumers/enhanced_fraud_detector.py
 - `model_path` -- Path to model pickle file (default: `models/synthetic_fraud_model_production.pkl`)
 - Kafka and Redis connection settings via environment variables (see `.env.example`)
 
-C++ inference acceleration is available as an optional optimization. Use `src/inference/export_model.py` to convert the model to native XGBoost JSON format and build via `src/inference/cpp/Makefile`.
+C++ inference acceleration is active by default (`enable_cpp_acceleration=True`). The pybind11 wrapper links against `libxgboost.so` via a baked-in RPATH so no `LD_LIBRARY_PATH` is needed at runtime. Use `src/inference/export_model.py` to convert the pickle to the native `_cpp.json` format the wrapper loads; see `src/inference/cpp/README.md` for local build instructions.
 
 ## Health and Metrics
 
@@ -173,10 +173,10 @@ C++ inference acceleration is available as an optional optimization. Use `src/in
 
 ## Performance Targets
 
-- **Throughput**: 10,000+ TPS sustained
-- **Latency**: <100ms P99
-- **Model AUC**: 99.42% (XGBoost, 200 features, production test set)
-- **Graceful degradation**: Automatic fallback to rules-based scoring if ML model fails
+- **Throughput**: ~3,100 txn/sec per consumer on the single-message path with C++ inference; scales linearly with consumer replicas (HPA min=2, max=12).
+- **Latency**: ~0.32 ms/message end-to-end scoring (C++ inference path + precomputed encoder/scaler lookups); P99 well under 1 ms on steady-state single-message mode.
+- **Model AUC**: 99.42% (XGBoost, 200 features, production test set).
+- **Graceful degradation**: Automatic fallback to Python `Booster.inplace_predict` if the C++ wrapper can't load; then rule-based scoring if the Python model is unavailable.
 
 ## Related Documentation
 

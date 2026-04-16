@@ -3,7 +3,21 @@
 **Date:** 2026-04-08
 **Model:** ieee_fraud_model_production.pkl (XGBClassifier, 200 features, 97.05% CV AUC on IEEE-CIS)
 
-> **Note:** 97.05% AUC is the cross-validation score on the original IEEE-CIS training run. The subsequent production model (`synthetic_fraud_model_production.pkl`, retrained on the full synthetic 200-feature dataset with F2-score optimization) scores 99.42% AUC on its held-out test set. See `models/TRAINING_REPORT.md` for the current production model details.
+> **Note (2026-04-08):** 97.05% AUC is the cross-validation score on the original IEEE-CIS training run. The subsequent production model (`synthetic_fraud_model_production.pkl`, retrained on the full synthetic 200-feature dataset with F2-score optimization) scores 99.42% AUC on its held-out test set. See `models/TRAINING_REPORT.md` for the current production model details.
+
+> **Update (2026-04-16):** The "C++ wrapper provides no speedup for single
+> predictions" conclusion below (Section 4, Recommendations) reflects
+> measurements taken when the XGBoost call in the hot path was the sole
+> cost. Subsequent work (see commit history for
+> `fraud_detector.py`) replaced the sklearn `StandardScaler.transform`
+> and 31 sequential `LabelEncoder.transform` calls with precomputed
+> lookup tables, so per-message scoring is now dominated by
+> `libxgboost.so` again. In that regime the C++ path measures
+> ~0.15 ms / prediction end-to-end vs ~21 ms via the prior pickle-loaded
+> Python path (which was silently returning `AttributeError` on the
+> bare `Booster` before the `inplace_predict` fallback was added). The
+> current production numbers are reported in `README.md` and
+> `docs/fraud-detection/README.md`.
 
 ## 1. Model Export Verification
 

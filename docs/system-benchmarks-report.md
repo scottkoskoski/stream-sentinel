@@ -1,5 +1,15 @@
 # System Benchmarks Report
 
+> **Update (2026-04-16):** This report captures the baseline before the
+> C++ inference extension was built and the feature-extractor hot path
+> was vectorized. The end-to-end per-transaction numbers below (~30 ms
+> single / ~7 ms batch) no longer reflect the current state -- a single
+> message now costs ~0.32 ms end-to-end on the single-message path
+> (~3,100 txn/sec per consumer). See `README.md` Performance table or
+> `docs/fraud-detection/README.md` for the current numbers. The
+> throughput and data-quality sections below remain accurate as the
+> producer characterization of that date.
+
 ## Test Environment
 
 - Single Kafka broker (localhost:9092), 12 partitions on `synthetic-transactions`
