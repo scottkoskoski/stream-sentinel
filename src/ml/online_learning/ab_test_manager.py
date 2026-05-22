@@ -33,6 +33,11 @@ from confluent_kafka import Consumer, Producer
 from scipy import stats
 from scipy.stats import chi2_contingency
 
+from .ab_test_analysis import (
+    newcombe_diff_ci,
+    required_sample_size,
+    two_proportion_ztest,
+)
 from .config import OnlineLearningConfig, get_online_learning_config
 
 
@@ -558,21 +563,41 @@ class ABTestManager:
             return None
 
     def _calculate_sample_size(self, effect_size: float, alpha: float, power: float) -> int:
-        """Calculate required sample size for statistical power."""
+        """
+        Required per-arm sample size for the experiment's primary metric.
+
+        Uses the base-rate-aware formula in ``ab_test_analysis``. A p=0.5
+        baseline (the previous default) drastically under-sizes recall and
+        fpr tests on rare outcomes -- on the fraud detector's ~3-5% positive
+        rate, sizing at p=0.5 would call experiments significant with an
+        order of magnitude fewer samples than actually needed.
+        """
         try:
-            # Simplified sample size calculation for proportions
-            z_alpha = stats.norm.ppf(1 - alpha / 2)
-            z_beta = stats.norm.ppf(power)
+            baseline = self._baseline_for_primary_metric()
+            return required_sample_size(
+                p_baseline=baseline,
+                minimum_detectable_effect=effect_size,
+                alpha=alpha,
+                power=power,
+            )
+        except Exception as exc:
+            self.logger.warning(f"Sample-size calculation failed ({exc}); using default 1000")
+            return 1000
 
-            # Assume baseline proportion of 0.5 for conservative estimate
-            p = 0.5
+    def _baseline_for_primary_metric(self) -> float:
+        """
+        Best-effort baseline proportion used for sample-size sizing.
 
-            n = (2 * p * (1 - p) * (z_alpha + z_beta) ** 2) / (effect_size**2)
-
-            return max(100, int(n))  # Minimum 100 samples per variant
-
-        except Exception:
-            return 1000  # Default sample size
+        Defaults assume the synthetic-data fraud regime; override the
+        ``primary_metric_baseline`` attribute on a manager instance if you
+        have a better prior from offline analysis.
+        """
+        override = getattr(self, "primary_metric_baseline", None)
+        if override is not None:
+            return float(override)
+        # Per-metric sensible defaults (kept in the middle of typical
+        # observed ranges so we err toward the more demanding sample size).
+        return 0.10
 
     def _analyze_experiment_results(self, experiment: ABTestExperiment) -> None:
         """Analyze experiment results and update conclusions."""
@@ -671,65 +696,76 @@ class ABTestManager:
         else:
             return 0.0
 
+    def _proportion_counts(
+        self, variant: ModelVariant, metric: str
+    ) -> Optional[Tuple[int, int]]:
+        """
+        Return (successes, totals) for the proportion metrics supported here.
+
+        Returns None if the metric is not a proportion (caller falls back to
+        t-test path for those).
+        """
+        if metric == "recall":
+            return variant.true_positives, variant.true_positives + variant.false_negatives
+        if metric == "precision":
+            return variant.true_positives, variant.true_positives + variant.false_positives
+        if metric == "fpr":
+            return variant.false_positives, variant.false_positives + variant.true_negatives
+        if metric == "f1":
+            # Approximation: model F1 as TP / total_predictions for the z-test.
+            # F1 is not literally a single proportion, but this preserves the
+            # behaviour of the legacy code so existing experiments keep working.
+            return variant.true_positives, variant.total_predictions
+        return None
+
     def _perform_statistical_test(
         self, control: ModelVariant, treatment: ModelVariant, metric: str
     ) -> Tuple[float, float, float]:
-        """Perform statistical test between variants."""
-        try:
-            if metric in ["precision", "recall", "f1"]:
-                # For proportions, use two-proportion z-test
+        """
+        Statistical test between variants.
 
-                if metric == "precision":
-                    c_success = control.true_positives
-                    c_total = control.true_positives + control.false_positives
-                    t_success = treatment.true_positives
-                    t_total = treatment.true_positives + treatment.false_positives
-                elif metric == "recall":
-                    c_success = control.true_positives
-                    c_total = control.true_positives + control.false_negatives
-                    t_success = treatment.true_positives
-                    t_total = treatment.true_positives + treatment.false_negatives
-                else:  # f1 - approximate as harmonic mean
-                    c_success = control.true_positives
-                    c_total = control.total_predictions
-                    t_success = treatment.true_positives
-                    t_total = treatment.total_predictions
+        Proportion metrics (recall, precision, fpr, f1) use the pooled
+        two-proportion z-test from ``ab_test_analysis``, plus a Newcombe 95%
+        CI on the proportion difference logged for traceability. Non-proportion
+        metrics fall back to a t-test approximation.
+
+        Note: the per-variant ``ModelVariant`` does not currently track per-user
+        outcomes, so the cluster-adjusted z-test is not applied here. The
+        offline harness (scripts/run_ab_test_offline.py) and any future per-user
+        tracking will exercise the cluster correction in ``ab_test_analysis``.
+        """
+        try:
+            counts = self._proportion_counts(control, metric)
+            if counts is not None:
+                c_success, c_total = counts
+                t_success, t_total = self._proportion_counts(treatment, metric)
 
                 if c_total == 0 or t_total == 0:
                     return 1.0, 0.0, 0.0
 
-                # Two-proportion z-test
-                p1 = c_success / c_total
-                p2 = t_success / t_total
+                p1, p2, _z, p_value = two_proportion_ztest(c_success, c_total, t_success, t_total)
+                effect_size = p2 - p1
+                confidence = 1.0 - p_value
 
-                n1, n2 = c_total, t_total
-                p_pooled = (c_success + t_success) / (c_total + t_total)
-
-                se = np.sqrt(p_pooled * (1 - p_pooled) * (1 / n1 + 1 / n2))
-
-                if se > 0:
-                    z_stat = (p2 - p1) / se
-                    p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
-                    effect_size = p2 - p1
-                    confidence = 1 - p_value
-                else:
-                    p_value, effect_size, confidence = 1.0, 0.0, 0.0
-
+                ci_lo, ci_hi = newcombe_diff_ci(c_success, c_total, t_success, t_total)
+                self.logger.debug(
+                    f"z-test {metric}: p1={p1:.4f} p2={p2:.4f} diff={effect_size:+.4f} "
+                    f"CI95=[{ci_lo:+.4f}, {ci_hi:+.4f}] p={p_value:.4g}"
+                )
                 return p_value, effect_size, confidence
 
+            # Non-proportion metric -- fall back to t-test approximation.
+            control_values = [self._get_metric_value(control, metric)] * control.total_predictions
+            treatment_values = [self._get_metric_value(treatment, metric)] * treatment.total_predictions
+
+            if len(control_values) > 1 and len(treatment_values) > 1:
+                _t_stat, p_value = stats.ttest_ind(control_values, treatment_values)
+                effect_size = np.mean(treatment_values) - np.mean(control_values)
+                confidence = 1 - p_value if p_value < 1.0 else 0.0
             else:
-                # For other metrics, use t-test (simplified)
-                control_values = [self._get_metric_value(control, metric)] * control.total_predictions
-                treatment_values = [self._get_metric_value(treatment, metric)] * treatment.total_predictions
+                p_value, effect_size, confidence = 1.0, 0.0, 0.0
 
-                if len(control_values) > 1 and len(treatment_values) > 1:
-                    t_stat, p_value = stats.ttest_ind(control_values, treatment_values)
-                    effect_size = np.mean(treatment_values) - np.mean(control_values)
-                    confidence = 1 - p_value if p_value < 1.0 else 0.0
-                else:
-                    p_value, effect_size, confidence = 1.0, 0.0, 0.0
-
-                return p_value, effect_size, confidence
+            return p_value, effect_size, confidence
 
         except Exception as e:
             self.logger.error(f"Statistical test failed: {e}")
