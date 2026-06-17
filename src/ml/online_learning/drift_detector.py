@@ -507,8 +507,8 @@ class DriftDetector:
                         drift_score=drift_result["drift_score"],
                         p_value=drift_result["p_value"],
                         test_statistic=drift_result["test_statistic"],
-                        reference_period=f"Reference samples",
-                        current_period=f"Current window",
+                        reference_period="Reference samples",
+                        current_period="Current window",
                         samples_analyzed=len(current_df),
                         requires_retraining=drift_result["drift_score"] > 0.3,
                         suggested_actions=self._get_drift_recommendations(

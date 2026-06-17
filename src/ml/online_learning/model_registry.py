@@ -529,9 +529,9 @@ class ModelRegistry:
         """Validate model metadata before registration."""
         required_fields = ["model_id", "name", "model_type", "algorithm"]
 
-        for field in required_fields:
-            if not getattr(metadata, field):
-                self.logger.error(f"Missing required field: {field}")
+        for field_name in required_fields:
+            if not getattr(metadata, field_name):
+                self.logger.error(f"Missing required field: {field_name}")
                 return False
 
         # Validate version format if provided

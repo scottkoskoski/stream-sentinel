@@ -68,7 +68,7 @@ class ExportConfig:
             raise ValueError(f"Accuracy tolerance must be between 0 and 1e-3, got {self.accuracy_tolerance}")
 
         if not 0.1 <= self.performance_baseline_multiplier <= 2.0:
-            raise ValueError(f"Performance baseline multiplier must be between 0.1 and 2.0")
+            raise ValueError("Performance baseline multiplier must be between 0.1 and 2.0")
 
         if self.validation_samples < 100:
             raise ValueError(f"Validation samples must be at least 100, got {self.validation_samples}")
@@ -635,7 +635,7 @@ class ModelExporter:
             with tempfile.NamedTemporaryFile(suffix=".json") as tmp_file:
                 model.save_model(tmp_file.name)
                 return tmp_file.seek(0, 2) / (1024 * 1024)  # Size in MB
-        except:
+        except Exception:
             # Rough estimation based on model parameters
             n_trees = getattr(model, "n_estimators", 100)
             max_depth = getattr(model, "max_depth", 6)

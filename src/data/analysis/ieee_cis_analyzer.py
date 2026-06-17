@@ -169,7 +169,7 @@ class IEEECISAnalyzer:
         self.analysis_results["schema"] = schema_info
 
         # Print key findings
-        self.logger.info(f"Dataset Overview:")
+        self.logger.info("Dataset Overview:")
         self.logger.info(f"  - Total transactions: {schema_info['total_transactions']:,}")
         self.logger.info(f"  - Fraud rate: {schema_info['fraud_rate']:.4f} ({schema_info['fraud_rate']*100:.2f}%)")
         self.logger.info(f"  - Date range: {schema_info['date_range']['days']:.1f} days")
@@ -644,17 +644,17 @@ def main():
     schema = results["schema"]
     fraud_patterns = results["fraud_patterns"]
 
-    print(f"Dataset Overview:")
+    print("Dataset Overview:")
     print(f"  - Fraud Rate: {schema['fraud_rate']:.4f} ({schema['fraud_rate']*100:.2f}%)")
     print(f"  - Average Fraud Amount: ${fraud_patterns['basic_stats']['avg_fraud_amount']:.2f}")
     print(f"  - Average Legit Amount: ${fraud_patterns['basic_stats']['avg_legit_amount']:.2f}")
 
-    print(f"\nTemporal Patterns:")
+    print("\nTemporal Patterns:")
     hourly = fraud_patterns["temporal_patterns"]["hourly_patterns"]
     peak_fraud_hour = max(hourly.items(), key=lambda x: x[1]["fraud_rate"])
     print(f"  - Peak Fraud Hour: {peak_fraud_hour[0]}:00 ({peak_fraud_hour[1]['fraud_rate']:.4f} fraud rate)")
 
-    print(f"\nAmount Range Analysis:")
+    print("\nAmount Range Analysis:")
     for range_name, data in fraud_patterns["amount_patterns"]["amount_ranges"].items():
         print(
             f"  - {range_name}: {data['fraud_rate']:.4f} fraud rate ({data['fraud_transactions']} fraud / {data['total_transactions']} total)"

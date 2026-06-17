@@ -185,7 +185,7 @@ class TestThroughputBenchmarks:
         # Calculate production metrics
         actual_production_tps = produced_count / production_time
 
-        print(f"Production completed:")
+        print("Production completed:")
         print(f"  Transactions: {produced_count}")
         print(f"  Time: {production_time:.1f}s")
         print(f"  TPS: {actual_production_tps:.0f}")
@@ -291,7 +291,7 @@ class TestThroughputBenchmarks:
         cpu_percent = end_resources.cpu_percent()
         memory_mb = end_resources.memory_info().rss / 1024 / 1024
 
-        print(f"Processing completed:")
+        print("Processing completed:")
         print(f"  Transactions: {processed_count}")
         print(f"  Time: {total_time:.1f}s")
         print(f"  TPS: {actual_tps:.0f}")
@@ -404,7 +404,7 @@ class TestThroughputBenchmarks:
 
         concurrent_tps = total_transactions / total_time
 
-        print(f"Concurrent processing completed:")
+        print("Concurrent processing completed:")
         print(f"  Users: {len(user_results)}")
         print(f"  Total transactions: {total_transactions}")
         print(f"  Time: {total_time:.1f}s")
@@ -484,7 +484,7 @@ class TestThroughputBenchmarks:
         avg_batch_growth = statistics.mean(m["growth_mb"] for m in memory_measurements)
         max_batch_growth = max(m["growth_mb"] for m in memory_measurements)
 
-        print(f"Memory analysis:")
+        print("Memory analysis:")
         print(f"  Initial memory: {initial_memory_mb:.0f}MB")
         print(f"  Final memory: {final_memory_mb:.0f}MB")
         print(f"  Total growth: {total_growth_mb:.0f}MB")
@@ -571,7 +571,7 @@ class TestThroughputBenchmarks:
 
         operations_per_second = total_operations / total_time
 
-        print(f"Redis performance results:")
+        print("Redis performance results:")
         print(f"  Total operations: {total_operations}")
         print(f"  Time: {total_time:.1f}s")
         print(f"  Operations/sec: {operations_per_second:.0f}")

@@ -111,7 +111,7 @@ class PostgreSQLManager:
             with conn.cursor() as cursor:
                 insert_query = """
                     INSERT INTO fraud_alerts (
-                        transaction_id, user_id, severity, fraud_score, 
+                        transaction_id, user_id, severity, fraud_score,
                         ml_prediction, business_rules_triggered, explanation
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING alert_id
@@ -281,14 +281,14 @@ class PostgreSQLManager:
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
                 query = """
-                    SELECT ua.*, 
+                    SELECT ua.*,
                            COUNT(fa.alert_id) as pending_alerts,
                            MAX(fa.fraud_score) as max_fraud_score
                     FROM user_accounts ua
                     LEFT JOIN fraud_alerts fa ON ua.user_id = fa.user_id AND fa.status = 'PENDING'
                     WHERE ua.user_id = %s
                     GROUP BY ua.user_id, ua.status, ua.total_alerts, ua.high_severity_alerts,
-                             ua.last_alert_at, ua.blocked_at, ua.blocked_reason, 
+                             ua.last_alert_at, ua.blocked_at, ua.blocked_reason,
                              ua.created_at, ua.updated_at
                 """
 
@@ -520,14 +520,14 @@ class ClickHouseManager:
 
         try:
             query = """
-            SELECT 
+            SELECT
                 toStartOfHour(timestamp) as hour,
                 count() as total_transactions,
                 sum(is_fraud) as fraud_transactions,
                 avg(fraud_score) as avg_fraud_score
-            FROM transaction_records 
+            FROM transaction_records
             WHERE timestamp >= %s AND timestamp < %s
-            GROUP BY hour 
+            GROUP BY hour
             ORDER BY hour
             """
 
