@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      - ".github/workflows/performance.yml"
+      - ".github/actions/**"
   pull_request:
     branches: [main]
     paths:
       - "src/**"
+      - ".github/workflows/performance.yml"
+      - ".github/actions/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
