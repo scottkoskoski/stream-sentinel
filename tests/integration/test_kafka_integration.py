@@ -470,7 +470,7 @@ class TestKafkaIntegration:
         time.sleep(5)
 
         # Both consumers should now process remaining messages
-        total_remaining = 24 - len(consumer1_messages)
+        _ = 24 - len(consumer1_messages)
         combined_messages = consumer1_messages.copy()
 
         start_time = time.time()

@@ -330,7 +330,7 @@ class TestUserProfileManagement:
         self.fraud_detector.save_user_profile(profile)
 
         # Verify save operation
-        expected_key = f"user_profile:{user_id}"
+        _ = f"user_profile:{user_id}"
         self.mock_redis.hset.assert_called()
 
         # Get the saved data

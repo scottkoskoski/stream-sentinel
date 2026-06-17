@@ -667,7 +667,7 @@ class TestDataFactory:
         or used for testing the fraud detection pipeline.
         """
         start_time = datetime.now()
-        end_time = start_time + timedelta(hours=scenario.duration_hours)
+        _ = start_time + timedelta(hours=scenario.duration_hours)
 
         # Pre-calculate transaction schedule for all users
         scheduled_transactions = []

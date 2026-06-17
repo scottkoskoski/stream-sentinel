@@ -233,10 +233,10 @@ class TestTracingContext:
         assert TracingContext.current() is None
 
     def test_nested_contexts(self):
-        with TracingContext(correlation_id="corr-outer") as outer:
+        with TracingContext(correlation_id="corr-outer"):
             assert TracingContext.current_correlation_id() == "corr-outer"
 
-            with TracingContext(correlation_id="corr-inner") as inner:
+            with TracingContext(correlation_id="corr-inner"):
                 assert TracingContext.current_correlation_id() == "corr-inner"
 
             # Outer should be restored

@@ -224,7 +224,7 @@ class ServiceOrchestrator:
                 if service_name not in services_to_start:
                     continue
 
-                service_info = self.services[service_name]
+                _ = self.services[service_name]
                 await self._start_single_service(service_name, compose_file_path, profile)
 
             # Wait for all services to be healthy

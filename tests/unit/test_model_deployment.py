@@ -331,7 +331,7 @@ class TestABTestAssignment:
 
         ratio_a_1 = _hash_ratio(user_a, experiment_id)
         ratio_a_2 = _hash_ratio(user_a, experiment_id)
-        ratio_b = _hash_ratio(user_b, experiment_id)
+        _ = _hash_ratio(user_b, experiment_id)
 
         # Same user, same experiment -> same ratio
         assert ratio_a_1 == ratio_a_2

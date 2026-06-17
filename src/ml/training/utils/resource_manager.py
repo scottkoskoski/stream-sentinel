@@ -257,7 +257,7 @@ class GPUResourceManager:
             if torch.cuda.is_available() and self.gpu_id < torch.cuda.device_count():
                 # Test GPU access
                 with torch.cuda.device(self.gpu_id):
-                    test_tensor = torch.tensor([1.0], device=f"cuda:{self.gpu_id}")
+                    test_tensor = torch.tensor([1.0], device=f"cuda:{self.gpu_id}")  # noqa: F841
                     del test_tensor
                     torch.cuda.empty_cache()
                 return True

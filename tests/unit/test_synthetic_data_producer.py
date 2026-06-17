@@ -233,8 +233,8 @@ class TestSyntheticDataProducer:
         """Test that the same user profile is reused, not recreated."""
         user_id = "test_reuse_user"
 
-        txn1 = self.producer._generate_transaction(user_id=user_id)
-        txn2 = self.producer._generate_transaction(user_id=user_id)
+        _ = self.producer._generate_transaction(user_id=user_id)
+        _ = self.producer._generate_transaction(user_id=user_id)
 
         # Profile should be updated after transactions
         profile = self.producer.user_profiles[user_id]

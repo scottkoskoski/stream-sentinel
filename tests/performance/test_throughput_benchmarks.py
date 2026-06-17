@@ -144,7 +144,7 @@ class TestThroughputBenchmarks:
         batch_size = 1000
         for i in range(0, len(test_transactions), batch_size):
             batch = test_transactions[i : i + batch_size]
-            batch_start = time.time()
+            _ = time.time()
 
             for transaction in batch:
                 producer.produce(
@@ -243,7 +243,7 @@ class TestThroughputBenchmarks:
         processing_errors = 0
 
         # Resource monitoring
-        start_resources = psutil.Process()
+        _ = psutil.Process()
         start_time = time.time()
 
         print(f"Starting fraud detection processing for {len(test_transactions)} transactions...")
@@ -255,8 +255,8 @@ class TestThroughputBenchmarks:
             try:
                 # Complete fraud detection pipeline
                 features = fraud_detector.extract_all_features(transaction)
-                fraud_score = fraud_detector.calculate_fraud_score(features)
-                updated_profile = fraud_detector.update_user_profile(transaction)
+                _ = fraud_detector.calculate_fraud_score(features)
+                _ = fraud_detector.update_user_profile(transaction)
 
                 processed_count += 1
 
@@ -357,10 +357,10 @@ class TestThroughputBenchmarks:
 
                 try:
                     features = fraud_detector.extract_all_features(transaction)
-                    fraud_score = fraud_detector.calculate_fraud_score(features)
-                    updated_profile = fraud_detector.update_user_profile(transaction)
+                    _ = fraud_detector.calculate_fraud_score(features)
+                    _ = fraud_detector.update_user_profile(transaction)
 
-                except Exception as e:
+                except Exception:
                     user_errors += 1
 
                 tx_time = (time.time() - tx_start) * 1000
@@ -458,8 +458,8 @@ class TestThroughputBenchmarks:
                 transaction["user_id"] = f"mem_user_{(batch_num * batch_size + i) % 1000}"
 
                 features = fraud_detector.extract_all_features(transaction)
-                fraud_score = fraud_detector.calculate_fraud_score(features)
-                updated_profile = fraud_detector.update_user_profile(transaction)
+                _ = fraud_detector.calculate_fraud_score(features)
+                _ = fraud_detector.update_user_profile(transaction)
 
             batch_end_memory = process.memory_info().rss / 1024 / 1024
             memory_growth = batch_end_memory - batch_start_memory
@@ -528,7 +528,7 @@ class TestThroughputBenchmarks:
                 )
 
                 # Read operation
-                profile_data = redis_client.hgetall(profile_key)
+                _ = redis_client.hgetall(profile_key)
 
                 # Update operation
                 redis_client.hincrby(profile_key, "total_transactions", 1)

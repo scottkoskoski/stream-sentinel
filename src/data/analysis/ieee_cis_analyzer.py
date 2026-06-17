@@ -123,7 +123,7 @@ class IEEECISAnalyzer:
             if sample_size:
                 self.logger.info(f"Loading sample of {sample_size} transactions")
                 # Read header first to get column names
-                header = pd.read_csv(self.data_path, nrows=0)
+                _ = pd.read_csv(self.data_path, nrows=0)
                 # Read sample
                 self.transaction_df = pd.read_csv(self.data_path, nrows=sample_size, dtype={"TransactionID": "int64"})
             else:

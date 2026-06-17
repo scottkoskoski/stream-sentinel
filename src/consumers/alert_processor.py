@@ -290,7 +290,7 @@ class AlertProcessor:
             AlertContext with enriched information
         """
         user_id = alert.get("user_id")
-        start_time = time.time()
+        _ = time.time()
 
         # Get user risk profile from Redis
         user_risk_profile = self._get_user_risk_profile(user_id)

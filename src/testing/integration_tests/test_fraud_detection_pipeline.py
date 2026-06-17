@@ -84,7 +84,7 @@ class TestFraudDetectionPipeline:
         orchestrator = ServiceOrchestrator(test_config)
 
         # Use context manager for automatic cleanup
-        async with orchestrator.service_environment(ServiceProfile.FULL_INTEGRATION) as services:
+        async with orchestrator.service_environment(ServiceProfile.FULL_INTEGRATION):
             # Log service startup metrics
             metrics = orchestrator.get_service_metrics()
             logging.info(f"Services started successfully: {json.dumps(metrics, indent=2)}")

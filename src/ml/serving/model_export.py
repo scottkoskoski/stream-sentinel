@@ -324,7 +324,7 @@ class ModelExporter:
             initial_type = [("features", FloatTensorType([None, n_features]))]
 
             # Create dummy input for skl2onnx conversion
-            dummy_input = np.zeros((1, n_features), dtype=np.float32)
+            _ = np.zeros((1, n_features), dtype=np.float32)
 
             # Fix feature names for ONNX compatibility by working with the booster
             booster = model.get_booster()
@@ -407,7 +407,7 @@ class ModelExporter:
                 )
 
                 # Apply optimizations
-                session = ort.InferenceSession(tmp_file.name, sess_options)
+                _ = ort.InferenceSession(tmp_file.name, sess_options)
 
                 self.logger.info(
                     "ONNX model optimization completed",
@@ -639,7 +639,7 @@ class ModelExporter:
             # Rough estimation based on model parameters
             n_trees = getattr(model, "n_estimators", 100)
             max_depth = getattr(model, "max_depth", 6)
-            n_features = getattr(model, "n_features_in_", 200)
+            _ = getattr(model, "n_features_in_", 200)
 
             # Rough calculation: each node ~100 bytes, max nodes per tree = 2^depth
             estimated_nodes = n_trees * (2**max_depth)

@@ -519,7 +519,7 @@ class CheckpointManager:
         try:
             checkpoint_id = self.save_checkpoint(checkpoint)
             yield checkpoint_id
-        except Exception as e:
+        except Exception:
             if checkpoint_id:
                 # Attempt cleanup on failure
                 try:

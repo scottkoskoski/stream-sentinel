@@ -620,7 +620,7 @@ class OnlineLearningOrchestrator:
             feedback_stats = self.feedback_processor.get_statistics()
             drift_summary = self.drift_detector.get_drift_summary()
             learner_stats = self.incremental_learner.get_update_statistics()
-            registry_stats = self.model_registry.get_registry_statistics()
+            _ = self.model_registry.get_registry_statistics()
             ab_stats = self.ab_test_manager.get_ab_test_statistics()
 
             # Create system metrics
