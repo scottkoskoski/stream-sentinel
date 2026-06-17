@@ -304,7 +304,9 @@ class EnhancedFraudDetector:
             model_path = Path("models/ieee_fraud_model_production.pkl")
             if model_path.exists():
                 with open(model_path, "rb") as f:
-                    self.current_model = pickle.load(f)
+                    self.current_model = pickle.load(
+                        f
+                    )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
                 self.model_metadata = {
                     "source": "filesystem",

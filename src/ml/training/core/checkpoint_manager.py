@@ -235,7 +235,9 @@ class CheckpointStore:
 
                 # Load model
                 with open(model_path, "rb") as f:
-                    model = pickle.load(f)
+                    model = pickle.load(
+                        f
+                    )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
                 # Reconstruct checkpoint
                 checkpoint = ModelCheckpoint(

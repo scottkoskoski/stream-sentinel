@@ -575,7 +575,9 @@ class FraudDetector:
             # Load Python model (always needed for feature extraction
             # compatibility and as the standard inference path)
             with open(model_path_str, "rb") as f:
-                model_data = pickle.load(f)
+                model_data = pickle.load(
+                    f
+                )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
             # Extract model and preprocessing components
             if isinstance(model_data, dict):

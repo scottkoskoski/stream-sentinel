@@ -554,7 +554,7 @@ class TestFraudDetectionPipeline:
             conn = await asyncpg.connect(**test_config.get_postgres_connection_config())
 
             table_name = test_config.get_postgres_table_name("fraud_alerts")
-            query = f"SELECT COUNT(*) FROM {table_name} WHERE scenario_id = $1"
+            query = f"SELECT COUNT(*) FROM {table_name} WHERE scenario_id = $1"  # nosec B608 - table/column identifiers are code-controlled constants; values are parameterized
 
             alert_count = await conn.fetchval(query, scenario.scenario_id)
             await conn.close()
@@ -585,7 +585,7 @@ class TestFraudDetectionPipeline:
             conn = await asyncpg.connect(**test_config.get_postgres_connection_config())
 
             table_name = test_config.get_postgres_table_name("fraud_alerts")
-            query = f"SELECT COUNT(*) FROM {table_name}"
+            query = f"SELECT COUNT(*) FROM {table_name}"  # nosec B608 - table/column identifiers are code-controlled constants; values are parameterized
 
             count = await conn.fetchval(query)
             await conn.close()

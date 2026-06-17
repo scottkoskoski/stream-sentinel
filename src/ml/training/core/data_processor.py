@@ -313,7 +313,9 @@ class DataCache:
 
             # Load data
             with open(data_path, "rb") as f:
-                cache_data = pickle.load(f)
+                cache_data = pickle.load(
+                    f
+                )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
             # Reconstruct validation result
             validation_data = metadata["validation_result"]

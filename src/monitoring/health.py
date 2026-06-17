@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration from environment
 # ---------------------------------------------------------------------------
-HEALTH_BIND_ADDRESS: str = os.environ.get("HEALTH_BIND_ADDRESS", "0.0.0.0")
+HEALTH_BIND_ADDRESS: str = os.environ.get(
+    "HEALTH_BIND_ADDRESS", "0.0.0.0"
+)  # nosec B104 - intentional container health bind; address is env-configurable via HEALTH_BIND_ADDRESS
 HEALTH_DETAILS_ENABLED: bool = os.environ.get("HEALTH_DETAILS_ENABLED", "true").lower() in (
     "true",
     "1",

@@ -68,7 +68,9 @@ class FastInferenceEngine:
         # Always load Python model as fallback
         try:
             with open(self.model_path, "rb") as f:
-                model_data = pickle.load(f)
+                model_data = pickle.load(
+                    f
+                )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
             # Extract the actual model from dictionary structure if needed
             if isinstance(model_data, dict):

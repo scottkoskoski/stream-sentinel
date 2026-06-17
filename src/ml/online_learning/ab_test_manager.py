@@ -535,7 +535,7 @@ class ABTestManager:
         try:
             # Create consistent hash for user + experiment
             hash_input = f"{user_id}:{experiment.experiment_id}".encode()
-            hash_value = int(hashlib.md5(hash_input).hexdigest(), 16)
+            hash_value = int(hashlib.md5(hash_input, usedforsecurity=False).hexdigest(), 16)
             assignment_ratio = (hash_value % 10000) / 10000.0  # 0.0 to 1.0
 
             # Assign based on traffic allocation
@@ -814,7 +814,7 @@ class ABTestManager:
     def _generate_assignment_hash(self, user_id: str, experiment_id: str) -> str:
         """Generate hash for assignment consistency."""
         hash_input = f"{user_id}:{experiment_id}:{datetime.now().date()}"
-        return hashlib.md5(hash_input.encode()).hexdigest()
+        return hashlib.md5(hash_input.encode(), usedforsecurity=False).hexdigest()
 
     def _publish_experiment_event(
         self,

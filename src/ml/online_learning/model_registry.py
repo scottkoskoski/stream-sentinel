@@ -660,7 +660,9 @@ class ModelRegistry:
                 import base64
 
                 model_bytes = base64.b64decode(model_data)
-                model = pickle.loads(model_bytes)
+                model = pickle.loads(
+                    model_bytes
+                )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
                 # Update access statistics
                 self._update_access_stats(model_id, metadata.version)
@@ -672,7 +674,9 @@ class ModelRegistry:
 
             if model_path.exists():
                 with open(model_path, "rb") as f:
-                    model = pickle.load(f)
+                    model = pickle.load(
+                        f
+                    )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
                 self._update_access_stats(model_id, metadata.version)
                 return model

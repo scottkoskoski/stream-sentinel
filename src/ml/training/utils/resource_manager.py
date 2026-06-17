@@ -610,7 +610,7 @@ class SystemResourceManager:
         # Default temp directories
         if temp_dirs is None:
             temp_dirs = [
-                "/tmp",
+                "/tmp",  # nosec B108 - candidate temp dir probed for writability; not used to store secrets
                 Path.home() / "tmp",
                 Path(".") / "tmp",
                 Path(".") / "temp",

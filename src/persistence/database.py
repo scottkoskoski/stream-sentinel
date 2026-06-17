@@ -177,7 +177,7 @@ class PostgreSQLManager:
 
                 values.append(alert_id)
 
-                update_query = f"UPDATE fraud_alerts SET {', '.join(update_fields)} WHERE alert_id = %s"
+                update_query = f"UPDATE fraud_alerts SET {', '.join(update_fields)} WHERE alert_id = %s"  # nosec B608 - table/column identifiers are code-controlled constants; values are parameterized
 
                 cursor.execute(update_query, values)
                 rows_affected = cursor.rowcount

@@ -35,7 +35,9 @@ except ImportError:
     TRACING_AVAILABLE = False
 
 DLQ_TOPIC = "dead-letter-queue"
-DEFAULT_OUTPUT_PATH = "/tmp/stream-sentinel-dlq.jsonl"
+DEFAULT_OUTPUT_PATH = (
+    "/tmp/stream-sentinel-dlq.jsonl"  # nosec B108 - default output path, overridable via DLQ_OUTPUT_PATH
+)
 
 logger = logging.getLogger("stream_sentinel.dlq_consumer")
 
