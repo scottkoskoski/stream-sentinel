@@ -10,7 +10,6 @@ Generates realistic fraud detection test data with:
 """
 
 import json
-import pickle
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta

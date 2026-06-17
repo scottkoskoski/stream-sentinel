@@ -35,7 +35,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-import psutil
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -753,16 +752,13 @@ class DataProcessor:
 class DataProcessingError(Exception):
     """Base exception for data processing operations."""
 
-    pass
 
 
 class DataLoadingError(DataProcessingError):
     """Raised when data loading fails."""
 
-    pass
 
 
 class DataCacheError(DataProcessingError):
     """Raised when cache operations fail."""
 
-    pass

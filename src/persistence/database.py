@@ -7,17 +7,14 @@ with connection pooling, error handling, and performance monitoring.
 
 import logging
 import time
-from contextlib import asynccontextmanager, contextmanager
-from dataclasses import asdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncContextManager, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-import psycopg
 from clickhouse_driver import Client as ClickHouseClient
-from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
@@ -28,7 +25,6 @@ from .schemas import AlertSeverity, AlertStatus, FraudAlert, TransactionRecord, 
 class DatabaseError(Exception):
     """Custom exception for database operations."""
 
-    pass
 
 
 class PostgreSQLManager:

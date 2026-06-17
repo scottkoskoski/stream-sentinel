@@ -16,15 +16,10 @@ Usage::
                    correlation_id=tracing_ctx.correlation_id)
 """
 
-import json
 import logging
-import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from tracing.correlation import (
-    HEADER_CORRELATION_ID,
-    HEADER_PARENT_SPAN_ID,
-    HEADER_SPAN_ID,
     TracingContext,
     extract_correlation_id,
     extract_span_id,

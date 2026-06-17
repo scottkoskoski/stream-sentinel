@@ -21,14 +21,13 @@ import logging
 
 # Import our testing framework
 import sys
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import asyncpg
 import pytest
 import redis.asyncio as redis
-from confluent_kafka import Consumer, Producer
+from confluent_kafka import Producer
 
 sys.path.append(str(Path(__file__).parent.parent))
 

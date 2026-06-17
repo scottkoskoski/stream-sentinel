@@ -19,19 +19,16 @@ Key features:
 import hashlib
 import json
 import logging
-import random
 import time
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 import redis
 from confluent_kafka import Consumer, Producer
 from scipy import stats
-from scipy.stats import chi2_contingency
 
 from .config import OnlineLearningConfig, get_online_learning_config
 

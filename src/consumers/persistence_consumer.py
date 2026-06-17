@@ -7,13 +7,12 @@ and system metrics without impacting real-time fraud detection performance.
 """
 
 import json
-import logging
 import signal
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
@@ -21,10 +20,9 @@ from confluent_kafka import Consumer, KafkaError, KafkaException
 sys.path.append(str(Path(__file__).parent.parent))
 
 from kafka.config import get_kafka_config
-from persistence.database import close_persistence_layer, get_persistence_layer
+from persistence.database import get_persistence_layer
 from persistence.schemas import (
     AlertSeverity,
-    AlertStatus,
     FraudAlert,
     TransactionRecord,
 )
@@ -46,7 +44,6 @@ except ImportError:
 
 # Distributed tracing
 try:
-    from tracing.correlation import TracingContext, extract_correlation_id
     from tracing.middleware import traced_consume
 
     TRACING_AVAILABLE = True

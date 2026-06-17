@@ -14,13 +14,11 @@ Usage:
 import argparse
 import json
 import logging
-import os
 import signal
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
@@ -30,7 +28,6 @@ from kafka.config import get_kafka_config
 
 # Distributed tracing
 try:
-    from tracing.correlation import extract_correlation_id
     from tracing.middleware import traced_consume
 
     TRACING_AVAILABLE = True

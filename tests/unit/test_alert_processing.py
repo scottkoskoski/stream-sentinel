@@ -11,12 +11,9 @@ Tests the alert processing pipeline including:
 
 import json
 import sys
-from dataclasses import asdict
-from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-import pytest
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 

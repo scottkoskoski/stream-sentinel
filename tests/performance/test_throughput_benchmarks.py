@@ -17,13 +17,12 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
 
 import psutil
 import pytest
-from confluent_kafka import Consumer, Producer
+from confluent_kafka import Producer
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 

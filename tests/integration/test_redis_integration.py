@@ -12,19 +12,16 @@ Tests real Redis cluster integration including:
 
 import json
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List
 
 import pytest
 import redis
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from consumers.fraud_detector import UserProfile
 
 
 @pytest.mark.integration

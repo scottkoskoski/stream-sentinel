@@ -16,12 +16,10 @@ import json
 
 # Test dependencies
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 import numpy as np
-import pandas as pd
 import pytest
 import xgboost as xgb
 from sklearn.datasets import make_classification
@@ -30,7 +28,7 @@ from sklearn.model_selection import train_test_split
 sys.path.append("src")
 
 from ml.serving.benchmarking import BenchmarkConfig, PerformanceBenchmark
-from ml.serving.model_export import ExportConfig, ModelExporter, ModelExportError, ValidationResult
+from ml.serving.model_export import ExportConfig, ModelExporter, ModelExportError
 from ml.serving.model_validation import ModelAccuracyValidator, PerformanceValidator
 
 

@@ -7,16 +7,14 @@ differ based on input data.
 """
 
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-import numpy as np
 import pytest
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from consumers.fraud_detector import FraudDetector, FraudFeatures, UserProfile
+from consumers.fraud_detector import FraudDetector, UserProfile
 
 
 class TestFeatureEngineering:

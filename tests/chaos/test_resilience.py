@@ -10,13 +10,10 @@ and AlertProcessor code paths:
 4. Malformed transaction data -- proper error handling without crash
 """
 
-import json
 import sys
-import time
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, PropertyMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -24,7 +21,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
 import redis as redis_module
 
-from consumers.alert_processor import AlertContext, AlertProcessor, AlertResponse, AlertSeverity, ResponseAction
+from consumers.alert_processor import AlertProcessor, AlertResponse, AlertSeverity, ResponseAction
 from consumers.fraud_detector import FraudDetector, FraudFeatures, UserProfile
 
 

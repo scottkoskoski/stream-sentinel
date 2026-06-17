@@ -16,8 +16,7 @@ is available at data/processed/ieee_cis_analysis.json, those values
 take precedence.
 """
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 # ---------------------------------------------------------------------------
 # Temporal fraud patterns

@@ -16,19 +16,18 @@ Key enhancements:
 """
 
 import json
-import logging
 import pickle
 import signal
 import sys
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import redis
-from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
+from confluent_kafka import Consumer, KafkaError, Producer
 
 # Import existing fraud detector components
 sys.path.append(str(Path(__file__).parent.parent))
@@ -42,7 +41,6 @@ try:
         ABTestManager,
         DriftDetector,
         ModelRegistry,
-        OnlineLearningConfig,
         PerformanceMetrics,
         get_online_learning_config,
     )

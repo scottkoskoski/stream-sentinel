@@ -12,23 +12,17 @@ Key Features:
 - Production deployment validation
 """
 
-import json
 import logging
-import statistics
 import tempfile
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Optional
 
 import numpy as np
-import pandas as pd
 import xgboost as xgb
 
 # Scientific computing
 try:
-    from scipy import stats
     from scipy.stats import kstest, ttest_rel
 
     SCIPY_AVAILABLE = True
@@ -37,7 +31,6 @@ except ImportError:
 
 # ONNX dependencies
 try:
-    import onnx
     import onnxruntime as ort
 
     ONNX_AVAILABLE = True
@@ -504,7 +497,7 @@ class ModelAccuracyValidator:
     ):
         """Additional validation against ground truth labels."""
         try:
-            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+            from sklearn.metrics import accuracy_score
 
             # Convert predictions to decisions
             python_decisions = (python_preds > 0.5).astype(int)
@@ -758,7 +751,6 @@ class PerformanceValidator:
         try:
             import os
 
-            import psutil
 
             # Python model memory estimation
             with tempfile.NamedTemporaryFile(suffix=".json") as tmp_file:

@@ -29,10 +29,8 @@ import logging
 import os
 import pickle
 import shutil
-import sqlite3
 import tempfile
 import threading
-import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -551,22 +549,18 @@ class CheckpointManager:
 class CheckpointError(Exception):
     """Base exception for checkpoint operations."""
 
-    pass
 
 
 class CheckpointSaveError(CheckpointError):
     """Raised when checkpoint save operation fails."""
 
-    pass
 
 
 class CheckpointValidationError(CheckpointError):
     """Raised when checkpoint validation fails."""
 
-    pass
 
 
 class CheckpointRecoveryError(CheckpointError):
     """Raised when checkpoint recovery fails."""
 
-    pass

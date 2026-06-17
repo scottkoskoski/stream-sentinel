@@ -18,15 +18,14 @@ Key features:
 import json
 import logging
 import pickle
-import shutil
 import tempfile
 import time
 from collections import deque
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import joblib
 
@@ -39,10 +38,8 @@ import xgboost as xgb
 from confluent_kafka import Consumer, Producer
 from sklearn.metrics import (
     average_precision_score,
-    precision_recall_curve,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
 
 from .config import OnlineLearningConfig, get_online_learning_config
 from .feedback_processor import FeedbackLabel, ProcessedFeedback

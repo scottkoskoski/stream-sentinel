@@ -10,13 +10,11 @@ Tests real Kafka cluster integration including:
 - Performance characteristics
 """
 
-import asyncio
 import json
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List
 
 import pytest
 from confluent_kafka import Consumer, KafkaError, KafkaException, Producer

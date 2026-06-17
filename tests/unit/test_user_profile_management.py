@@ -9,12 +9,10 @@ focusing on the actual implemented methods:
 """
 
 import sys
-from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-import pytest
 import redis
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))

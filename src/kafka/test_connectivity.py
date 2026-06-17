@@ -16,12 +16,11 @@ for the producer/consumer patterns used in the fraud detection system.
 import json
 import sys
 import time
-from typing import Any, Dict, List
 
 # Import our configuration module
 from config import get_kafka_config
-from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
-from confluent_kafka.admin import AdminClient, ConfigResource, NewTopic, ResourceType
+from confluent_kafka import Consumer, KafkaError, Producer
+from confluent_kafka.admin import AdminClient, NewTopic
 
 
 class KafkaConnectivityTester:

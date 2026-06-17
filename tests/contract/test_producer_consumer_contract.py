@@ -12,18 +12,16 @@ These tests do NOT require infrastructure -- they test data shape contracts only
 import json
 import sys
 from dataclasses import asdict, fields
-from datetime import datetime
 from pathlib import Path
-from typing import get_type_hints
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from consumers.alert_processor import AlertContext, AlertProcessor, AlertResponse, AlertSeverity, ResponseAction
+from consumers.alert_processor import AlertProcessor, AlertResponse, AlertSeverity, ResponseAction
 from consumers.fraud_detector import FraudDetector, FraudFeatures, UserProfile
-from persistence.schemas import FraudAlert, SchemaManager, TransactionRecord
+from persistence.schemas import FraudAlert
 from producers.synthetic_transaction_producer import SyntheticTransactionProducer, Transaction
 
 

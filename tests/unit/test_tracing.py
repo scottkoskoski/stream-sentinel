@@ -11,15 +11,13 @@ Tests cover:
 - Round-trip: inject -> extract preserves correlation ID
 """
 
-import json
 import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from unittest.mock import MagicMock, call, patch
+from typing import List, Optional, Tuple
+from unittest.mock import MagicMock
 
-import pytest
 
 # Ensure src/ is on the path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))

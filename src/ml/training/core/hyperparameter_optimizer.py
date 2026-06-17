@@ -28,18 +28,16 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import lightgbm as lgb
 import numpy as np
 import optuna
-import pandas as pd
 import xgboost as xgb
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from .checkpoint_manager import CheckpointManager, ModelCheckpoint
@@ -727,4 +725,3 @@ class HyperparameterOptimizer:
 class OptimizationError(Exception):
     """Base exception for hyperparameter optimization operations."""
 
-    pass

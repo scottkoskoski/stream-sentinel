@@ -18,16 +18,14 @@ import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 import xgboost as xgb
 
 # ONNX dependencies
 try:
     import onnx
-    import onnxmltools
     import onnxruntime as ort
     from onnxmltools.convert import convert_xgboost
     from onnxmltools.convert.common.data_types import FloatTensorType
@@ -155,7 +153,6 @@ class ValidationResult:
 class ModelExportError(Exception):
     """Custom exception for model export failures."""
 
-    pass
 
 
 class ModelExporter:
