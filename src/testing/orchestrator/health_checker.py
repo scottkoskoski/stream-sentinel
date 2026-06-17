@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Optional
 
-import aiohttp
 import asyncpg
 import httpx
 import redis.asyncio as redis

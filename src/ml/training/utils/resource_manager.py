@@ -24,11 +24,8 @@ Architecture:
 
 import gc
 import logging
-import os
 import shutil
 import threading
-import time
-import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -86,7 +83,6 @@ class ResourceHandle(ABC):
     @abstractmethod
     def cleanup(self) -> None:
         """Release and cleanup the resource."""
-        pass
 
     def __enter__(self):
         return self
@@ -261,7 +257,7 @@ class GPUResourceManager:
             if torch.cuda.is_available() and self.gpu_id < torch.cuda.device_count():
                 # Test GPU access
                 with torch.cuda.device(self.gpu_id):
-                    test_tensor = torch.tensor([1.0], device=f"cuda:{self.gpu_id}")
+                    test_tensor = torch.tensor([1.0], device=f"cuda:{self.gpu_id}")  # noqa: F841
                     del test_tensor
                     torch.cuda.empty_cache()
                 return True
@@ -614,7 +610,7 @@ class SystemResourceManager:
         # Default temp directories
         if temp_dirs is None:
             temp_dirs = [
-                "/tmp",
+                "/tmp",  # nosec B108 - candidate temp dir probed for writability; not used to store secrets
                 Path.home() / "tmp",
                 Path(".") / "tmp",
                 Path(".") / "temp",
@@ -720,10 +716,6 @@ class SystemResourceManager:
 class ResourceAllocationError(Exception):
     """Raised when resource allocation fails."""
 
-    pass
-
 
 class ResourceExhaustionError(Exception):
     """Raised when system resources are exhausted."""
-
-    pass

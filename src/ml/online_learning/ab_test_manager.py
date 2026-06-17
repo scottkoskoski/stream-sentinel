@@ -19,19 +19,16 @@ Key features:
 import hashlib
 import json
 import logging
-import random
 import time
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 import redis
 from confluent_kafka import Consumer, Producer
 from scipy import stats
-from scipy.stats import chi2_contingency
 
 from .config import OnlineLearningConfig, get_online_learning_config
 
@@ -538,7 +535,7 @@ class ABTestManager:
         try:
             # Create consistent hash for user + experiment
             hash_input = f"{user_id}:{experiment.experiment_id}".encode()
-            hash_value = int(hashlib.md5(hash_input).hexdigest(), 16)
+            hash_value = int(hashlib.md5(hash_input, usedforsecurity=False).hexdigest(), 16)
             assignment_ratio = (hash_value % 10000) / 10000.0  # 0.0 to 1.0
 
             # Assign based on traffic allocation
@@ -817,7 +814,7 @@ class ABTestManager:
     def _generate_assignment_hash(self, user_id: str, experiment_id: str) -> str:
         """Generate hash for assignment consistency."""
         hash_input = f"{user_id}:{experiment_id}:{datetime.now().date()}"
-        return hashlib.md5(hash_input.encode()).hexdigest()
+        return hashlib.md5(hash_input.encode(), usedforsecurity=False).hexdigest()
 
     def _publish_experiment_event(
         self,

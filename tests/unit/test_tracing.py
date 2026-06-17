@@ -11,15 +11,12 @@ Tests cover:
 - Round-trip: inject -> extract preserves correlation ID
 """
 
-import json
 import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from typing import List, Optional, Tuple
+from unittest.mock import MagicMock
 
 # Ensure src/ is on the path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -236,10 +233,10 @@ class TestTracingContext:
         assert TracingContext.current() is None
 
     def test_nested_contexts(self):
-        with TracingContext(correlation_id="corr-outer") as outer:
+        with TracingContext(correlation_id="corr-outer"):
             assert TracingContext.current_correlation_id() == "corr-outer"
 
-            with TracingContext(correlation_id="corr-inner") as inner:
+            with TracingContext(correlation_id="corr-inner"):
                 assert TracingContext.current_correlation_id() == "corr-inner"
 
             # Outer should be restored

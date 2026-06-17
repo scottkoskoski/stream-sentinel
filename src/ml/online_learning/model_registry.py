@@ -20,18 +20,13 @@ import hashlib
 import json
 import logging
 import pickle
-import shutil
-import tempfile
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-import joblib
-import numpy as np
-import pandas as pd
 import redis
 from confluent_kafka import Producer
 from packaging import version
@@ -534,9 +529,9 @@ class ModelRegistry:
         """Validate model metadata before registration."""
         required_fields = ["model_id", "name", "model_type", "algorithm"]
 
-        for field in required_fields:
-            if not getattr(metadata, field):
-                self.logger.error(f"Missing required field: {field}")
+        for field_name in required_fields:
+            if not getattr(metadata, field_name):
+                self.logger.error(f"Missing required field: {field_name}")
                 return False
 
         # Validate version format if provided
@@ -665,7 +660,9 @@ class ModelRegistry:
                 import base64
 
                 model_bytes = base64.b64decode(model_data)
-                model = pickle.loads(model_bytes)
+                model = pickle.loads(
+                    model_bytes
+                )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
                 # Update access statistics
                 self._update_access_stats(model_id, metadata.version)
@@ -677,7 +674,9 @@ class ModelRegistry:
 
             if model_path.exists():
                 with open(model_path, "rb") as f:
-                    model = pickle.load(f)
+                    model = pickle.load(
+                        f
+                    )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
                 self._update_access_stats(model_id, metadata.version)
                 return model

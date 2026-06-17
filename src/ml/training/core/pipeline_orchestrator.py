@@ -30,14 +30,14 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import Enum, auto
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 from .checkpoint_manager import CheckpointManager, ModelCheckpoint
-from .data_processor import DataProcessor, ProcessedDataset, ValidationResult
-from .hyperparameter_optimizer import HyperparameterOptimizer, OptimizationResult, StudyHandle
+from .data_processor import DataProcessor, ProcessedDataset
+from .hyperparameter_optimizer import HyperparameterOptimizer, OptimizationResult
 
 # Optional model registry integration -- degrade gracefully if unavailable
 try:
@@ -909,22 +909,14 @@ class PipelineOrchestrator:
 class PipelineExecutionError(Exception):
     """Base exception for pipeline execution errors."""
 
-    pass
-
 
 class PipelineRecoveryError(PipelineExecutionError):
     """Raised when pipeline recovery fails."""
-
-    pass
 
 
 class InvalidStateTransitionError(PipelineExecutionError):
     """Raised when invalid state transition is attempted."""
 
-    pass
-
 
 class ValidationError(PipelineExecutionError):
     """Raised when model validation fails."""
-
-    pass

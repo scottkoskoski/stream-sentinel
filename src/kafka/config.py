@@ -141,14 +141,14 @@ class KafkaConfig:
         # so the right trade-off is bigger batches / more compression.
         producer_configs = {
             "transaction": {
-                "linger.ms": 50,                    # wait up to 50ms to fill a batch
-                "batch.size": 1_048_576,            # 1 MiB per-partition batch buffer
-                "compression.type": "lz4",           # fast compression, high ratio
+                "linger.ms": 50,  # wait up to 50ms to fill a batch
+                "batch.size": 1_048_576,  # 1 MiB per-partition batch buffer
+                "compression.type": "lz4",  # fast compression, high ratio
                 "queue.buffering.max.messages": 1_000_000,
                 "queue.buffering.max.kbytes": 1_048_576,
             },
             "market_data": {
-                "linger.ms": 1,                     # low-latency path
+                "linger.ms": 1,  # low-latency path
             },
             "sentiment": {
                 "linger.ms": 100,

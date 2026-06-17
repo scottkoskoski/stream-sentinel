@@ -9,19 +9,16 @@ Tests cover:
 """
 
 import hashlib
-import json
-import pickle
 import sys
-import time
 from pathlib import Path
 from typing import Any, Dict
-from unittest.mock import MagicMock, Mock, PropertyMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from consumers.fraud_detector import FraudDetector, FraudFeatures, UserProfile
+from consumers.fraud_detector import FraudDetector, UserProfile
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -334,7 +331,7 @@ class TestABTestAssignment:
 
         ratio_a_1 = _hash_ratio(user_a, experiment_id)
         ratio_a_2 = _hash_ratio(user_a, experiment_id)
-        ratio_b = _hash_ratio(user_b, experiment_id)
+        _ = _hash_ratio(user_b, experiment_id)
 
         # Same user, same experiment -> same ratio
         assert ratio_a_1 == ratio_a_2

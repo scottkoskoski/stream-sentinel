@@ -11,13 +11,12 @@ Provides automated test execution with:
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import psutil
 
@@ -419,11 +418,11 @@ def main():
         epilog="""
 Test Categories:
   unit         - Fast unit tests (2-5 min)
-  integration  - Integration tests with real services (10-20 min)  
+  integration  - Integration tests with real services (10-20 min)
   e2e          - End-to-end workflow tests (20-30 min)
   performance  - Performance validation 10k+ TPS (30-60 min)
   chaos        - Chaos engineering tests (45-90 min)
-  
+
 Examples:
   python run_tests.py --smoke                    # Quick smoke tests
   python run_tests.py --category unit            # Run unit tests only
@@ -526,7 +525,7 @@ Examples:
         overall_success = all(result["success"] for result in test_results)
 
         if overall_success:
-            print(f"\n🎉 All tests completed successfully!")
+            print("\n🎉 All tests completed successfully!")
             return 0
         else:
             failed_categories = [r["category"] for r in test_results if not r["success"]]

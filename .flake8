@@ -1,6 +1,13 @@
 [flake8]
 max-line-length = 120
-extend-ignore = E203, W503
+# E203, W503: defer to black's formatting (PEP 8 disagreements).
+# E402: the consumers/producers bootstrap sys.path before importing local
+#       packages (sys.path.append(...) then `from kafka.config import ...`),
+#       so module-level imports legitimately appear after that statement.
+# E501: black owns line length (line-length=120). The only residual lines
+#       over the limit are string literals black will not split (log/assert
+#       messages and inline SQL), so we let black be the source of truth.
+extend-ignore = E203, W503, E402, E501
 exclude =
     .git,
     __pycache__,

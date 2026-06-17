@@ -13,7 +13,7 @@ import logging
 import pickle
 import time
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Tuple
 
 import numpy as np
 
@@ -68,7 +68,9 @@ class FastInferenceEngine:
         # Always load Python model as fallback
         try:
             with open(self.model_path, "rb") as f:
-                model_data = pickle.load(f)
+                model_data = pickle.load(
+                    f
+                )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
             # Extract the actual model from dictionary structure if needed
             if isinstance(model_data, dict):

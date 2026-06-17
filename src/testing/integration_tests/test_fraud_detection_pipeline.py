@@ -21,14 +21,13 @@ import logging
 
 # Import our testing framework
 import sys
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import asyncpg
 import pytest
 import redis.asyncio as redis
-from confluent_kafka import Consumer, Producer
+from confluent_kafka import Producer
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -85,7 +84,7 @@ class TestFraudDetectionPipeline:
         orchestrator = ServiceOrchestrator(test_config)
 
         # Use context manager for automatic cleanup
-        async with orchestrator.service_environment(ServiceProfile.FULL_INTEGRATION) as services:
+        async with orchestrator.service_environment(ServiceProfile.FULL_INTEGRATION):
             # Log service startup metrics
             metrics = orchestrator.get_service_metrics()
             logging.info(f"Services started successfully: {json.dumps(metrics, indent=2)}")
@@ -555,7 +554,7 @@ class TestFraudDetectionPipeline:
             conn = await asyncpg.connect(**test_config.get_postgres_connection_config())
 
             table_name = test_config.get_postgres_table_name("fraud_alerts")
-            query = f"SELECT COUNT(*) FROM {table_name} WHERE scenario_id = $1"
+            query = f"SELECT COUNT(*) FROM {table_name} WHERE scenario_id = $1"  # nosec B608 - table/column identifiers are code-controlled constants; values are parameterized
 
             alert_count = await conn.fetchval(query, scenario.scenario_id)
             await conn.close()
@@ -586,7 +585,7 @@ class TestFraudDetectionPipeline:
             conn = await asyncpg.connect(**test_config.get_postgres_connection_config())
 
             table_name = test_config.get_postgres_table_name("fraud_alerts")
-            query = f"SELECT COUNT(*) FROM {table_name}"
+            query = f"SELECT COUNT(*) FROM {table_name}"  # nosec B608 - table/column identifiers are code-controlled constants; values are parameterized
 
             count = await conn.fetchval(query)
             await conn.close()

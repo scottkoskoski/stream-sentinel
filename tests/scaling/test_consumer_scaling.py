@@ -14,14 +14,12 @@ All tests require a live Kafka cluster and are marked with both
 
 import json
 import logging
-import os
-import signal
 import sys
 import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional, Set
 
 import pytest
 from confluent_kafka import Consumer, KafkaError, Producer, TopicPartition

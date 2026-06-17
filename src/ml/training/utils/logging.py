@@ -35,7 +35,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 
 class StructuredFormatter(logging.Formatter):
@@ -297,12 +297,12 @@ class TrainingLogger:
     def start_timer(self, timer_name: str) -> None:
         """Start a named timer for performance tracking."""
         self._timers[timer_name] = time.time()
-        self.debug(f"timer.started", extra={"timer_name": timer_name})
+        self.debug("timer.started", extra={"timer_name": timer_name})
 
     def stop_timer(self, timer_name: str, log_result: bool = True) -> float:
         """Stop a named timer and optionally log the duration."""
         if timer_name not in self._timers:
-            self.warning(f"timer.not_found", extra={"timer_name": timer_name})
+            self.warning("timer.not_found", extra={"timer_name": timer_name})
             return 0.0
 
         duration = time.time() - self._timers[timer_name]
@@ -310,7 +310,7 @@ class TrainingLogger:
 
         if log_result:
             self.info(
-                f"timer.completed",
+                "timer.completed",
                 extra={"timer_name": timer_name, "duration_seconds": duration},
             )
 
@@ -331,7 +331,7 @@ class TrainingLogger:
         current_value = self._counters[counter_name]
 
         self.debug(
-            f"counter.incremented",
+            "counter.incremented",
             extra={
                 "counter_name": counter_name,
                 "increment": value,

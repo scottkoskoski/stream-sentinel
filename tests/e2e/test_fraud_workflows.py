@@ -16,16 +16,12 @@ These tests use the ACTUAL methods available in FraudDetector and AlertProcessor
 - AlertProcessor.process_alert(alert) -> None
 """
 
-import json
 import sys
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from confluent_kafka import Consumer, Producer
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 

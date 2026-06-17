@@ -12,13 +12,11 @@ Covers:
 - Schema migration runner
 """
 
-import json
 import sys
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import pytest
 
@@ -27,11 +25,8 @@ sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 from persistence.schemas import (
     AlertSeverity,
     AlertStatus,
-    ClickHouseSchemas,
     FraudAlert,
-    PostgreSQLSchemas,
     SchemaManager,
-    TransactionRecord,
     UserStatus,
 )
 

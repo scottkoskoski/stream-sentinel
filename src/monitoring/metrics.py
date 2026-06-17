@@ -12,10 +12,9 @@ Provides comprehensive observability metrics for all system components:
 import logging
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Optional
 
 from prometheus_client import (
-    CONTENT_TYPE_LATEST,
     CollectorRegistry,
     Counter,
     Gauge,

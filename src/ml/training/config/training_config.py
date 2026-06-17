@@ -24,11 +24,9 @@ Architecture:
 
 import logging
 import os
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -538,7 +536,7 @@ class ConfigurationValidator:
             except ImportError:
                 # Check for XGBoost GPU support
                 try:
-                    import xgboost as xgb
+                    pass
 
                     # This is a basic check - more sophisticated validation could be done
                 except ImportError:
@@ -774,5 +772,3 @@ def _create_config_object(config_dict: Dict[str, Any], environment: str) -> Trai
 # Custom exceptions
 class ConfigurationError(Exception):
     """Base exception for configuration errors."""
-
-    pass

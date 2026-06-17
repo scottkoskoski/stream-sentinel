@@ -13,16 +13,11 @@ transactions with all required features including:
 
 import os
 import sys
-import time
-from datetime import datetime, timedelta
-from typing import Any, Dict
 from unittest.mock import Mock, patch
-
-import pytest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from producers.synthetic_transaction_producer import SyntheticTransactionProducer, Transaction, UserProfile
+from producers.synthetic_transaction_producer import SyntheticTransactionProducer, UserProfile
 
 
 class TestSyntheticDataProducer:
@@ -238,8 +233,8 @@ class TestSyntheticDataProducer:
         """Test that the same user profile is reused, not recreated."""
         user_id = "test_reuse_user"
 
-        txn1 = self.producer._generate_transaction(user_id=user_id)
-        txn2 = self.producer._generate_transaction(user_id=user_id)
+        _ = self.producer._generate_transaction(user_id=user_id)
+        _ = self.producer._generate_transaction(user_id=user_id)
 
         # Profile should be updated after transactions
         profile = self.producer.user_profiles[user_id]

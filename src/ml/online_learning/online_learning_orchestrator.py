@@ -15,7 +15,6 @@ Key features:
 - Automated decision making for model lifecycle
 """
 
-import asyncio
 import json
 import logging
 import threading
@@ -28,10 +27,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from confluent_kafka import Consumer, Producer
 
-from .ab_test_manager import ABTestExperiment, ABTestManager
+from .ab_test_manager import ABTestManager
 from .config import OnlineLearningConfig, get_online_learning_config
-from .drift_detector import DriftAlert, DriftDetector, PerformanceMetrics
-from .feedback_processor import FeedbackProcessor, ProcessedFeedback
+from .drift_detector import DriftDetector
+from .feedback_processor import FeedbackProcessor
 from .incremental_learner import IncrementalLearner, UpdateResult
 from .model_registry import ModelMetadata, ModelRegistry, ModelStatus
 
@@ -621,7 +620,7 @@ class OnlineLearningOrchestrator:
             feedback_stats = self.feedback_processor.get_statistics()
             drift_summary = self.drift_detector.get_drift_summary()
             learner_stats = self.incremental_learner.get_update_statistics()
-            registry_stats = self.model_registry.get_registry_statistics()
+            _ = self.model_registry.get_registry_statistics()
             ab_stats = self.ab_test_manager.get_ab_test_statistics()
 
             # Create system metrics

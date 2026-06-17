@@ -18,16 +18,14 @@ import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 import xgboost as xgb
 
 # ONNX dependencies
 try:
     import onnx
-    import onnxmltools
     import onnxruntime as ort
     from onnxmltools.convert import convert_xgboost
     from onnxmltools.convert.common.data_types import FloatTensorType
@@ -70,7 +68,7 @@ class ExportConfig:
             raise ValueError(f"Accuracy tolerance must be between 0 and 1e-3, got {self.accuracy_tolerance}")
 
         if not 0.1 <= self.performance_baseline_multiplier <= 2.0:
-            raise ValueError(f"Performance baseline multiplier must be between 0.1 and 2.0")
+            raise ValueError("Performance baseline multiplier must be between 0.1 and 2.0")
 
         if self.validation_samples < 100:
             raise ValueError(f"Validation samples must be at least 100, got {self.validation_samples}")
@@ -154,8 +152,6 @@ class ValidationResult:
 
 class ModelExportError(Exception):
     """Custom exception for model export failures."""
-
-    pass
 
 
 class ModelExporter:
@@ -328,7 +324,7 @@ class ModelExporter:
             initial_type = [("features", FloatTensorType([None, n_features]))]
 
             # Create dummy input for skl2onnx conversion
-            dummy_input = np.zeros((1, n_features), dtype=np.float32)
+            _ = np.zeros((1, n_features), dtype=np.float32)
 
             # Fix feature names for ONNX compatibility by working with the booster
             booster = model.get_booster()
@@ -411,7 +407,7 @@ class ModelExporter:
                 )
 
                 # Apply optimizations
-                session = ort.InferenceSession(tmp_file.name, sess_options)
+                _ = ort.InferenceSession(tmp_file.name, sess_options)
 
                 self.logger.info(
                     "ONNX model optimization completed",
@@ -639,11 +635,11 @@ class ModelExporter:
             with tempfile.NamedTemporaryFile(suffix=".json") as tmp_file:
                 model.save_model(tmp_file.name)
                 return tmp_file.seek(0, 2) / (1024 * 1024)  # Size in MB
-        except:
+        except Exception:
             # Rough estimation based on model parameters
             n_trees = getattr(model, "n_estimators", 100)
             max_depth = getattr(model, "max_depth", 6)
-            n_features = getattr(model, "n_features_in_", 200)
+            _ = getattr(model, "n_features_in_", 200)
 
             # Rough calculation: each node ~100 bytes, max nodes per tree = 2^depth
             estimated_nodes = n_trees * (2**max_depth)

@@ -12,12 +12,11 @@ Covers:
 import json
 import os
 import sys
-import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 import pytest
 

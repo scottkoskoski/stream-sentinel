@@ -14,7 +14,7 @@ Key Features:
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 
 class CircularDependencyError(Exception):
@@ -149,7 +149,7 @@ class ServiceDependencyManager:
         """Detect circular dependencies using DFS."""
         WHITE, GRAY, BLACK = 0, 1, 2
         color = {service: WHITE for service in self._dependency_graph}
-        parent = {service: None for service in self._dependency_graph}
+        _ = {service: None for service in self._dependency_graph}
 
         def dfs_visit(service: str, path: List[str]) -> Optional[List[str]]:
             """DFS visit with cycle detection."""

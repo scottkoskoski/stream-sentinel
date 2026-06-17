@@ -52,13 +52,18 @@ runs:
           sleep 2
         done
 
+        # Probe ClickHouse from the host against the mapped 8123 port using
+        # curl. The alpine image only ships busybox wget, whose --spider
+        # returns non-zero even when /ping responds, so an in-container
+        # `wget --spider` check never succeeds. ClickHouse also runs user/db
+        # creation + init SQL on first boot, so allow up to 180s.
         echo "Waiting for ClickHouse..."
-        for i in $(seq 1 30); do
-          if docker exec stream-sentinel-clickhouse wget --quiet --tries=1 --spider http://localhost:8123/ping 2>/dev/null; then
+        for i in $(seq 1 90); do
+          if curl -sf http://localhost:8123/ping > /dev/null 2>&1; then
             echo "ClickHouse is ready"
             break
           fi
-          if [ $i -eq 30 ]; then
+          if [ $i -eq 90 ]; then
             echo "ClickHouse failed to start"
             docker compose -f docker/docker-compose.yml logs clickhouse
             exit 1

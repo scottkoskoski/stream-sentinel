@@ -18,15 +18,14 @@ Key features:
 import json
 import logging
 import pickle
-import shutil
 import tempfile
 import time
 from collections import deque
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import joblib
 
@@ -39,10 +38,8 @@ import xgboost as xgb
 from confluent_kafka import Consumer, Producer
 from sklearn.metrics import (
     average_precision_score,
-    precision_recall_curve,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
 
 from .config import OnlineLearningConfig, get_online_learning_config
 from .feedback_processor import FeedbackLabel, ProcessedFeedback
@@ -248,7 +245,9 @@ class IncrementalLearner:
             model_file = self.model_path / "ieee_fraud_model_production.pkl"
             if model_file.exists():
                 with open(model_file, "rb") as f:
-                    self.current_model = pickle.load(f)
+                    self.current_model = pickle.load(
+                        f
+                    )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
                 self.logger.info("Loaded model from filesystem")
                 return True
@@ -933,7 +932,7 @@ class IncrementalLearner:
     def set_update_strategy(self, strategy: UpdateStrategy) -> None:
         """Set the update strategy for incremental learning."""
         self.update_strategy = strategy
-        self.logger.info(f"Update strategy set to: {strategy.value}")
+        self.logger.info(f"Incremental learning strategy is now: {strategy.value}")
 
     def clear_training_queue(self) -> int:
         """Clear the training queue and return number of batches cleared."""

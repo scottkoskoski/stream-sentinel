@@ -16,7 +16,6 @@ Key distributed systems concepts:
 - Graceful error handling and recovery mechanisms
 """
 
-import hashlib
 import json
 import logging
 import pickle
@@ -25,7 +24,7 @@ import sys
 import threading
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -576,7 +575,9 @@ class FraudDetector:
             # Load Python model (always needed for feature extraction
             # compatibility and as the standard inference path)
             with open(model_path_str, "rb") as f:
-                model_data = pickle.load(f)
+                model_data = pickle.load(
+                    f
+                )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
             # Extract model and preprocessing components
             if isinstance(model_data, dict):

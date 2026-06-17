@@ -16,12 +16,10 @@ import json
 
 # Test dependencies
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 import numpy as np
-import pandas as pd
 import pytest
 import xgboost as xgb
 from sklearn.datasets import make_classification
@@ -30,7 +28,7 @@ from sklearn.model_selection import train_test_split
 sys.path.append("src")
 
 from ml.serving.benchmarking import BenchmarkConfig, PerformanceBenchmark
-from ml.serving.model_export import ExportConfig, ModelExporter, ModelExportError, ValidationResult
+from ml.serving.model_export import ExportConfig, ModelExporter, ModelExportError
 from ml.serving.model_validation import ModelAccuracyValidator, PerformanceValidator
 
 
@@ -94,7 +92,7 @@ class TestModelExportPipeline:
     def test_export_config_validation(self):
         """Test export configuration validation."""
         # Valid configuration
-        valid_config = ExportConfig()
+        _ = ExportConfig()
         # Should not raise exception
 
         # Invalid accuracy tolerance
@@ -211,8 +209,8 @@ class TestModelExportPipeline:
 
         # Check for test case files
         output_dir = Path(onnx_path).parent
-        test_cases_file = output_dir / "test_cases_model_test_cases.npz"
-        expected_outputs_file = output_dir / "test_cases_model_expected_outputs.npz"
+        _ = output_dir / "test_cases_model_test_cases.npz"
+        _ = output_dir / "test_cases_model_expected_outputs.npz"
 
         # Files should exist if test case generation succeeded
         if model_exporter.config.generate_test_cases:
@@ -528,7 +526,7 @@ class TestBenchmarkingIntegration:
 
         benchmark = PerformanceBenchmark(benchmark_config)
 
-        result = benchmark.benchmark_model(simple_predict_function, benchmark_data, model_name="output_test")
+        _ = benchmark.benchmark_model(simple_predict_function, benchmark_data, model_name="output_test")
 
         # Check for generated files
         output_dir = Path(benchmark_config.output_dir)

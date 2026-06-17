@@ -17,12 +17,11 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 import asyncpg
 import redis.asyncio as redis
 from clickhouse_driver import Client as ClickHouseClient
-from confluent_kafka import Consumer
 
 from ..utils.test_config import IntegrationTestConfig
 

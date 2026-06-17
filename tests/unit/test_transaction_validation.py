@@ -6,7 +6,6 @@ ingestion point against malformed, duplicate, and high-velocity transactions.
 """
 
 import sys
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -14,7 +13,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from validation.transaction_validator import TransactionValidator, ValidationResult
+from validation.transaction_validator import TransactionValidator
 
 # ---------------------------------------------------------------------------
 # Helpers

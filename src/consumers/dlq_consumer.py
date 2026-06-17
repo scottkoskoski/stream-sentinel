@@ -14,13 +14,11 @@ Usage:
 import argparse
 import json
 import logging
-import os
 import signal
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from confluent_kafka import Consumer, KafkaError, KafkaException
 
@@ -30,7 +28,6 @@ from kafka.config import get_kafka_config
 
 # Distributed tracing
 try:
-    from tracing.correlation import extract_correlation_id
     from tracing.middleware import traced_consume
 
     TRACING_AVAILABLE = True
@@ -38,7 +35,9 @@ except ImportError:
     TRACING_AVAILABLE = False
 
 DLQ_TOPIC = "dead-letter-queue"
-DEFAULT_OUTPUT_PATH = "/tmp/stream-sentinel-dlq.jsonl"
+DEFAULT_OUTPUT_PATH = (
+    "/tmp/stream-sentinel-dlq.jsonl"  # nosec B108 - default output path, overridable via DLQ_OUTPUT_PATH
+)
 
 logger = logging.getLogger("stream_sentinel.dlq_consumer")
 

@@ -46,7 +46,7 @@ def export_model(input_path: str, output_path: str) -> None:
 
     logger.info("Loading pickled model from %s", input_path)
     with open(input_path, "rb") as f:
-        model_data = pickle.load(f)
+        model_data = pickle.load(f)  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
     # Extract the estimator from dict wrapper if needed
     if isinstance(model_data, dict):

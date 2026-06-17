@@ -7,17 +7,14 @@ with connection pooling, error handling, and performance monitoring.
 
 import logging
 import time
-from contextlib import asynccontextmanager, contextmanager
-from dataclasses import asdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncContextManager, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-import psycopg
 from clickhouse_driver import Client as ClickHouseClient
-from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
@@ -27,8 +24,6 @@ from .schemas import AlertSeverity, AlertStatus, FraudAlert, TransactionRecord, 
 
 class DatabaseError(Exception):
     """Custom exception for database operations."""
-
-    pass
 
 
 class PostgreSQLManager:
@@ -116,7 +111,7 @@ class PostgreSQLManager:
             with conn.cursor() as cursor:
                 insert_query = """
                     INSERT INTO fraud_alerts (
-                        transaction_id, user_id, severity, fraud_score, 
+                        transaction_id, user_id, severity, fraud_score,
                         ml_prediction, business_rules_triggered, explanation
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING alert_id
@@ -182,7 +177,7 @@ class PostgreSQLManager:
 
                 values.append(alert_id)
 
-                update_query = f"UPDATE fraud_alerts SET {', '.join(update_fields)} WHERE alert_id = %s"
+                update_query = f"UPDATE fraud_alerts SET {', '.join(update_fields)} WHERE alert_id = %s"  # nosec B608 - table/column identifiers are code-controlled constants; values are parameterized
 
                 cursor.execute(update_query, values)
                 rows_affected = cursor.rowcount
@@ -286,14 +281,14 @@ class PostgreSQLManager:
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
                 query = """
-                    SELECT ua.*, 
+                    SELECT ua.*,
                            COUNT(fa.alert_id) as pending_alerts,
                            MAX(fa.fraud_score) as max_fraud_score
                     FROM user_accounts ua
                     LEFT JOIN fraud_alerts fa ON ua.user_id = fa.user_id AND fa.status = 'PENDING'
                     WHERE ua.user_id = %s
                     GROUP BY ua.user_id, ua.status, ua.total_alerts, ua.high_severity_alerts,
-                             ua.last_alert_at, ua.blocked_at, ua.blocked_reason, 
+                             ua.last_alert_at, ua.blocked_at, ua.blocked_reason,
                              ua.created_at, ua.updated_at
                 """
 
@@ -525,14 +520,14 @@ class ClickHouseManager:
 
         try:
             query = """
-            SELECT 
+            SELECT
                 toStartOfHour(timestamp) as hour,
                 count() as total_transactions,
                 sum(is_fraud) as fraud_transactions,
                 avg(fraud_score) as avg_fraud_score
-            FROM transaction_records 
+            FROM transaction_records
             WHERE timestamp >= %s AND timestamp < %s
-            GROUP BY hour 
+            GROUP BY hour
             ORDER BY hour
             """
 

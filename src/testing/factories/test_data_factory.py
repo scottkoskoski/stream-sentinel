@@ -20,12 +20,11 @@ import random
 # Import existing analysis results
 import sys
 import time
-import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional
 
 import numpy as np
 
@@ -668,7 +667,7 @@ class TestDataFactory:
         or used for testing the fraud detection pipeline.
         """
         start_time = datetime.now()
-        end_time = start_time + timedelta(hours=scenario.duration_hours)
+        _ = start_time + timedelta(hours=scenario.duration_hours)
 
         # Pre-calculate transaction schedule for all users
         scheduled_transactions = []

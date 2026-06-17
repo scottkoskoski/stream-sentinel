@@ -1,11 +1,11 @@
-black==25.1.0
+black==26.3.1
 click==8.2.1
-confluent-kafka==2.3.0
+confluent-kafka==2.6.0
 contourpy==1.3.3
 cycler==0.12.1
 docstring-to-markdown==0.17
 flake8==7.3.0
-fonttools==4.59.1
+fonttools==4.60.2
 importlib_metadata==8.7.0
 isort==6.0.1
 jedi==0.19.2
@@ -17,15 +17,15 @@ numpy==2.3.2
 packaging==25.0
 pandas==2.3.2
 parso==0.8.5
-pathspec==0.12.1
-pillow==11.3.0
+pathspec==1.1.1
+pillow==12.2.0
 platformdirs==4.3.8
 pluggy==1.6.0
 pycodestyle==2.14.0
 pyflakes==3.4.0
 pyparsing==3.2.3
 python-dateutil==2.9.0.post0
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 python-json-logger==3.2.1
 python-lsp-jsonrpc==1.1.2
 python-lsp-server==1.13.0
@@ -35,14 +35,14 @@ seaborn==0.13.2
 six==1.17.0
 typing_extensions==4.15.0
 tzdata==2025.2
-ujson==5.11.0
+ujson==5.12.1
 zipp==3.23.0
 
 # ML Dependencies
 scikit-learn==1.5.2
 xgboost==2.1.3
-lightgbm==4.5.0
-catboost==1.2.5
+lightgbm==4.6.0
+catboost==1.2.8
 optuna==4.1.0
 joblib==1.4.2
 # Note: pybind11 is a BUILD-ONLY dependency for the native C++ inference
@@ -50,16 +50,25 @@ joblib==1.4.2
 # not carry it.
 
 # Database Dependencies
-psycopg2-binary==2.9.9
-clickhouse-driver==0.2.9
+# psycopg 3 (the persistence layer uses psycopg.rows / psycopg_pool, not psycopg2)
+psycopg[binary]==3.3.4
+psycopg-pool==3.3.1
+clickhouse-driver==0.2.10
 sqlalchemy==2.0.32
 alembic==1.14.0
 
+# Observability (prometheus_client is a hard import in src/monitoring/metrics.py)
+prometheus-client==0.25.0
+
+# Async clients used by the integration-test harness (src/testing/)
+asyncpg==0.31.0
+httpx==0.28.1
+
 # Testing Dependencies
-pytest==7.4.4
-pytest-xdist==3.5.0
-pytest-benchmark==4.0.0
-pytest-asyncio==0.23.2
-pytest-mock==3.12.0
+pytest==9.1.0
+pytest-xdist==3.8.0
+pytest-benchmark==5.2.3
+pytest-asyncio==1.4.0
+pytest-mock==3.15.1
 pytest-cov==7.1.0
 psutil==5.9.8

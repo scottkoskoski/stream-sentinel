@@ -12,21 +12,18 @@ Key features:
 - Performance monitoring during tests
 """
 
-import json
 import logging
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Generator, List
+from typing import Any, Dict, List
 
 import numpy as np
-import pandas as pd
-import psycopg
 import pytest
 import redis
 from confluent_kafka import Consumer, Producer
-from confluent_kafka.admin import AdminClient, ConfigResource, NewTopic, ResourceType
+from confluent_kafka.admin import AdminClient, NewTopic
 
 # Add src to path relative to this conftest file, not hard-coded
 _project_root = Path(__file__).resolve().parent.parent
@@ -35,8 +32,7 @@ if _src_path not in sys.path:
     sys.path.insert(0, _src_path)
 
 from kafka.config import get_kafka_config
-from persistence.config import PersistenceConfigManager
-from persistence.database import ClickHouseManager, PostgreSQLManager, get_persistence_layer
+from persistence.database import get_persistence_layer
 
 
 @pytest.fixture(scope="session")

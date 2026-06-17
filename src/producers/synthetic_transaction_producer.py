@@ -27,13 +27,9 @@ import logging
 import math
 import multiprocessing
 import random
-import threading
 import time
-import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -506,13 +502,13 @@ class SyntheticTransactionProducer:
         # Memory usage is now bounded by the number of distinct users /
         # cards / addresses observed, not by the transaction volume.
         self.entity_tracking = {
-            "user_created": {},       # user -> historical creation timestamp
-            "user_lasttxn": {},       # user -> last transaction timestamp
-            "card_firstuse": {},      # card -> historical first-use timestamp
-            "card_firstseen": {},     # card -> historical first-seen timestamp (shared with C14)
-            "device_lasttxn": {},     # device -> last transaction timestamp
-            "user_lastfraud": {},     # user -> last fraud report timestamp
-            "email_lasttxn": {},      # email -> last transaction timestamp
+            "user_created": {},  # user -> historical creation timestamp
+            "user_lasttxn": {},  # user -> last transaction timestamp
+            "card_firstuse": {},  # card -> historical first-use timestamp
+            "card_firstseen": {},  # card -> historical first-seen timestamp (shared with C14)
+            "device_lasttxn": {},  # device -> last transaction timestamp
+            "user_lastfraud": {},  # user -> last fraud report timestamp
+            "email_lasttxn": {},  # email -> last transaction timestamp
             "merchant_firstuse": {},  # merchant -> historical first-use timestamp
             "address_firstseen": {},  # address -> historical first-seen timestamp
         }
@@ -812,8 +808,7 @@ class SyntheticTransactionProducer:
         # Note: IEEE-CIS treats C14 as a count (mean 1.22), not a "days
         # since first seen" value. The prior implementation's days-based
         # C14 never matched the real distribution -- Poisson is correct.
-        for key in ("c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8",
-                    "c9", "c10", "c11", "c12", "c13", "c14"):
+        for key in ("c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c14"):
             if key in ("c3", "c6") and not p_email:
                 features[key] = None
                 continue
@@ -872,9 +867,7 @@ class SyntheticTransactionProducer:
         # its first-use timestamp to a historical offset (median ~168 days).
         card_first = self.entity_tracking["card_firstuse"]
         if card1 not in card_first:
-            card_first[card1] = current_time - _historical_offset_seconds(
-                offset_days["d3_card_firstuse"], sigma
-            )
+            card_first[card1] = current_time - _historical_offset_seconds(offset_days["d3_card_firstuse"], sigma)
         d3_val = (current_time - card_first[card1]) / 86400.0
         features["d3"] = self._apply_null(float(max(0.0, d3_val)), "d3", null_rates)
 
@@ -899,9 +892,7 @@ class SyntheticTransactionProducer:
         # observation, bootstrap to the same D3-scale historical offset.
         card_firstseen = self.entity_tracking["card_firstseen"]
         if card1 not in card_firstseen:
-            card_firstseen[card1] = current_time - _historical_offset_seconds(
-                offset_days["d3_card_firstuse"], sigma
-            )
+            card_firstseen[card1] = current_time - _historical_offset_seconds(offset_days["d3_card_firstuse"], sigma)
         d6_val = (current_time - card_firstseen[card1]) / 86400.0
         features["d6"] = self._apply_null(float(max(0.0, d6_val)), "d6", null_rates)
 
@@ -958,9 +949,7 @@ class SyntheticTransactionProducer:
         # first time they're observed (median ~99 days per IEEE-CIS).
         addr_first = self.entity_tracking["address_firstseen"]
         if addr1 not in addr_first:
-            addr_first[addr1] = current_time - _historical_offset_seconds(
-                offset_days["d11_address_firstseen"], sigma
-            )
+            addr_first[addr1] = current_time - _historical_offset_seconds(offset_days["d11_address_firstseen"], sigma)
         d11_val = (current_time - addr_first[addr1]) / 86400.0
         features["d11"] = self._apply_null(float(max(0.0, d11_val)), "d11", null_rates)
 
@@ -980,9 +969,7 @@ class SyntheticTransactionProducer:
         # stays on the same scale as D1 rather than collapsing to 0.
         if "user_profile_updated" not in self.entity_tracking:
             self.entity_tracking["user_profile_updated"] = {}
-        prof_updated = self.entity_tracking["user_profile_updated"].get(
-            user.user_id, user_created[user.user_id]
-        )
+        prof_updated = self.entity_tracking["user_profile_updated"].get(user.user_id, user_created[user.user_id])
         d13_val = (current_time - prof_updated) / 86400.0
         features["d13"] = self._apply_null(float(max(0.0, d13_val)), "d13", null_rates)
 

@@ -29,10 +29,8 @@ import logging
 import os
 import pickle
 import shutil
-import sqlite3
 import tempfile
 import threading
-import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -237,7 +235,9 @@ class CheckpointStore:
 
                 # Load model
                 with open(model_path, "rb") as f:
-                    model = pickle.load(f)
+                    model = pickle.load(
+                        f
+                    )  # nosec B301 - trusted internal model/checkpoint artifact, not untrusted input
 
                 # Reconstruct checkpoint
                 checkpoint = ModelCheckpoint(
@@ -521,7 +521,7 @@ class CheckpointManager:
         try:
             checkpoint_id = self.save_checkpoint(checkpoint)
             yield checkpoint_id
-        except Exception as e:
+        except Exception:
             if checkpoint_id:
                 # Attempt cleanup on failure
                 try:
@@ -551,22 +551,14 @@ class CheckpointManager:
 class CheckpointError(Exception):
     """Base exception for checkpoint operations."""
 
-    pass
-
 
 class CheckpointSaveError(CheckpointError):
     """Raised when checkpoint save operation fails."""
-
-    pass
 
 
 class CheckpointValidationError(CheckpointError):
     """Raised when checkpoint validation fails."""
 
-    pass
-
 
 class CheckpointRecoveryError(CheckpointError):
     """Raised when checkpoint recovery fails."""
-
-    pass
