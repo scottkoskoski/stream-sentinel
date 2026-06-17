@@ -50,10 +50,19 @@ joblib==1.4.2
 # not carry it.
 
 # Database Dependencies
-psycopg2-binary==2.9.9
+# psycopg 3 (the persistence layer uses psycopg.rows / psycopg_pool, not psycopg2)
+psycopg[binary]==3.3.4
+psycopg-pool==3.3.1
 clickhouse-driver==0.2.9
 sqlalchemy==2.0.32
 alembic==1.14.0
+
+# Observability (prometheus_client is a hard import in src/monitoring/metrics.py)
+prometheus-client==0.25.0
+
+# Async clients used by the integration-test harness (src/testing/)
+asyncpg==0.31.0
+httpx==0.28.1
 
 # Testing Dependencies
 pytest==7.4.4
