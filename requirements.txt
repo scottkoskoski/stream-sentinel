@@ -1,6 +1,6 @@
 black==26.3.1
 click==8.2.1
-confluent-kafka==2.3.0
+confluent-kafka==2.6.0
 contourpy==1.3.3
 cycler==0.12.1
 docstring-to-markdown==0.17
@@ -42,7 +42,7 @@ zipp==3.23.0
 scikit-learn==1.5.2
 xgboost==2.1.3
 lightgbm==4.6.0
-catboost==1.2.5
+catboost==1.2.8
 optuna==4.1.0
 joblib==1.4.2
 # Note: pybind11 is a BUILD-ONLY dependency for the native C++ inference
@@ -53,7 +53,7 @@ joblib==1.4.2
 # psycopg 3 (the persistence layer uses psycopg.rows / psycopg_pool, not psycopg2)
 psycopg[binary]==3.3.4
 psycopg-pool==3.3.1
-clickhouse-driver==0.2.9
+clickhouse-driver==0.2.10
 sqlalchemy==2.0.32
 alembic==1.14.0
 
