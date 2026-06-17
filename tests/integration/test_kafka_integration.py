@@ -94,10 +94,15 @@ class TestKafkaIntegration:
         # Validate message consistency
         assert len(consumed_messages) == len(produced_messages)
 
-        # Verify message content matches
-        for produced, consumed in zip(produced_messages, consumed_messages):
+        # Verify message content matches. Across a 12-partition topic the
+        # consume order is not the produce order, so match by transaction_id
+        # rather than a positional zip.
+        produced_by_id = {p["value"]["transaction_id"]: p for p in produced_messages}
+        consumed_by_id = {c["value"]["transaction_id"]: c for c in consumed_messages}
+        assert set(produced_by_id) == set(consumed_by_id)
+        for txn_id, produced in produced_by_id.items():
+            consumed = consumed_by_id[txn_id]
             assert produced["key"] == consumed["key"]
-            assert produced["value"]["transaction_id"] == consumed["value"]["transaction_id"]
             assert produced["value"]["user_id"] == consumed["value"]["user_id"]
             assert produced["value"]["amount"] == consumed["value"]["amount"]
 
@@ -469,12 +474,17 @@ class TestKafkaIntegration:
         # Wait for rebalance to complete
         time.sleep(5)
 
-        # Both consumers should now process remaining messages
-        _ = 24 - len(consumer1_messages)
+        # Both consumers should now process remaining messages. Kafka provides
+        # at-least-once delivery and a rebalance can redeliver messages, so we
+        # collect until every unique message has been seen and tolerate
+        # duplicates rather than asserting exactly-once.
         combined_messages = consumer1_messages.copy()
 
+        def unique_count(msgs):
+            return len({m["transaction_id"] for m in msgs})
+
         start_time = time.time()
-        while len(combined_messages) < 24 and time.time() - start_time < 20:
+        while unique_count(combined_messages) < 24 and time.time() - start_time < 30:
             msg1 = consumer1.poll(timeout=1.0)
             msg2 = consumer2.poll(timeout=1.0)
 
@@ -487,12 +497,12 @@ class TestKafkaIntegration:
         consumer1.close()
         consumer2.close()
 
-        # Verify rebalancing worked correctly
-        assert len(combined_messages) == 24
-
-        # Verify no duplicate processing after rebalance
-        txn_ids = [msg["transaction_id"] for msg in combined_messages]
-        assert len(txn_ids) == len(set(txn_ids))
+        # Verify rebalancing delivered every message at least once. Duplicates
+        # are acceptable under at-least-once semantics during a rebalance.
+        unique_ids = {msg["transaction_id"] for msg in combined_messages}
+        assert unique_ids == {
+            f"rebalance_{i}" for i in range(24)
+        }, f"Expected all 24 unique messages, got {len(unique_ids)}"
 
     def test_error_handling_and_recovery(self, kafka_config, test_topics):
         """Test error handling and recovery scenarios."""
