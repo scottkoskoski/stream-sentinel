@@ -753,12 +753,9 @@ class DataProcessingError(Exception):
     """Base exception for data processing operations."""
 
 
-
 class DataLoadingError(DataProcessingError):
     """Raised when data loading fails."""
 
 
-
 class DataCacheError(DataProcessingError):
     """Raised when cache operations fail."""
-

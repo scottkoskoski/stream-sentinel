@@ -15,7 +15,6 @@ import os
 import sys
 from unittest.mock import Mock, patch
 
-
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from producers.synthetic_transaction_producer import SyntheticTransactionProducer, UserProfile

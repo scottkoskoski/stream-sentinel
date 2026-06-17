@@ -724,4 +724,3 @@ class HyperparameterOptimizer:
 # Custom exceptions
 class OptimizationError(Exception):
     """Base exception for hyperparameter optimization operations."""
-

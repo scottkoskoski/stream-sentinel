@@ -23,7 +23,6 @@ import redis
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
 
-
 @pytest.mark.integration
 @pytest.mark.redis
 @pytest.mark.requires_infrastructure

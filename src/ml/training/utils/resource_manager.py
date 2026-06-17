@@ -717,7 +717,5 @@ class ResourceAllocationError(Exception):
     """Raised when resource allocation fails."""
 
 
-
 class ResourceExhaustionError(Exception):
     """Raised when system resources are exhausted."""
-

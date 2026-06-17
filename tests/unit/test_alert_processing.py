@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
 from consumers.alert_processor import AlertContext, AlertProcessor, AlertResponse, AlertSeverity, ResponseAction

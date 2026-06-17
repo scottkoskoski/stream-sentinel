@@ -910,17 +910,13 @@ class PipelineExecutionError(Exception):
     """Base exception for pipeline execution errors."""
 
 
-
 class PipelineRecoveryError(PipelineExecutionError):
     """Raised when pipeline recovery fails."""
-
 
 
 class InvalidStateTransitionError(PipelineExecutionError):
     """Raised when invalid state transition is attempted."""
 
 
-
 class ValidationError(PipelineExecutionError):
     """Raised when model validation fails."""
-

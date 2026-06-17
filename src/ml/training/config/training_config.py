@@ -772,4 +772,3 @@ def _create_config_object(config_dict: Dict[str, Any], environment: str) -> Trai
 # Custom exceptions
 class ConfigurationError(Exception):
     """Base exception for configuration errors."""
-

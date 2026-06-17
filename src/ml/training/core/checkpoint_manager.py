@@ -550,17 +550,13 @@ class CheckpointError(Exception):
     """Base exception for checkpoint operations."""
 
 
-
 class CheckpointSaveError(CheckpointError):
     """Raised when checkpoint save operation fails."""
-
 
 
 class CheckpointValidationError(CheckpointError):
     """Raised when checkpoint validation fails."""
 
 
-
 class CheckpointRecoveryError(CheckpointError):
     """Raised when checkpoint recovery fails."""
-

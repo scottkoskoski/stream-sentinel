@@ -751,7 +751,6 @@ class PerformanceValidator:
         try:
             import os
 
-
             # Python model memory estimation
             with tempfile.NamedTemporaryFile(suffix=".json") as tmp_file:
                 python_model.save_model(tmp_file.name)

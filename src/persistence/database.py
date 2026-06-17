@@ -26,7 +26,6 @@ class DatabaseError(Exception):
     """Custom exception for database operations."""
 
 
-
 class PostgreSQLManager:
     """Manages PostgreSQL connections and OLTP operations."""
 
