@@ -15,7 +15,7 @@ mccabe==0.7.0
 mypy_extensions==1.1.0
 numpy==2.3.2
 packaging==25.0
-pandas==2.3.2
+pandas==3.0.3
 parso==0.8.5
 pathspec==1.1.1
 pillow==12.2.0
